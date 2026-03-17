@@ -116,3 +116,39 @@ class CompositeContextStrategy:
         for strategy in self._strategies:
             result = strategy.apply(result)
         return result
+
+
+_STRATEGY_REGISTRY: dict[str, type] = {
+    "sliding_window": BufferedChatContext,
+    "buffered": BufferedChatContext,
+    "token_limited": TokenLimitedChatContext,
+    "head_and_tail": HeadAndTailChatContext,
+}
+
+
+def build_context_strategy(
+    strategy: str = "sliding_window",
+    history_rounds: int = 20,
+    max_tokens: int = 8000,
+    head_count: int = 3,
+    tail_count: int = 10,
+) -> ContextStrategy:
+    """Factory: create a ContextStrategy from simple config params."""
+    if strategy == "token_limited":
+        return TokenLimitedChatContext(max_tokens=max_tokens)
+    if strategy == "head_and_tail":
+        return HeadAndTailChatContext(head_count=head_count, tail_count=tail_count)
+    return BufferedChatContext(buffer_size=history_rounds)
+
+
+def build_context_strategy_from_agent_config(memory_config: dict[str, Any] | None) -> ContextStrategy:
+    """Create a ContextStrategy from an AgentMemoryConfig dict."""
+    if not memory_config:
+        return BufferedChatContext()
+    return build_context_strategy(
+        strategy=memory_config.get("strategy", "sliding_window"),
+        history_rounds=int(memory_config.get("history_rounds", 20)),
+        max_tokens=int(memory_config.get("max_tokens", 8000)),
+        head_count=int(memory_config.get("head_count", 3)),
+        tail_count=int(memory_config.get("tail_count", 10)),
+    )

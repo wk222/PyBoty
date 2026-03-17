@@ -93,11 +93,18 @@ class WorkflowNodeRuntime:
         except WorkflowApprovalPause:
             raise
         except Exception as exc:
-            max_retries = int(node.config.get("retries", 0))
+            max_retries = node.max_retries or int(node.config.get("retries", 0))
             if node.retry_count < max_retries:
                 node.retry_count += 1
-                delay = node.config.get("retry_delay", 2) * (2 ** (node.retry_count - 1))
-                self.log_event(workflow, node.id, "retry", f"{node.retry_count}/{max_retries}, delay={delay}s")
+                base_delay = node.retry_delay or node.config.get("retry_delay", 1.0)
+                delay = min(
+                    base_delay * (2 ** (node.retry_count - 1)),
+                    node.max_retry_delay,
+                )
+                self.log_event(
+                    workflow, node.id, "retry",
+                    f"{node.retry_count}/{max_retries}, delay={delay:.1f}s, error={exc}",
+                )
                 time.sleep(delay)
                 node.status = NodeStatus.PENDING
                 return self.exec_node(node, workflow)

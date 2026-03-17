@@ -23,9 +23,10 @@ APP_STATIC_DIR = "static"
 APP_HELPERS_JS = """// PyBot App Helpers — DO NOT overwrite this file
 // These helpers are always available in app.js
 
+const _BASE = window.location.origin;
+
 async function apiCall(endpoint, options = {}) {
-    const base = window.location.origin;
-    const resp = await fetch(base + endpoint, {
+    const resp = await fetch(_BASE + endpoint, {
         headers: { 'Content-Type': 'application/json' },
         ...options
     });
@@ -43,6 +44,67 @@ async function dbWrite(sql, params) {
     return apiCall('/api/apps/~db/write', {
         method: 'POST',
         body: JSON.stringify({ sql, params: params || [] })
+    });
+}
+
+// --- Agent-Driven Helpers ---
+
+let _agentThreadId = null;
+
+async function agentEnsureThread() {
+    if (_agentThreadId) return _agentThreadId;
+    const data = await apiCall('/api/conversations', { method: 'POST', body: '{}' });
+    _agentThreadId = data.id || data.thread_id;
+    return _agentThreadId;
+}
+
+async function agentChat(message, onChunk) {
+    const threadId = await agentEnsureThread();
+    const resp = await fetch(_BASE + '/api/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ thread_id: threadId, message })
+    });
+    if (!onChunk) return resp.json();
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let full = '';
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const text = decoder.decode(value, { stream: true });
+        full += text;
+        onChunk(text, full);
+    }
+    return full;
+}
+
+async function agentRunWorkflow(workflowName, inputVars = {}) {
+    return apiCall('/api/workflows/trigger', {
+        method: 'POST',
+        body: JSON.stringify({ name: workflowName, input_vars: inputVars })
+    });
+}
+
+async function agentSearch(query) {
+    return apiCall('/api/search?q=' + encodeURIComponent(query));
+}
+
+async function agentKnowledgeQuery(query, collection = 'default', topK = 5) {
+    return apiCall('/api/knowledge/search', {
+        method: 'POST',
+        body: JSON.stringify({ query, collection, top_k: topK })
+    });
+}
+
+async function agentListTools() {
+    return apiCall('/api/tools');
+}
+
+async function agentCallTool(toolName, args = {}) {
+    return apiCall('/api/tools/' + encodeURIComponent(toolName) + '/run', {
+        method: 'POST',
+        body: JSON.stringify(args)
     });
 }
 """
@@ -84,6 +146,16 @@ DEFAULT_JS = """// App JavaScript — custom code goes here
 console.log('App loaded');
 """
 
+from .app_templates import APP_TEMPLATES
+
+
+class AppMode:
+    STATIC = "static"
+    CHAT = "chat"
+    WORKFLOW = "workflow"
+    ASSISTANT = "assistant"
+    RAG = "rag"
+
 
 @dataclass(slots=True)
 class AppDefinition:
@@ -101,6 +173,13 @@ class AppDefinition:
     api_enabled: bool = False
     tags: list[str] = field(default_factory=list)
 
+    mode: str = "static"
+    agent_binding: str = ""
+    workflow_binding: str = ""
+    knowledge_collections: list[str] = field(default_factory=list)
+    allowed_tools: list[str] = field(default_factory=list)
+    system_prompt_override: str = ""
+
     @classmethod
     def from_dict(cls, name: str, data: dict[str, Any]) -> AppDefinition:
         """Build an app definition from persisted metadata."""
@@ -116,6 +195,12 @@ class AppDefinition:
             entry_point=str(data.get("entry_point", APP_ENTRY_FILE)),
             api_enabled=bool(data.get("api_enabled", False)),
             tags=list(data.get("tags", [])),
+            mode=str(data.get("mode", "static")),
+            agent_binding=str(data.get("agent_binding", "")),
+            workflow_binding=str(data.get("workflow_binding", "")),
+            knowledge_collections=list(data.get("knowledge_collections", [])),
+            allowed_tools=list(data.get("allowed_tools", [])),
+            system_prompt_override=str(data.get("system_prompt_override", "")),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -132,7 +217,17 @@ class AppDefinition:
             "entry_point": self.entry_point,
             "api_enabled": self.api_enabled,
             "tags": self.tags,
+            "mode": self.mode,
+            "agent_binding": self.agent_binding,
+            "workflow_binding": self.workflow_binding,
+            "knowledge_collections": self.knowledge_collections,
+            "allowed_tools": self.allowed_tools,
+            "system_prompt_override": self.system_prompt_override,
         }
+
+    @property
+    def is_agent_driven(self) -> bool:
+        return self.mode in (AppMode.CHAT, AppMode.ASSISTANT, AppMode.RAG, AppMode.WORKFLOW)
 
 
 class AppManager:
@@ -268,6 +363,11 @@ except Exception as exc:
         display_name: str = "",
         description: str = "",
         tags: list[str] | None = None,
+        mode: str = "static",
+        agent_binding: str = "",
+        workflow_binding: str = "",
+        knowledge_collections: list[str] | None = None,
+        system_prompt_override: str = "",
     ) -> dict[str, Any]:
         if not self._is_valid_app_name(name):
             return {"success": False, "error": "App name must be alphanumeric (with _ or -)"}
@@ -284,15 +384,34 @@ except Exception as exc:
             display_name=display_name or name,
             description=description,
             tags=list(tags or []),
+            mode=mode,
+            agent_binding=agent_binding,
+            workflow_binding=workflow_binding,
+            knowledge_collections=list(knowledge_collections or []),
+            system_prompt_override=system_prompt_override,
         )
         self._persist_definition(definition)
 
-        self._write_text(app_dir / APP_ENTRY_FILE, build_default_html(name, display_name or name, description))
-        self._write_text(self._static_dir(name) / "style.css", DEFAULT_CSS)
-        self._write_text(self._static_dir(name) / "pybot-helpers.js", APP_HELPERS_JS)
-        self._write_text(self._static_dir(name) / "app.js", DEFAULT_JS)
+        template = APP_TEMPLATES.get(mode)
+        if template:
+            html_builder = template["html_builder"]
+            if mode == "workflow":
+                html_content = html_builder(name, display_name or name, description, workflow_binding)
+            else:
+                html_content = html_builder(name, display_name or name, description)
+            css_content = template["css"]
+            js_content = template["js"]
+        else:
+            html_content = build_default_html(name, display_name or name, description)
+            css_content = DEFAULT_CSS
+            js_content = DEFAULT_JS
 
-        return {"success": True, "app_name": name, "path": str(app_dir)}
+        self._write_text(app_dir / APP_ENTRY_FILE, html_content)
+        self._write_text(self._static_dir(name) / "style.css", css_content)
+        self._write_text(self._static_dir(name) / "pybot-helpers.js", APP_HELPERS_JS)
+        self._write_text(self._static_dir(name) / "app.js", js_content)
+
+        return {"success": True, "app_name": name, "mode": mode, "path": str(app_dir)}
 
     def update_app_file(self, app_name: str, file_path: str, content: str) -> dict[str, Any]:
         if app_name not in self.apps:

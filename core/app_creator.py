@@ -25,19 +25,49 @@ class CreateAppInput(BaseModel):
     display_name: str = Field(description="Human-readable app name")
     description: str = Field(description="What this app does")
     tags: str = Field(default="", description="Comma-separated tags")
+    mode: str = Field(
+        default="chat",
+        description="App mode: 'chat' (AI chat interface), 'rag' (knowledge Q&A), 'workflow' (run a workflow), 'assistant' (full agent), 'static' (plain HTML)",
+    )
+    workflow_binding: str = Field(default="", description="Workflow name to bind (required for mode=workflow)")
+    system_prompt_override: str = Field(default="", description="Custom system prompt for this app's agent")
 
 
 class CreateAppTool(BaseTool):
     name: str = "create_app"
-    description: str = """Create a new sub-application with its own UI. The app will be served at /apps/<app_name>/.
-Each app gets: index.html (main page), static/style.css, static/app.js, and app.json (metadata).
-The app's JavaScript has built-in helpers to call the main API and shared database.
-After creating, use update_app_file to customize the HTML/CSS/JS.
-Use this when you need to build a complete UI application (dashboard, data viewer, management tool, etc.)."""
+    description: str = """Create an agent-driven sub-application. Served at /apps/<app_name>/.
+
+App modes (choose the best one for the user's request):
+- "chat": Full AI chat interface with streaming responses. Best for: chatbots, customer support, tutors.
+- "rag": Knowledge base Q&A with semantic search + AI answers. Best for: documentation, FAQ, research tools.
+- "workflow": Run a specific workflow with form inputs. Best for: automation, data processing, batch operations.
+- "assistant": Full agent with tool access. Best for: AI assistants, task automation.
+- "static": Plain HTML/CSS/JS. Best for: dashboards, simple tools, landing pages.
+
+PREFER agent-driven modes (chat/rag/workflow/assistant) over static when the user wants something intelligent.
+
+Built-in JS helpers for agent-driven apps:
+- agentChat(message, onChunk): Stream a conversation with the AI agent
+- agentRunWorkflow(name, vars): Trigger a workflow
+- agentKnowledgeQuery(query, collection, topK): Search knowledge base
+- agentSearch(query): Global search
+- agentCallTool(toolName, args): Call a registered tool
+- dbQuery(sql), dbWrite(sql, params): Database access
+
+After creating, use update_app_file to customize the HTML/CSS/JS further."""
     args_schema: type[BaseModel] = CreateAppInput
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    def _run(self, app_name: str, display_name: str, description: str, tags: str = "") -> str:
+    def _run(
+        self,
+        app_name: str,
+        display_name: str,
+        description: str,
+        tags: str = "",
+        mode: str = "chat",
+        workflow_binding: str = "",
+        system_prompt_override: str = "",
+    ) -> str:
         mgr = _get_app_manager()
         tag_list = [tag.strip() for tag in tags.split(",") if tag.strip()] if tags else []
         result = mgr.create_app(
@@ -45,6 +75,9 @@ Use this when you need to build a complete UI application (dashboard, data viewe
             display_name=display_name,
             description=description,
             tags=tag_list,
+            mode=mode,
+            workflow_binding=workflow_binding,
+            system_prompt_override=system_prompt_override,
         )
         return json.dumps(result, ensure_ascii=False, indent=2)
 
@@ -66,14 +99,18 @@ Common files:
   BEFORE <script src="static/app.js"></script>.
 - static/style.css: Styles
 - static/app.js: Frontend JavaScript (custom app code goes here)
-- static/pybot-helpers.js: Auto-generated. DO NOT overwrite — contains apiCall, dbQuery, dbWrite helpers.
+- static/pybot-helpers.js: Auto-generated. DO NOT overwrite — contains all agent helpers.
 - api.py: Backend API handler (receives 'action' and 'payload' variables, set 'result' to return data)
 
-JS helpers available in app.js (defined in pybot-helpers.js, loaded automatically):
-- apiCall(endpoint, options) — call any main API endpoint
-  (e.g. apiCall('/api/apps/excel_analyzer/api', {method:'POST', body:...}))
-- dbQuery(sql) — run SELECT on shared DB
-- dbWrite(sql, params) — run INSERT/UPDATE/DELETE on shared DB
+Agent-driven JS helpers (all in pybot-helpers.js):
+- agentChat(message, onChunk): Stream AI conversation. onChunk(chunk, full) for real-time display.
+- agentRunWorkflow(name, vars): Trigger a workflow and get results.
+- agentKnowledgeQuery(query, collection, topK): Search the knowledge base.
+- agentSearch(query): Global search across tools, agents, workflows.
+- agentCallTool(toolName, args): Call any registered tool directly.
+- apiCall(endpoint, options): Call any API endpoint.
+- dbQuery(sql): Run SELECT on shared DB.
+- dbWrite(sql, params): Run INSERT/UPDATE/DELETE on shared DB.
 
 IMPORTANT: When overwriting index.html, always keep the pybot-helpers.js script tag.
 For api.py backend, you have access to: action (str), payload (dict), DB_PATH (str), result (set this to return).

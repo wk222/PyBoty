@@ -1,4 +1,4 @@
-import { ref, onMounted } from 'vue';
+import { ref, reactive, onMounted } from 'vue';
 import { API } from '/static/api/index.js';
 import { toast } from '/static/stores/global.js';
 
@@ -12,7 +12,7 @@ function formatBytes(b) {
 export default {
   name: 'SettingsView',
   setup() {
-    const tab = ref('workspace');
+    const tab = ref('llm');
     const workspaceFiles = ref([]);
     const schedTasks = ref([]);
     const memory = ref('');
@@ -26,6 +26,72 @@ export default {
     const envPkgInput = ref('');
     const envCode = ref('');
     const envOutput = ref('');
+
+    const llmConfig = reactive({
+      provider: '', api_key: '', api_base: '', model: '', temperature: 0.7,
+    });
+    const llmFallback = ref([]);
+    const obsConfig = reactive({ backend: 'none', langfuse_public_key: '', langfuse_secret_key: '', langfuse_host: '', log_level: 'INFO' });
+    const ragConfig = reactive({ enabled: false, backend: 'chroma', embedding_model: '', chunk_size: 1000, chunk_overlap: 200 });
+    const providers = ref({});
+    const llmTesting = ref(false);
+    const llmTestResult = ref(null);
+    const llmSaving = ref(false);
+
+    async function loadLlmConfig() {
+      try {
+        const data = await API.getLlmConfig();
+        if (data.llm_config) {
+          Object.assign(llmConfig, data.llm_config);
+        }
+        if (data.llm_fallback) llmFallback.value = data.llm_fallback;
+        if (data.observability) Object.assign(obsConfig, data.observability);
+        if (data.rag_config) Object.assign(ragConfig, data.rag_config);
+      } catch (e) { toast('Failed to load LLM config', 'error'); }
+      try {
+        const p = await API.getProviders();
+        providers.value = p.providers || {};
+      } catch (_) {}
+    }
+
+    async function saveLlmConfig() {
+      llmSaving.value = true;
+      try {
+        const payload = {
+          llm_config: { ...llmConfig },
+          observability: { ...obsConfig },
+          rag_config: { ...ragConfig },
+        };
+        if (llmFallback.value.length > 0) payload.llm_fallback = llmFallback.value;
+        await API.updateLlmConfig(payload);
+        toast('Configuration saved', 'success');
+      } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+      llmSaving.value = false;
+    }
+
+    async function testConnection() {
+      llmTesting.value = true;
+      llmTestResult.value = null;
+      try {
+        const result = await API.testLlmConnection({
+          provider: llmConfig.provider,
+          api_key: llmConfig.api_key,
+          api_base: llmConfig.api_base,
+          model: llmConfig.model,
+        });
+        llmTestResult.value = result;
+      } catch (e) {
+        llmTestResult.value = { success: false, error: e.message };
+      }
+      llmTesting.value = false;
+    }
+
+    function addFallback() {
+      llmFallback.value.push({ provider: '', model: '', api_key: '', api_base: '' });
+    }
+    function removeFallback(idx) {
+      llmFallback.value.splice(idx, 1);
+    }
 
     async function loadWorkspace() {
       try {
@@ -155,19 +221,23 @@ export default {
 
     function switchTab(t) {
       tab.value = t;
+      if (t === 'llm') loadLlmConfig();
       if (t === 'workspace') { loadWorkspace(); loadUploads(); }
       if (t === 'schedule') loadSchedule();
       if (t === 'memory') loadMemory();
       if (t === 'uv') loadUvEnvs();
     }
 
-    onMounted(() => { loadWorkspace(); loadUploads(); });
+    onMounted(() => { loadLlmConfig(); });
 
     return {
       tab, workspaceFiles, schedTasks, memory, uvEnvs, uploads,
       editFile, editContent, showEditor, envDetail, envPkgInput, envCode, envOutput,
+      llmConfig, llmFallback, obsConfig, ragConfig, providers,
+      llmTesting, llmTestResult, llmSaving,
       switchTab, openFile, saveFile, toggleSched, deleteSched,
       showEnv, createEnv, deleteEnv, installPkg, uninstallPkg, runCode,
+      saveLlmConfig, testConnection, addFallback, removeFallback, loadLlmConfig,
       formatBytes,
     };
   },
@@ -178,10 +248,154 @@ export default {
       </div>
 
       <div class="mx-tabs">
+        <button class="mx-tab" :class="{ active: tab==='llm' }" @click="switchTab('llm')">LLM Config</button>
         <button class="mx-tab" :class="{ active: tab==='workspace' }" @click="switchTab('workspace')">Workspace</button>
         <button class="mx-tab" :class="{ active: tab==='schedule' }" @click="switchTab('schedule')">Schedule</button>
         <button class="mx-tab" :class="{ active: tab==='memory' }" @click="switchTab('memory')">Memory</button>
         <button class="mx-tab" :class="{ active: tab==='uv' }" @click="switchTab('uv')">UV Envs</button>
+      </div>
+
+      <!-- LLM Config Tab -->
+      <div v-if="tab==='llm'">
+        <div class="mx-section">
+          <h2 class="mx-section-title">Primary LLM</h2>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div>
+              <label class="mx-label">Provider</label>
+              <select v-model="llmConfig.provider" class="mx-input">
+                <option value="">Auto-detect</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="google_genai">Google GenAI</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="ollama">Ollama (Local)</option>
+                <option value="azure">Azure OpenAI</option>
+              </select>
+            </div>
+            <div>
+              <label class="mx-label">Model</label>
+              <input v-model="llmConfig.model" class="mx-input" placeholder="gpt-4, claude-3-opus, gemini-pro..." />
+            </div>
+            <div>
+              <label class="mx-label">API Key</label>
+              <input v-model="llmConfig.api_key" class="mx-input" type="password" placeholder="sk-..." autocomplete="off" />
+            </div>
+            <div>
+              <label class="mx-label">API Base URL (optional)</label>
+              <input v-model="llmConfig.api_base" class="mx-input" placeholder="https://api.openai.com/v1" />
+            </div>
+            <div>
+              <label class="mx-label">Temperature</label>
+              <input v-model.number="llmConfig.temperature" class="mx-input" type="number" min="0" max="2" step="0.1" />
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:16px;">
+            <button class="mx-btn mx-btn--primary" @click="saveLlmConfig" :disabled="llmSaving">
+              {{ llmSaving ? 'Saving...' : 'Save Configuration' }}
+            </button>
+            <button class="mx-btn mx-btn--ghost" @click="testConnection" :disabled="llmTesting">
+              {{ llmTesting ? 'Testing...' : 'Test Connection' }}
+            </button>
+          </div>
+          <div v-if="llmTestResult" style="margin-top:12px;padding:10px;border-radius:var(--radius-sm);"
+               :style="{ background: llmTestResult.success ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', border: '1px solid ' + (llmTestResult.success ? 'var(--success)' : 'var(--error)') }">
+            <div v-if="llmTestResult.success" style="color:var(--success);font-weight:600;">Connection OK</div>
+            <div v-else style="color:var(--error);font-weight:600;">Connection Failed: {{ llmTestResult.error }}</div>
+            <div v-if="llmTestResult.response_preview" style="font-size:11px;color:var(--text-muted);margin-top:4px;">
+              {{ llmTestResult.response_preview }}
+            </div>
+          </div>
+        </div>
+
+        <div class="mx-section">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <h2 class="mx-section-title" style="margin:0;">Fallback Models</h2>
+            <button class="mx-btn mx-btn--ghost mx-btn--sm" @click="addFallback">+ Add Fallback</button>
+          </div>
+          <div v-if="llmFallback.length === 0" class="mx-text-muted" style="padding:8px 0;font-size:12px;">
+            No fallback models configured. Primary model failure will not auto-recover.
+          </div>
+          <div v-for="(fb, idx) in llmFallback" :key="idx" style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+            <input v-model="fb.provider" class="mx-input" style="width:120px;" placeholder="provider" />
+            <input v-model="fb.model" class="mx-input" style="flex:1;" placeholder="model name" />
+            <input v-model="fb.api_key" class="mx-input" style="width:140px;" type="password" placeholder="api_key (optional)" />
+            <button class="mx-btn-icon mx-btn-icon--danger" @click="removeFallback(idx)">&times;</button>
+          </div>
+        </div>
+
+        <div class="mx-section">
+          <h2 class="mx-section-title">Observability</h2>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div>
+              <label class="mx-label">Backend</label>
+              <select v-model="obsConfig.backend" class="mx-input">
+                <option value="none">None</option>
+                <option value="langfuse">LangFuse</option>
+                <option value="langsmith">LangSmith</option>
+              </select>
+            </div>
+            <div>
+              <label class="mx-label">Log Level</label>
+              <select v-model="obsConfig.log_level" class="mx-input">
+                <option value="DEBUG">DEBUG</option>
+                <option value="INFO">INFO</option>
+                <option value="WARNING">WARNING</option>
+                <option value="ERROR">ERROR</option>
+              </select>
+            </div>
+            <div v-if="obsConfig.backend === 'langfuse'">
+              <label class="mx-label">LangFuse Public Key</label>
+              <input v-model="obsConfig.langfuse_public_key" class="mx-input" placeholder="pk-lf-..." />
+            </div>
+            <div v-if="obsConfig.backend === 'langfuse'">
+              <label class="mx-label">LangFuse Secret Key</label>
+              <input v-model="obsConfig.langfuse_secret_key" class="mx-input" type="password" placeholder="sk-lf-..." />
+            </div>
+            <div v-if="obsConfig.backend === 'langfuse'" style="grid-column: 1 / -1;">
+              <label class="mx-label">LangFuse Host</label>
+              <input v-model="obsConfig.langfuse_host" class="mx-input" placeholder="https://cloud.langfuse.com" />
+            </div>
+          </div>
+        </div>
+
+        <div class="mx-section">
+          <h2 class="mx-section-title">RAG / Knowledge Base</h2>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div>
+              <label class="mx-label">Enabled</label>
+              <label class="toggle-switch">
+                <input type="checkbox" v-model="ragConfig.enabled" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div>
+              <label class="mx-label">Backend</label>
+              <select v-model="ragConfig.backend" class="mx-input" :disabled="!ragConfig.enabled">
+                <option value="chroma">ChromaDB</option>
+                <option value="memory">In-Memory</option>
+              </select>
+            </div>
+            <div>
+              <label class="mx-label">Embedding Model</label>
+              <input v-model="ragConfig.embedding_model" class="mx-input" placeholder="Auto-detect" :disabled="!ragConfig.enabled" />
+            </div>
+            <div>
+              <label class="mx-label">Chunk Size</label>
+              <input v-model.number="ragConfig.chunk_size" class="mx-input" type="number" :disabled="!ragConfig.enabled" />
+            </div>
+          </div>
+        </div>
+
+        <div class="mx-section">
+          <h2 class="mx-section-title">Provider Status</h2>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            <span v-for="(installed, name) in providers" :key="name"
+                  class="mx-tag" :style="{ background: installed ? 'rgba(16,185,129,0.1)' : 'rgba(107,114,128,0.1)', color: installed ? 'var(--success)' : 'var(--text-muted)', border: '1px solid ' + (installed ? 'var(--success)' : 'var(--border)') }">
+              {{ installed ? '\u2713' : '\u2717' }} {{ name }}
+            </span>
+          </div>
+        </div>
       </div>
 
       <!-- Workspace Tab -->

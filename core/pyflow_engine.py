@@ -100,3 +100,20 @@ class PyFlowEngine:
 
     def get_workflow_definition(self, workflow_id: str) -> dict:
         return self.lifecycle_runtime.get_workflow_definition(workflow_id)
+
+    # --- Version Control ---
+
+    def publish_workflow(self, workflow_id: str, commit_id: str | None = None) -> dict[str, Any]:
+        return self.lifecycle_runtime.publish_workflow(workflow_id, commit_id)
+
+    def get_workflow_history(self, workflow_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        return self.lifecycle_runtime.get_workflow_history(workflow_id, limit)
+
+    def get_workflow_version(self, workflow_id: str, commit_id: str) -> dict[str, Any] | None:
+        return self.lifecycle_runtime.get_workflow_version(workflow_id, commit_id)
+
+    def rollback_workflow(self, workflow_id: str, commit_id: str) -> dict[str, Any]:
+        return self.lifecycle_runtime.rollback_workflow(workflow_id, commit_id)
+
+    def get_workflow_meta(self, workflow_id: str) -> dict[str, Any]:
+        return self.lifecycle_runtime.get_workflow_meta(workflow_id)

@@ -49,6 +49,12 @@ class NodeStatus(str, Enum):
     WAITING = "waiting"
 
 
+class OnErrorStrategy(str, Enum):
+    STOP_WORKFLOW = "stop_workflow"
+    CONTINUE_REGULAR = "continue_regular"
+    CONTINUE_ERROR = "continue_error"
+
+
 class EdgeState(str, Enum):
     UNKNOWN = "unknown"
     TAKEN = "taken"
@@ -78,6 +84,11 @@ class FlowNode:
     position: dict[str, float] = field(default_factory=lambda: {"x": 0, "y": 0})
     retry_count: int = 0
     skip_condition: str | None = None
+    on_error: OnErrorStrategy = OnErrorStrategy.STOP_WORKFLOW
+    max_retries: int = 0
+    retry_delay: float = 1.0
+    max_retry_delay: float = 60.0
+    error_output: Any = None
 
     def to_dict(self) -> dict[str, Any]:
         d = {
@@ -95,6 +106,14 @@ class FlowNode:
         }
         if self.skip_condition:
             d["skip_condition"] = self.skip_condition
+        if self.on_error != OnErrorStrategy.STOP_WORKFLOW:
+            d["on_error"] = self.on_error.value
+        if self.max_retries > 0:
+            d["max_retries"] = self.max_retries
+            d["retry_delay"] = self.retry_delay
+            d["max_retry_delay"] = self.max_retry_delay
+        if self.error_output is not None:
+            d["error_output"] = self.error_output
         return d
 
 
@@ -107,6 +126,10 @@ class FlowEdge:
     label: str = ""
     source_handle: str = "source"
     state: EdgeState = EdgeState.UNKNOWN
+
+    @property
+    def is_error_edge(self) -> bool:
+        return self.source_handle == "error"
 
     def to_dict(self) -> dict[str, Any]:
         return {

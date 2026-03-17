@@ -409,6 +409,97 @@ async def get_provider_status() -> dict[str, object]:
         return {"providers": {}, "error": str(exc)}
 
 
+# --- LLM Config endpoints ---
+
+
+@router.get("/api/config/llm")
+async def get_llm_config_api() -> dict[str, object]:
+    """Get current LLM configuration."""
+    try:
+        from core.config import get_llm_config, get_llm_fallback_config, get_observability_config, get_rag_config
+
+        llm = get_llm_config()
+        safe_llm = {**llm}
+        if safe_llm.get("api_key"):
+            key = str(safe_llm["api_key"])
+            safe_llm["api_key"] = key[:8] + "..." + key[-4:] if len(key) > 12 else "***"
+        return {
+            "llm_config": safe_llm,
+            "llm_fallback": get_llm_fallback_config(),
+            "observability": get_observability_config(),
+            "rag_config": get_rag_config(),
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+@router.put("/api/config/llm")
+async def update_llm_config_api(request: Request) -> dict[str, object]:
+    """Update LLM configuration. Merges with existing config."""
+    try:
+        from core.config import get_config, save_config
+
+        body = await request.json()
+        current = get_config()
+
+        if "llm_config" in body:
+            updates = body["llm_config"]
+            if updates.get("api_key") and "..." in str(updates["api_key"]):
+                updates.pop("api_key")
+            current.setdefault("llm_config", {}).update(updates)
+
+        if "llm_fallback" in body:
+            current["llm_fallback"] = body["llm_fallback"]
+
+        if "observability" in body:
+            current.setdefault("observability", {}).update(body["observability"])
+
+        if "rag_config" in body:
+            current.setdefault("rag_config", {}).update(body["rag_config"])
+
+        save_config(current)
+        return {"success": True, "message": "Configuration saved. Restart may be needed for some changes."}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+@router.post("/api/config/llm/test")
+async def test_llm_connection(request: Request) -> dict[str, object]:
+    """Test LLM connection with current or provided config."""
+    try:
+        body = await request.json()
+        provider = body.get("provider", "openai")
+        api_key = body.get("api_key", "")
+        api_base = body.get("api_base", "")
+        model = body.get("model", "gpt-4")
+
+        if not api_key or "..." in api_key:
+            from core.config import get_llm_config
+            cfg = get_llm_config()
+            api_key = api_key if (api_key and "..." not in api_key) else cfg.get("api_key", "")
+            if not api_base:
+                api_base = cfg.get("api_base", "")
+
+        from core.model_resolver import resolve_chat_model
+        llm = resolve_chat_model(
+            model_name=model,
+            provider=provider,
+            api_key=api_key,
+            api_base=api_base or None,
+            temperature=0.1,
+        )
+        result = llm.invoke("Reply with exactly: CONNECTION_OK")
+        content = result.content if hasattr(result, "content") else str(result)
+        return {
+            "success": True,
+            "response_preview": content[:200],
+            "model": model,
+            "provider": provider,
+        }
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
 # --- Feedback / Training endpoints ---
 
 _feedback_store = None

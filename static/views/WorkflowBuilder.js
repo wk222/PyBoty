@@ -328,13 +328,97 @@ export default {
       finally { saving.value = false; }
     }
 
+    const showHistory = ref(false);
+    const runHistory = ref([]);
+    const running = ref(false);
+
+    const showVersions = ref(false);
+    const versionList = ref([]);
+    const versionMeta = ref({});
+    const loadingVersions = ref(false);
+
     async function runWorkflow() {
       const name = workflowName.value.trim();
       if (!name) { toast('Save the workflow first', 'warning'); return; }
+      running.value = true;
       try {
         await API.triggerWorkflow(name, {});
         toast('Workflow triggered!', 'success');
+        await loadHistory();
       } catch (e) { toast('Trigger failed: ' + e.message, 'error'); }
+      finally { running.value = false; }
+    }
+
+    async function loadHistory() {
+      const name = workflowName.value.trim();
+      if (!name) return;
+      try {
+        const data = await API.getWorkflowRuns(name);
+        runHistory.value = (data.runs || []).slice(0, 20);
+      } catch (_) { runHistory.value = []; }
+    }
+
+    function toggleHistory() {
+      showHistory.value = !showHistory.value;
+      if (showHistory.value) loadHistory();
+    }
+
+    function formatDuration(sec) {
+      if (!sec || sec < 0.01) return '<0.01s';
+      if (sec < 1) return sec.toFixed(2) + 's';
+      if (sec < 60) return sec.toFixed(1) + 's';
+      return Math.floor(sec / 60) + 'm ' + Math.round(sec % 60) + 's';
+    }
+
+    function formatTime(ts) {
+      if (!ts) return '';
+      return new Date(ts * 1000).toLocaleString();
+    }
+
+    function statusColor(s) {
+      const map = { completed: '#10b981', failed: '#ef4444', error: '#ef4444', running: '#6366f1', waiting_approval: '#f59e0b' };
+      return map[s] || '#6b7280';
+    }
+
+    async function loadVersions() {
+      const name = workflowName.value.trim();
+      if (!name) return;
+      loadingVersions.value = true;
+      try {
+        const data = await API.getWorkflowVersions(name);
+        versionList.value = data.commits || [];
+        versionMeta.value = data;
+      } catch (_) { versionList.value = []; }
+      finally { loadingVersions.value = false; }
+    }
+
+    function toggleVersions() {
+      showVersions.value = !showVersions.value;
+      if (showVersions.value) {
+        showHistory.value = false;
+        loadVersions();
+      }
+    }
+
+    async function publishWorkflow() {
+      const name = workflowName.value.trim();
+      if (!name) return;
+      try {
+        await API.publishWorkflow(name);
+        toast('Workflow published!', 'success');
+        await loadVersions();
+      } catch (e) { toast('Publish failed: ' + e.message, 'error'); }
+    }
+
+    async function rollbackToVersion(commitId) {
+      const name = workflowName.value.trim();
+      if (!name) return;
+      try {
+        await API.rollbackWorkflow(name, commitId);
+        toast('Rolled back to ' + commitId, 'success');
+        await loadWorkflow(name);
+        await loadVersions();
+      } catch (e) { toast('Rollback failed: ' + e.message, 'error'); }
     }
 
     function goBack() {
@@ -343,10 +427,13 @@ export default {
 
     return {
       workflowName, isNew, selectedNode, saving, showYaml, yamlPreview,
-      initialNodes, initialEdges,
+      initialNodes, initialEdges, showHistory, runHistory, running,
+      showVersions, versionList, versionMeta, loadingVersions,
       onDropNode, onAddNodeFromPalette, onNodeClick, onPaneClick, onConnect,
       onUpdateNode, onDeleteNode,
       toggleYaml, refreshYaml, saveWorkflow, runWorkflow, goBack,
+      toggleHistory, toggleVersions, publishWorkflow, rollbackToVersion,
+      formatDuration, formatTime, statusColor,
       FLOW_ID,
     };
   },
@@ -356,7 +443,6 @@ export default {
         <div class="wb-toolbar-left">
           <button class="mx-btn mx-btn--ghost mx-btn--sm" @click="goBack" title="Back to list">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-            Back
           </button>
           <span class="wb-toolbar-sep"></span>
           <input
@@ -367,10 +453,26 @@ export default {
           />
         </div>
         <div class="wb-toolbar-right">
-          <button class="mx-btn mx-btn--ghost mx-btn--sm" @click="toggleYaml">
-            {{ showYaml ? 'Hide YAML' : 'YAML' }}
+          <button class="mx-btn mx-btn--ghost mx-btn--sm" @click="toggleHistory" :class="{ 'mx-btn--active': showHistory }">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Runs
           </button>
-          <button class="mx-btn mx-btn--ghost mx-btn--sm" @click="runWorkflow">Run</button>
+          <button class="mx-btn mx-btn--ghost mx-btn--sm" @click="toggleVersions" :class="{ 'mx-btn--active': showVersions }">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M6 20V4M18 20V16"/></svg>
+            Versions
+          </button>
+          <button v-if="!isNew" class="mx-btn mx-btn--ghost mx-btn--sm" @click="publishWorkflow" title="Publish current draft">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+            Publish
+          </button>
+          <button class="mx-btn mx-btn--ghost mx-btn--sm" @click="toggleYaml">
+            {{ showYaml ? 'Hide Code' : 'Code' }}
+          </button>
+          <span class="wb-toolbar-sep"></span>
+          <button class="mx-btn mx-btn--ghost mx-btn--sm wb-btn-run" @click="runWorkflow" :disabled="running">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            {{ running ? 'Running...' : 'Test Run' }}
+          </button>
           <button class="mx-btn mx-btn--primary mx-btn--sm" @click="saveWorkflow" :disabled="saving">
             {{ saving ? 'Saving...' : 'Save' }}
           </button>
@@ -396,7 +498,53 @@ export default {
             <textarea class="wb-yaml-editor" :value="yamlPreview" readonly spellcheck="false"></textarea>
           </div>
         </div>
+        <div v-if="showHistory" class="wb-history-panel">
+          <div class="wb-history-header">
+            <span>Execution History</span>
+            <button class="wb-config-close" @click="showHistory = false">&times;</button>
+          </div>
+          <div class="wb-history-list">
+            <div v-if="runHistory.length === 0" class="wb-palette-empty">No execution history</div>
+            <div v-for="run in runHistory" :key="run.run_id" class="wb-history-item">
+              <div class="wb-history-item-status">
+                <span class="wb-history-dot" :style="{ background: statusColor(run.status) }"></span>
+                <span class="wb-history-item-id">{{ run.run_id }}</span>
+              </div>
+              <div class="wb-history-item-meta">
+                <span>{{ formatDuration(run.elapsed_time) }}</span>
+                <span style="color:var(--text-muted)">{{ run.completed_nodes || 0 }}/{{ run.total_nodes || 0 }} nodes</span>
+              </div>
+              <div class="wb-history-item-time">{{ formatTime(run.created_at) }}</div>
+              <div v-if="run.error" class="wb-history-item-error">{{ run.error }}</div>
+            </div>
+          </div>
+        </div>
+        <div v-if="showVersions" class="wb-history-panel">
+          <div class="wb-history-header">
+            <span>Version History</span>
+            <button class="wb-config-close" @click="showVersions = false">&times;</button>
+          </div>
+          <div v-if="versionMeta.draft_commit_id || versionMeta.published_commit_id" style="padding:8px 12px;font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border);">
+            <div v-if="versionMeta.draft_commit_id">Draft: <code style="color:var(--accent);">{{ versionMeta.draft_commit_id }}</code></div>
+            <div v-if="versionMeta.published_commit_id">Published: <code style="color:#10b981;">{{ versionMeta.published_commit_id }}</code></div>
+          </div>
+          <div class="wb-history-list">
+            <div v-if="loadingVersions" class="wb-palette-empty">Loading...</div>
+            <div v-else-if="versionList.length === 0" class="wb-palette-empty">No version history</div>
+            <div v-for="v in versionList" :key="v.commit_id" class="wb-history-item" style="cursor:pointer;" @click="rollbackToVersion(v.commit_id)">
+              <div class="wb-history-item-status">
+                <span class="wb-history-dot" :style="{ background: v.is_published ? '#10b981' : v.is_draft ? '#6366f1' : '#6b7280' }"></span>
+                <code class="wb-history-item-id">{{ v.commit_id }}</code>
+                <span v-if="v.is_published" style="font-size:9px;background:rgba(16,185,129,0.15);color:#10b981;padding:1px 5px;border-radius:4px;margin-left:4px;">published</span>
+                <span v-if="v.is_draft" style="font-size:9px;background:rgba(99,102,241,0.15);color:#6366f1;padding:1px 5px;border-radius:4px;margin-left:4px;">draft</span>
+              </div>
+              <div class="wb-history-item-meta">{{ v.message || '' }}</div>
+              <div class="wb-history-item-time">{{ formatTime(v.timestamp) }}</div>
+            </div>
+          </div>
+        </div>
         <NodeConfigPanel
+          v-if="!showHistory"
           :node="selectedNode"
           @update-node="onUpdateNode"
           @delete-node="onDeleteNode"

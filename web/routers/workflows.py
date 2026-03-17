@@ -436,6 +436,89 @@ async def api_resolve_approval(
         return {"error": str(exc)}
 
 
+# --- Workflow Version Control ---
+
+
+class WorkflowPublishRequest(BaseModel):
+    commit_id: str | None = None
+
+
+class WorkflowRollbackRequest(BaseModel):
+    commit_id: str
+
+
+@router.get("/api/workflows/{workflow_id}/versions")
+async def api_workflow_versions(
+    workflow_id: str,
+    limit: int = 20,
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> dict[str, object]:
+    try:
+        engine = _require_agent(services).pyflow_engine
+        history = engine.get_workflow_history(workflow_id, limit=limit)
+        meta = engine.get_workflow_meta(workflow_id)
+        return {
+            "workflow_id": workflow_id,
+            "draft_commit_id": meta.get("draft_commit_id"),
+            "published_commit_id": meta.get("published_commit_id"),
+            "commits": history,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+@router.get("/api/workflows/{workflow_id}/versions/{commit_id}")
+async def api_workflow_version_detail(
+    workflow_id: str,
+    commit_id: str,
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> dict[str, object]:
+    try:
+        engine = _require_agent(services).pyflow_engine
+        version = engine.get_workflow_version(workflow_id, commit_id)
+        if not version:
+            raise HTTPException(status_code=404, detail="Version not found")
+        return version
+    except HTTPException:
+        raise
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+@router.post("/api/workflows/{workflow_id}/publish")
+async def api_publish_workflow(
+    workflow_id: str,
+    req: WorkflowPublishRequest,
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> dict[str, object]:
+    try:
+        engine = _require_agent(services).pyflow_engine
+        result = engine.publish_workflow(workflow_id, req.commit_id)
+        return {"success": True, **result}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+@router.post("/api/workflows/{workflow_id}/rollback")
+async def api_rollback_workflow(
+    workflow_id: str,
+    req: WorkflowRollbackRequest,
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> dict[str, object]:
+    try:
+        engine = _require_agent(services).pyflow_engine
+        result = engine.rollback_workflow(workflow_id, req.commit_id)
+        return {"success": True, "draft_commit_id": result.get("draft_commit_id")}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
 @router.get("/api/search")
 async def api_global_search(
     q: str = "",

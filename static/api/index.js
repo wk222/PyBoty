@@ -72,6 +72,14 @@ export const API = {
     method: 'PUT', body: JSON.stringify({ name: id, spec_content: specContent })
   }),
   deleteWorkflow: (id) => request(`/api/workflows/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  getWorkflowVersions: (id, limit = 20) => request(`/api/workflows/${encodeURIComponent(id)}/versions?limit=${limit}`),
+  getWorkflowVersion: (id, commitId) => request(`/api/workflows/${encodeURIComponent(id)}/versions/${commitId}`),
+  publishWorkflow: (id, commitId) => request(`/api/workflows/${encodeURIComponent(id)}/publish`, {
+    method: 'POST', body: JSON.stringify({ commit_id: commitId || null })
+  }),
+  rollbackWorkflow: (id, commitId) => request(`/api/workflows/${encodeURIComponent(id)}/rollback`, {
+    method: 'POST', body: JSON.stringify({ commit_id: commitId })
+  }),
   triggerWorkflow: (name, vars) => request('/api/workflows/trigger', {
     method: 'POST', body: JSON.stringify({ name, input_vars: vars || {} })
   }),
@@ -139,6 +147,15 @@ export const API = {
   updateSkillFile: (skill, path, content) => request(`/api/skills/${encodeURIComponent(skill)}/files/${path}`, {
     method: 'PUT', body: JSON.stringify({ content })
   }),
+
+  getLlmConfig: () => request('/api/config/llm'),
+  updateLlmConfig: (data) => request('/api/config/llm', {
+    method: 'PUT', body: JSON.stringify(data)
+  }),
+  testLlmConnection: (data) => request('/api/config/llm/test', {
+    method: 'POST', body: JSON.stringify(data)
+  }),
+  getProviders: () => request('/api/debug/providers'),
 
   globalSearch: (q) => request(`/api/search?q=${encodeURIComponent(q)}`),
 

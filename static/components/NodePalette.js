@@ -40,7 +40,24 @@ const NODE_COLORS = {
   parameter_extractor: '#fbbf24',
 };
 
-export { NODE_COLORS, NODE_LABELS };
+const NODE_ICONS = {
+  start: '\u25B6', end: '\u25A0',
+  exec: '\u2699', tool: '\u2692', tool_call: '\u2692',
+  llm: '\u2728', llm_call: '\u2728',
+  agent: '\u{1F916}', debate: '\u2694', consensus: '\u{1F91D}', supervisor: '\u{1F451}',
+  code: '\u{1F4BB}',
+  approve: '\u2714', wait_input: '\u2714',
+  condition: '\u2747', router: '\u2B95',
+  parallel: '\u2261', foreach: '\u21BB', iteration: '\u21BB',
+  subflow: '\u25C7', sub_workflow: '\u25C7',
+  transform: '\u21C4', merge: '\u222A',
+  delay: '\u23F1',
+  http_request: '\u{1F310}', question_classifier: '\u{1F3AF}',
+  variable_assigner: '\u{1F4DD}', list_operator: '\u{1F4CB}',
+  parameter_extractor: '\u{1F50D}',
+};
+
+export { NODE_COLORS, NODE_LABELS, NODE_ICONS };
 
 export default {
   name: 'NodePalette',
@@ -107,7 +124,11 @@ export default {
       return NODE_LABELS[type] || type;
     }
 
-    return { grouped, searchQuery, collapsedCategories, onDragStart, onClickAdd, toggleCategory, catMeta, nodeColor, nodeLabel };
+    function nodeIcon(type) {
+      return NODE_ICONS[type] || '\u25C6';
+    }
+
+    return { grouped, searchQuery, collapsedCategories, onDragStart, onClickAdd, toggleCategory, catMeta, nodeColor, nodeLabel, nodeIcon };
   },
   template: `
     <div class="wb-palette">
@@ -123,7 +144,7 @@ export default {
             <span class="wb-palette-group-icon">{{ catMeta(cat).icon }}</span>
             <span class="wb-palette-group-label">{{ catMeta(cat).label }}</span>
             <span class="wb-palette-group-count">{{ items.length }}</span>
-            <span class="wb-palette-group-chevron" :class="{ collapsed: collapsedCategories[cat] }">▾</span>
+            <span class="wb-palette-group-chevron" :class="{ collapsed: collapsedCategories[cat] }">&#x25BE;</span>
           </div>
           <div v-show="!collapsedCategories[cat]" class="wb-palette-group-items">
             <div
@@ -134,7 +155,7 @@ export default {
               @click="onClickAdd(nt)"
               :title="'Drag or click to add: ' + (nt.type)"
             >
-              <span class="wb-palette-item-dot" :style="{ background: nodeColor(nt.type) }"></span>
+              <span class="wb-palette-item-icon" :style="{ background: nodeColor(nt.type) }">{{ nodeIcon(nt.type) }}</span>
               <span class="wb-palette-item-label">{{ nodeLabel(nt.type) }}</span>
               <span v-if="nt.is_branch" class="wb-palette-item-badge">branch</span>
             </div>

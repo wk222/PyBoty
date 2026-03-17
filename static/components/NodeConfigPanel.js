@@ -151,7 +151,13 @@ export default {
       emit('close');
     }
 
-    return { localConfig, fields, updateField, updateLabel, deleteNode, close };
+    const isActionNode = computed(() => {
+      if (!props.node) return false;
+      const t = props.node.data?.nodeType;
+      return t && !['start', 'end'].includes(t);
+    });
+
+    return { localConfig, fields, updateField, updateLabel, deleteNode, close, isActionNode };
   },
   template: `
     <div class="wb-config-panel" v-if="node">
@@ -213,6 +219,47 @@ export default {
             spellcheck="false"
           ></textarea>
         </div>
+
+        <template v-if="isActionNode">
+          <hr class="wb-config-divider" />
+          <div class="wb-config-section-label">Error Handling</div>
+          <div class="wb-config-field">
+            <label class="wb-config-label">On Error</label>
+            <select
+              class="mx-input mx-input--sm"
+              :value="localConfig.on_error || 'stop_workflow'"
+              @change="updateField('on_error', $event.target.value)"
+            >
+              <option value="stop_workflow">Stop Workflow</option>
+              <option value="continue_regular">Continue (as Success)</option>
+              <option value="continue_error">Continue (Error Output)</option>
+            </select>
+          </div>
+          <div class="wb-config-field">
+            <label class="wb-config-label">Max Retries</label>
+            <input
+              class="mx-input mx-input--sm" type="number" min="0" max="10"
+              :value="localConfig.max_retries ?? 0"
+              @input="updateField('max_retries', parseInt($event.target.value) || 0)"
+            />
+          </div>
+          <div v-if="(localConfig.max_retries || 0) > 0" class="wb-config-field">
+            <label class="wb-config-label">Retry Delay (sec)</label>
+            <input
+              class="mx-input mx-input--sm" type="number" min="0" step="0.5"
+              :value="localConfig.retry_delay ?? 1"
+              @input="updateField('retry_delay', parseFloat($event.target.value) || 1)"
+            />
+          </div>
+          <div v-if="(localConfig.max_retries || 0) > 0" class="wb-config-field">
+            <label class="wb-config-label">Max Retry Delay (sec)</label>
+            <input
+              class="mx-input mx-input--sm" type="number" min="1" step="1"
+              :value="localConfig.max_retry_delay ?? 60"
+              @input="updateField('max_retry_delay', parseFloat($event.target.value) || 60)"
+            />
+          </div>
+        </template>
       </div>
       <div class="wb-config-footer">
         <button class="mx-btn mx-btn--sm" style="color:var(--error)" @click="deleteNode">Delete Node</button>

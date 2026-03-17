@@ -76,3 +76,24 @@ class WorkflowLifecycleRuntime:
 
     def get_workflow_definition(self, workflow_id: str) -> dict[str, Any]:
         return self._storage.get_workflow_definition(workflow_id)
+
+    # --- Version Control ---
+
+    def publish_workflow(self, workflow_id: str, commit_id: str | None = None) -> dict[str, Any]:
+        return self._storage.versions.publish(workflow_id, commit_id)
+
+    def get_workflow_history(self, workflow_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        return self._storage.versions.list_history(workflow_id, limit)
+
+    def get_workflow_version(self, workflow_id: str, commit_id: str) -> dict[str, Any] | None:
+        return self._storage.versions.get_version(workflow_id, commit_id)
+
+    def rollback_workflow(self, workflow_id: str, commit_id: str) -> dict[str, Any]:
+        result = self._storage.versions.rollback(workflow_id, commit_id)
+        definition = result.get("definition")
+        if definition:
+            self._storage.update_workflow_definition(workflow_id, definition)
+        return result
+
+    def get_workflow_meta(self, workflow_id: str) -> dict[str, Any]:
+        return self._storage.versions.get_meta(workflow_id)

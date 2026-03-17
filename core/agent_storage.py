@@ -15,22 +15,159 @@ from .agent_middleware_profile import AgentMiddlewareProfile
 
 
 @dataclass
+class AgentModelConfig:
+    """LLM model settings for an agent."""
+
+    model_id: str = "gemini-3-flash-preview"
+    temperature: float = 0.7
+    max_tokens: int = 4096
+    top_p: float = 1.0
+    fallback_models: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "model_id": self.model_id,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "top_p": self.top_p,
+            "fallback_models": self.fallback_models,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> AgentModelConfig:
+        if not data:
+            return cls()
+        return cls(
+            model_id=str(data.get("model_id", data.get("model", "gemini-3-flash-preview"))),
+            temperature=float(data.get("temperature", 0.7)),
+            max_tokens=int(data.get("max_tokens", 4096)),
+            top_p=float(data.get("top_p", 1.0)),
+            fallback_models=list(data.get("fallback_models", [])),
+        )
+
+
+@dataclass
+class AgentKnowledgeConfig:
+    """Knowledge/RAG bindings for an agent."""
+
+    enabled: bool = False
+    sources: list[str] = field(default_factory=list)
+    chunk_size: int = 512
+    chunk_overlap: int = 50
+    top_k: int = 5
+    score_threshold: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "sources": self.sources,
+            "chunk_size": self.chunk_size,
+            "chunk_overlap": self.chunk_overlap,
+            "top_k": self.top_k,
+            "score_threshold": self.score_threshold,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> AgentKnowledgeConfig:
+        if not data:
+            return cls()
+        return cls(
+            enabled=bool(data.get("enabled", False)),
+            sources=list(data.get("sources", [])),
+            chunk_size=int(data.get("chunk_size", 512)),
+            chunk_overlap=int(data.get("chunk_overlap", 50)),
+            top_k=int(data.get("top_k", 5)),
+            score_threshold=float(data.get("score_threshold", 0.0)),
+        )
+
+
+@dataclass
+class AgentMemoryConfig:
+    """Memory/context window settings for an agent."""
+
+    context_mode: str = "full"
+    history_rounds: int = 20
+    strategy: str = "sliding_window"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "context_mode": self.context_mode,
+            "history_rounds": self.history_rounds,
+            "strategy": self.strategy,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> AgentMemoryConfig:
+        if not data:
+            return cls()
+        return cls(
+            context_mode=str(data.get("context_mode", "full")),
+            history_rounds=int(data.get("history_rounds", 20)),
+            strategy=str(data.get("strategy", "sliding_window")),
+        )
+
+
+@dataclass
+class AgentOnboardingInfo:
+    """Welcome/onboarding settings shown to the user on first interaction."""
+
+    prologue: str = ""
+    suggested_questions: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "prologue": self.prologue,
+            "suggested_questions": self.suggested_questions,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> AgentOnboardingInfo:
+        if not data:
+            return cls()
+        return cls(
+            prologue=str(data.get("prologue", "")),
+            suggested_questions=list(data.get("suggested_questions", [])),
+        )
+
+
+@dataclass
 class AgentDefinition:
-    """Persisted subagent definition."""
+    """Persisted subagent definition with structured resource model."""
 
     name: str
     role: str
     description: str
     system_prompt: str
     tools: list[str] = field(default_factory=list)
-    model: str = "gemini-3-flash-preview"
-    temperature: float = 0.7
+    workflows: list[str] = field(default_factory=list)
+
+    model_config_data: AgentModelConfig = field(default_factory=AgentModelConfig)
+    knowledge: AgentKnowledgeConfig = field(default_factory=AgentKnowledgeConfig)
+    memory: AgentMemoryConfig = field(default_factory=AgentMemoryConfig)
+    onboarding: AgentOnboardingInfo = field(default_factory=AgentOnboardingInfo)
+
     capabilities: list[str] = field(default_factory=list)
     capability_profile: dict[str, Any] = field(default_factory=dict)
     middleware_profile: dict[str, Any] = field(default_factory=dict)
     created_at: float = field(default_factory=time.time)
     usage_count: int = 0
     enabled: bool = True
+
+    @property
+    def model(self) -> str:
+        return self.model_config_data.model_id
+
+    @model.setter
+    def model(self, value: str) -> None:
+        self.model_config_data.model_id = value
+
+    @property
+    def temperature(self) -> float:
+        return self.model_config_data.temperature
+
+    @temperature.setter
+    def temperature(self, value: float) -> None:
+        self.model_config_data.temperature = value
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -39,8 +176,13 @@ class AgentDefinition:
             "description": self.description,
             "system_prompt": self.system_prompt,
             "tools": self.tools,
+            "workflows": self.workflows,
             "model": self.model,
             "temperature": self.temperature,
+            "model_config": self.model_config_data.to_dict(),
+            "knowledge": self.knowledge.to_dict(),
+            "memory": self.memory.to_dict(),
+            "onboarding": self.onboarding.to_dict(),
             "capabilities": self.capabilities,
             "capability_profile": self.capability_profile,
             "middleware_profile": self.middleware_profile,
@@ -51,14 +193,22 @@ class AgentDefinition:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AgentDefinition:
+        model_cfg = AgentModelConfig.from_dict(data.get("model_config"))
+        if not data.get("model_config"):
+            model_cfg.model_id = str(data.get("model", "gemini-3-flash-preview"))
+            model_cfg.temperature = float(data.get("temperature", 0.7))
+
         return cls(
             name=str(data.get("name", "")),
             role=str(data.get("role", "")),
             description=str(data.get("description", "")),
             system_prompt=str(data.get("system_prompt", "")),
             tools=list(data.get("tools", [])),
-            model=str(data.get("model", "gemini-3-flash-preview")),
-            temperature=float(data.get("temperature", 0.7)),
+            workflows=list(data.get("workflows", [])),
+            model_config_data=model_cfg,
+            knowledge=AgentKnowledgeConfig.from_dict(data.get("knowledge")),
+            memory=AgentMemoryConfig.from_dict(data.get("memory")),
+            onboarding=AgentOnboardingInfo.from_dict(data.get("onboarding")),
             capabilities=list(data.get("capabilities", [])),
             capability_profile=AgentCapabilityProfile.from_value(data.get("capability_profile")).to_dict(),
             middleware_profile=AgentMiddlewareProfile.from_value(data.get("middleware_profile")).to_dict(),

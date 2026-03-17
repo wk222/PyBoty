@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import json
+import logging
+import os
 import time
 import traceback
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from .approval_queue import ApprovalQueue
 from .workflow_delegation_runtime import WorkflowDelegationRuntime
+
+logger = logging.getLogger(__name__)
 from .workflow_models import (
     BRANCH_NODE_TYPES,
     FlowEdge,
@@ -16,6 +22,7 @@ from .workflow_models import (
     NodeExecutionRecord,
     NodeStatus,
     NodeType,
+    OnErrorStrategy,
     WorkflowDef,
     WorkflowRunRecord,
     WorkflowStatus,
@@ -68,6 +75,65 @@ class WorkflowExecutionRuntime:
         )
         self._run_history: list[WorkflowRunRecord] = []
         self._current_run: WorkflowRunRecord | None = None
+        self._history_dir: Path | None = None
+        self._max_history = 200
+
+    def set_history_dir(self, path: str | Path) -> None:
+        self._history_dir = Path(path)
+        self._history_dir.mkdir(parents=True, exist_ok=True)
+        self._load_history_from_disk()
+
+    def _load_history_from_disk(self) -> None:
+        if not self._history_dir or not self._history_dir.exists():
+            return
+        loaded = []
+        for fp in sorted(self._history_dir.glob("run_*.json"), reverse=True)[: self._max_history]:
+            try:
+                data = json.loads(fp.read_text(encoding="utf-8"))
+                rec = WorkflowRunRecord(
+                    run_id=data["run_id"],
+                    workflow_id=data.get("workflow_id", ""),
+                    workflow_name=data.get("workflow_name", ""),
+                    status=data.get("status", "unknown"),
+                    inputs=data.get("inputs", {}),
+                    outputs=data.get("outputs"),
+                    total_nodes=data.get("total_nodes", 0),
+                    completed_nodes=data.get("completed_nodes", 0),
+                    elapsed_time=data.get("elapsed_time", 0),
+                    error=data.get("error"),
+                    created_at=data.get("created_at", 0),
+                )
+                for ne in data.get("node_executions", []):
+                    rec.node_executions.append(NodeExecutionRecord(
+                        node_id=ne["node_id"],
+                        node_type=ne.get("node_type", ""),
+                        status=ne.get("status", ""),
+                        inputs=ne.get("inputs", {}),
+                        outputs=ne.get("outputs", {}),
+                        elapsed_time=ne.get("elapsed_time", 0),
+                        error=ne.get("error"),
+                        retry_count=ne.get("retry_count", 0),
+                        created_at=ne.get("created_at", 0),
+                    ))
+                loaded.append(rec)
+            except Exception:
+                logger.debug("Failed to load run record: %s", fp.name)
+        self._run_history = loaded
+
+    def _persist_run(self, record: WorkflowRunRecord) -> None:
+        if not self._history_dir:
+            return
+        try:
+            fp = self._history_dir / f"run_{record.run_id}.json"
+            fp.write_text(
+                json.dumps(record.to_dict(), ensure_ascii=False, indent=2, default=str),
+                encoding="utf-8",
+            )
+            all_files = sorted(self._history_dir.glob("run_*.json"), key=os.path.getmtime)
+            while len(all_files) > self._max_history:
+                all_files.pop(0).unlink(missing_ok=True)
+        except Exception:
+            logger.debug("Failed to persist run record: %s", record.run_id)
 
     @property
     def run_history(self) -> list[WorkflowRunRecord]:
@@ -108,6 +174,7 @@ class WorkflowExecutionRuntime:
             run_record.error = str(exc)
             run_record.elapsed_time = time.time() - run_start
             self._run_history.append(run_record)
+            self._persist_run(run_record)
             return {"status": "error", "error": str(exc)}
 
         try:
@@ -126,6 +193,7 @@ class WorkflowExecutionRuntime:
                             1 for n in workflow.nodes.values() if n.status in (NodeStatus.COMPLETED, NodeStatus.SKIPPED)
                         )
                         self._run_history.append(run_record)
+                        self._persist_run(run_record)
                         return result
 
             final = self._finalize_workflow(workflow)
@@ -136,6 +204,7 @@ class WorkflowExecutionRuntime:
                 1 for n in workflow.nodes.values() if n.status in (NodeStatus.COMPLETED, NodeStatus.SKIPPED)
             )
             self._run_history.append(run_record)
+            self._persist_run(run_record)
             return final
         except Exception as exc:
             workflow.status = WorkflowStatus.FAILED
@@ -144,6 +213,7 @@ class WorkflowExecutionRuntime:
             run_record.error = str(exc)
             run_record.elapsed_time = time.time() - run_start
             self._run_history.append(run_record)
+            self._persist_run(run_record)
             return {"status": "error", "error": str(exc), "traceback": traceback.format_exc()}
 
     def resume_workflow(
@@ -348,8 +418,53 @@ class WorkflowExecutionRuntime:
         workflow: WorkflowDef,
         error: Exception,
     ) -> dict[str, Any] | None:
+        strategy = node.on_error
         if node.config.get("continue_on_error", False):
+            strategy = OnErrorStrategy.CONTINUE_REGULAR
+
+        if strategy == OnErrorStrategy.CONTINUE_REGULAR:
+            node.status = NodeStatus.COMPLETED
+            node.output = {"error": str(error), "_error_handled": True}
+            node.completed_at = time.time()
+            workflow.variables[f"{node.id}.output"] = node.output
+            workflow.variables[f"{node.id}.status"] = "completed"
+            self._log_event(workflow, node.id, "error_handled", f"continue_regular: {error}")
+            if self._process_node_success:
+                self._process_node_success(workflow, node.id)
             return None
+
+        if strategy == OnErrorStrategy.CONTINUE_ERROR:
+            node.status = NodeStatus.FAILED
+            node.error_output = {"error": str(error), "error_type": type(error).__name__}
+            node.completed_at = time.time()
+            workflow.variables[f"{node.id}.error_output"] = node.error_output
+            workflow.variables[f"{node.id}.status"] = "failed"
+            error_edges = [
+                e for e in self._get_successors(workflow, node.id) if e.is_error_edge
+            ]
+            if error_edges:
+                for edge in error_edges:
+                    target = workflow.nodes.get(edge.target)
+                    if target and target.status == NodeStatus.PENDING:
+                        target.status = NodeStatus.READY
+                        workflow.variables[f"{edge.target}.input"] = node.error_output
+                self._log_event(
+                    workflow, node.id, "error_routed",
+                    f"continue_error -> {[e.target for e in error_edges]}",
+                )
+                return None
+            self._log_event(
+                workflow, node.id, "error_handled",
+                f"continue_error (no error edges, treating as regular): {error}",
+            )
+            node.status = NodeStatus.COMPLETED
+            node.output = {"error": str(error), "_error_handled": True}
+            workflow.variables[f"{node.id}.output"] = node.output
+            workflow.variables[f"{node.id}.status"] = "completed"
+            if self._process_node_success:
+                self._process_node_success(workflow, node.id)
+            return None
+
         workflow.status = WorkflowStatus.FAILED
         self._save_workflow(workflow)
         return {

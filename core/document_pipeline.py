@@ -20,12 +20,62 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class ChunkConfig:
-    """Configuration for text chunking."""
+class ParsingStrategy:
+    """How to extract text from source files."""
+
+    extract_images: bool = False
+    extract_tables: bool = False
+    ocr_enabled: bool = False
+    strip_html_tags: bool = True
+    preserve_code_blocks: bool = True
+    encoding: str = "utf-8"
+    max_file_size_mb: float = 50.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "extract_images": self.extract_images,
+            "extract_tables": self.extract_tables,
+            "ocr_enabled": self.ocr_enabled,
+            "strip_html_tags": self.strip_html_tags,
+            "preserve_code_blocks": self.preserve_code_blocks,
+            "encoding": self.encoding,
+            "max_file_size_mb": self.max_file_size_mb,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> ParsingStrategy:
+        if not data:
+            return cls()
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+
+@dataclass
+class ChunkingStrategy:
+    """How to split extracted text into chunks."""
 
     chunk_size: int = 1000
     chunk_overlap: int = 200
     separator: str = "\n\n"
+    chunk_type: str = "recursive"
+    max_chunks_per_doc: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "chunk_size": self.chunk_size,
+            "chunk_overlap": self.chunk_overlap,
+            "separator": self.separator,
+            "chunk_type": self.chunk_type,
+            "max_chunks_per_doc": self.max_chunks_per_doc,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> ChunkingStrategy:
+        if not data:
+            return cls()
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+
+ChunkConfig = ChunkingStrategy
 
 
 @dataclass
@@ -174,15 +224,23 @@ def chunk_text(text: str, config: ChunkConfig | None = None) -> list[str]:
 
 
 class DocumentPipeline:
-    """End-to-end document ingestion: file → chunks → vector store."""
+    """End-to-end document ingestion: file → parse → chunk → vector store."""
 
     def __init__(
         self,
         vector_store: VectorStoreBackend,
         chunk_config: ChunkConfig | None = None,
+        parsing: ParsingStrategy | None = None,
+        chunking: ChunkingStrategy | None = None,
     ):
         self.vector_store = vector_store
-        self.chunk_config = chunk_config or ChunkConfig()
+        self.parsing = parsing or ParsingStrategy()
+        if chunking:
+            self.chunk_config = chunking
+        elif chunk_config:
+            self.chunk_config = chunk_config
+        else:
+            self.chunk_config = ChunkingStrategy()
 
     def ingest(self, path: str, collection: str = "default", metadata: dict[str, Any] | None = None) -> IngestResult:
         """Ingest a file into the vector store."""
@@ -195,6 +253,18 @@ class DocumentPipeline:
                 format="unknown",
                 errors=[f"File not found: {path}"],
             )
+
+        if self.parsing.max_file_size_mb > 0:
+            size_mb = os.path.getsize(path) / (1024 * 1024)
+            if size_mb > self.parsing.max_file_size_mb:
+                return IngestResult(
+                    path=path,
+                    collection=collection,
+                    chunk_count=0,
+                    doc_ids=[],
+                    format="unknown",
+                    errors=[f"File too large: {size_mb:.1f}MB > {self.parsing.max_file_size_mb}MB limit"],
+                )
 
         fmt = _detect_format(path)
         errors: list[str] = []
@@ -222,6 +292,8 @@ class DocumentPipeline:
             )
 
         chunks = chunk_text(text, self.chunk_config)
+        if self.chunk_config.max_chunks_per_doc > 0:
+            chunks = chunks[: self.chunk_config.max_chunks_per_doc]
         file_name = os.path.basename(path)
         base_metadata = {"source": path, "filename": file_name, "format": fmt}
         if metadata:
