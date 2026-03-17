@@ -1,0 +1,34 @@
+target-version = "py310"
+line-length = 120
+extend-exclude = [
+  "agents_workspace",
+  "global_tools",
+  "static",
+  "uv_envs",
+  "workspace",
+]
+
+[lint]
+select = [
+  "B",
+  "E",
+  "F",
+  "I",
+  "UP",
+  "RUF013",
+]
+ignore = [
+  "RUF001",
+  "RUF002",
+  "RUF003",
+]
+
+[lint.per-file-ignores]
+"web/routers/*.py" = ["B008"]
+
+[lint.isort]
+known-first-party = ["core", "web"]
+
+[format]
+quote-style = "double"
+indent-style = "space"

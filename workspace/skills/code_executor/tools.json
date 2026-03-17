@@ -1,0 +1,15 @@
+[
+  {
+    "name": "execute_python_snippet",
+    "description": "在隔离的 UV 沙箱中执行一段 Python 代码，返回执行结果。适用于快速计算、数据处理、验证逻辑等场景。",
+    "parameters": [
+      {
+        "name": "code",
+        "type": "str",
+        "description": "要执行的 Python 代码（将结果赋值给 result 变量）"
+      }
+    ],
+    "code": "import io, contextlib\nstdout_capture = io.StringIO()\nlocal_vars = {}\ntry:\n    with contextlib.redirect_stdout(stdout_capture):\n        exec(code, {}, local_vars)\n    output = stdout_capture.getvalue()\n    result = {'output': output, 'variables': {k: str(v)[:200] for k, v in local_vars.items() if not k.startswith('_')}, 'result': str(local_vars.get('result', output or '(no output)'))[:2000]}\nexcept Exception as e:\n    result = {'error': str(e)}",
+    "dependencies": []
+  }
+]

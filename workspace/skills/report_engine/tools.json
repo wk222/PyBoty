@@ -1,0 +1,33 @@
+[
+  {
+    "name": "create_report_template",
+    "description": "Create a reusable SQL report template with optional parameters. Templates are saved persistently.",
+    "parameters": [
+      {"name": "template_id", "type": "str", "description": "Unique template ID (e.g. 'monthly_sales')"},
+      {"name": "name", "type": "str", "description": "Human-readable template name"},
+      {"name": "description", "type": "str", "description": "What this report shows"},
+      {"name": "sql", "type": "str", "description": "SQL query with ${param_name} placeholders for parameters"},
+      {"name": "parameters_json", "type": "str", "description": "JSON object defining parameters: {\"param_name\": {\"type\": \"str\", \"description\": \"...\", \"default\": \"...\"}}", "default": "{}"},
+      {"name": "category", "type": "str", "description": "Report category", "default": "general"}
+    ],
+    "code": "import json, os\nskill_dir = os.path.join(WORKSPACE_ROOT, 'skills', 'report_engine')\nconfig_path = os.path.join(skill_dir, 'config.json')\nif os.path.exists(config_path):\n    with open(config_path, 'r', encoding='utf-8') as f:\n        config = json.load(f)\nelse:\n    config = {'templates': []}\nfor t in config['templates']:\n    if t['id'] == template_id:\n        t.update({'name': name, 'description': description, 'sql': sql, 'parameters': json.loads(parameters_json), 'category': category})\n        with open(config_path, 'w', encoding='utf-8') as f:\n            json.dump(config, f, ensure_ascii=False, indent=2)\n        result = {'success': True, 'action': 'updated', 'template_id': template_id}\n        break\nelse:\n    template = {'id': template_id, 'name': name, 'description': description, 'sql': sql, 'parameters': json.loads(parameters_json), 'category': category, 'enabled': True}\n    config['templates'].append(template)\n    with open(config_path, 'w', encoding='utf-8') as f:\n        json.dump(config, f, ensure_ascii=False, indent=2)\n    result = {'success': True, 'action': 'created', 'template_id': template_id}",
+    "dependencies": []
+  },
+  {
+    "name": "run_report",
+    "description": "Execute a saved report template with parameters. Returns query results as JSON.",
+    "parameters": [
+      {"name": "template_id", "type": "str", "description": "Report template ID to execute"},
+      {"name": "params_json", "type": "str", "description": "JSON object with parameter values", "default": "{}"}
+    ],
+    "code": "import json, os, sqlite3\nskill_dir = os.path.join(WORKSPACE_ROOT, 'skills', 'report_engine')\nconfig_path = os.path.join(skill_dir, 'config.json')\ndb_path = os.path.join(WORKSPACE_ROOT, 'data', 'agent.db')\nif not os.path.exists(config_path):\n    result = {'success': False, 'error': 'No report templates configured'}\nelse:\n    with open(config_path, 'r', encoding='utf-8') as f:\n        config = json.load(f)\n    template = None\n    for t in config.get('templates', []):\n        if t['id'] == template_id:\n            template = t\n            break\n    if not template:\n        result = {'success': False, 'error': f'Template {template_id} not found'}\n    elif not os.path.exists(db_path):\n        result = {'success': False, 'error': 'Database does not exist yet'}\n    else:\n        try:\n            params = json.loads(params_json) if params_json else {}\n            param_defs = template.get('parameters', {})\n            for pname, pdef in param_defs.items():\n                if pname not in params and 'default' in pdef:\n                    params[pname] = pdef['default']\n            sql = template['sql']\n            for pname, pval in params.items():\n                sql = sql.replace(f'${{{pname}}}', str(pval))\n            conn = sqlite3.connect(db_path)\n            conn.row_factory = sqlite3.Row\n            cursor = conn.cursor()\n            cursor.execute(sql)\n            rows = [dict(row) for row in cursor.fetchall()]\n            columns = [desc[0] for desc in cursor.description] if cursor.description else []\n            conn.close()\n            result = {'success': True, 'template': template['name'], 'data': rows, 'columns': columns, 'row_count': len(rows)}\n        except Exception as e:\n            result = {'success': False, 'error': str(e)}",
+    "dependencies": []
+  },
+  {
+    "name": "list_report_templates",
+    "description": "List all available report templates.",
+    "parameters": [],
+    "code": "import json, os\nskill_dir = os.path.join(WORKSPACE_ROOT, 'skills', 'report_engine')\nconfig_path = os.path.join(skill_dir, 'config.json')\nif not os.path.exists(config_path):\n    result = {'success': True, 'templates': [], 'message': 'No templates configured yet'}\nelse:\n    with open(config_path, 'r', encoding='utf-8') as f:\n        config = json.load(f)\n    templates = [{'id': t['id'], 'name': t['name'], 'description': t['description'], 'category': t.get('category', 'general'), 'parameters': t.get('parameters', {})} for t in config.get('templates', [])]\n    result = {'success': True, 'templates': templates, 'count': len(templates)}",
+    "dependencies": []
+  }
+]

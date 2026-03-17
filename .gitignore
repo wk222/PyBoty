@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# API Keys & Secrets
+config.json
+
+# Runtime data
+checkpoints.sqlite
+*.sqlite-shm
+*.sqlite-wal
+conversations.json
+chat_history/
+agents_workspace/
+global_tools/
+workspace/data/
+workspace/uploads/
+workspace/conversation_history/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# UV virtual environments
+uv_envs/
+
+# Tools workspace (isolated execution sandbox)
+.tools_workspace/
+
+# Logs
+*.log

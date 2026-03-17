@@ -1,0 +1,40 @@
+[
+  {
+    "name": "db_execute_sql",
+    "description": "Execute a read-only SQL query (SELECT/WITH) against the shared database and return results as JSON. Use this to query data, generate reports, and analyze information.",
+    "parameters": [
+      {"name": "sql", "type": "str", "description": "SQL query to execute (SELECT or WITH only)"},
+      {"name": "limit", "type": "int", "description": "Max rows to return", "default": 100}
+    ],
+    "code": "import sqlite3, json, os\ndb_path = os.path.join(WORKSPACE_ROOT, 'data', 'agent.db')\nos.makedirs(os.path.dirname(db_path), exist_ok=True)\nsql_lower = sql.lower().strip()\nif not (sql_lower.startswith('select') or sql_lower.startswith('with')):\n    result = {'success': False, 'error': 'Only SELECT/WITH queries allowed. Use db_write_sql for modifications.'}\nelse:\n    try:\n        conn = sqlite3.connect(db_path)\n        conn.row_factory = sqlite3.Row\n        cursor = conn.cursor()\n        if 'limit' not in sql_lower:\n            sql = sql.rstrip(';') + f' LIMIT {limit}'\n        cursor.execute(sql)\n        rows = [dict(row) for row in cursor.fetchall()]\n        columns = [desc[0] for desc in cursor.description] if cursor.description else []\n        conn.close()\n        result = {'success': True, 'data': rows, 'columns': columns, 'row_count': len(rows)}\n    except Exception as e:\n        result = {'success': False, 'error': str(e)}",
+    "dependencies": []
+  },
+  {
+    "name": "db_write_sql",
+    "description": "Execute a write SQL statement (CREATE TABLE, INSERT, UPDATE, DELETE, ALTER) against the shared database. Returns affected row count.",
+    "parameters": [
+      {"name": "sql", "type": "str", "description": "SQL statement to execute"},
+      {"name": "params", "type": "str", "description": "JSON-encoded parameters for parameterized queries", "default": "[]"}
+    ],
+    "code": "import sqlite3, json, os\ndb_path = os.path.join(WORKSPACE_ROOT, 'data', 'agent.db')\nos.makedirs(os.path.dirname(db_path), exist_ok=True)\ntry:\n    p = json.loads(params) if params and params != '[]' else []\n    conn = sqlite3.connect(db_path)\n    conn.execute('PRAGMA journal_mode=WAL')\n    cursor = conn.cursor()\n    if isinstance(p, list) and len(p) > 0 and isinstance(p[0], (list, tuple, dict)):\n        cursor.executemany(sql, p)\n    elif isinstance(p, list) and len(p) > 0:\n        cursor.execute(sql, p)\n    else:\n        cursor.execute(sql)\n    conn.commit()\n    affected = cursor.rowcount\n    conn.close()\n    result = {'success': True, 'affected_rows': affected}\nexcept Exception as e:\n    result = {'success': False, 'error': str(e)}",
+    "dependencies": []
+  },
+  {
+    "name": "db_list_tables",
+    "description": "List all tables in the shared database with their column information.",
+    "parameters": [],
+    "code": "import sqlite3, json, os\ndb_path = os.path.join(WORKSPACE_ROOT, 'data', 'agent.db')\nif not os.path.exists(db_path):\n    result = {'success': True, 'tables': [], 'message': 'Database is empty (no tables yet)'}\nelse:\n    conn = sqlite3.connect(db_path)\n    cursor = conn.cursor()\n    cursor.execute(\"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name\")\n    tables = []\n    for (table_name,) in cursor.fetchall():\n        cursor.execute(f'PRAGMA table_info(\"{table_name}\")')\n        cols = [{'name': c[1], 'type': c[2], 'notnull': bool(c[3]), 'pk': bool(c[5])} for c in cursor.fetchall()]\n        cursor.execute(f'SELECT COUNT(*) FROM \"{table_name}\"')\n        count = cursor.fetchone()[0]\n        tables.append({'name': table_name, 'columns': cols, 'row_count': count})\n    conn.close()\n    result = {'success': True, 'tables': tables}",
+    "dependencies": []
+  },
+  {
+    "name": "db_import_csv",
+    "description": "Import a CSV file into a database table. Creates the table if it doesn't exist. The file must be in workspace/uploads/ or provide an absolute path.",
+    "parameters": [
+      {"name": "file_path", "type": "str", "description": "Path to CSV file (relative to workspace/uploads/ or absolute)"},
+      {"name": "table_name", "type": "str", "description": "Target table name"},
+      {"name": "if_exists", "type": "str", "description": "What to do if table exists: 'append', 'replace', or 'fail'", "default": "append"}
+    ],
+    "code": "import sqlite3, csv, json, os\ndb_path = os.path.join(WORKSPACE_ROOT, 'data', 'agent.db')\nuploads_dir = os.path.join(WORKSPACE_ROOT, 'uploads')\nos.makedirs(os.path.dirname(db_path), exist_ok=True)\nif not os.path.isabs(file_path):\n    file_path = os.path.join(uploads_dir, file_path)\nif not os.path.exists(file_path):\n    result = {'success': False, 'error': f'File not found: {file_path}'}\nelse:\n    try:\n        with open(file_path, 'r', encoding='utf-8-sig') as f:\n            reader = csv.DictReader(f)\n            rows = list(reader)\n        if not rows:\n            result = {'success': False, 'error': 'CSV file is empty'}\n        else:\n            columns = list(rows[0].keys())\n            conn = sqlite3.connect(db_path)\n            conn.execute('PRAGMA journal_mode=WAL')\n            cursor = conn.cursor()\n            if if_exists == 'replace':\n                cursor.execute(f'DROP TABLE IF EXISTS \"{table_name}\"')\n            col_defs = ', '.join([f'\"{c}\" TEXT' for c in columns])\n            cursor.execute(f'CREATE TABLE IF NOT EXISTS \"{table_name}\" (id INTEGER PRIMARY KEY AUTOINCREMENT, {col_defs}, created_at TEXT DEFAULT (datetime(\"now\")))')\n            placeholders = ', '.join(['?' for _ in columns])\n            col_names = ', '.join([f'\"{c}\"' for c in columns])\n            insert_sql = f'INSERT INTO \"{table_name}\" ({col_names}) VALUES ({placeholders})'\n            inserted = 0\n            for row in rows:\n                values = [row.get(c, '') for c in columns]\n                cursor.execute(insert_sql, values)\n                inserted += 1\n            conn.commit()\n            conn.close()\n            result = {'success': True, 'table': table_name, 'inserted': inserted, 'columns': columns}\n    except Exception as e:\n        result = {'success': False, 'error': str(e)}",
+    "dependencies": []
+  }
+]

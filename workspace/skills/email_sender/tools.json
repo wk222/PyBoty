@@ -1,0 +1,24 @@
+[
+  {
+    "name": "send_email",
+    "description": "Send an email via SMTP. Requires SMTP configuration via environment variables (SMTP_SERVER, SMTP_PORT, SMTP_USE_SSL, SENDER_EMAIL, SENDER_PASSWORD).",
+    "parameters": [
+      {"name": "to_emails", "type": "str", "description": "Comma-separated recipient email addresses"},
+      {"name": "subject", "type": "str", "description": "Email subject"},
+      {"name": "body", "type": "str", "description": "Email body (HTML supported)"},
+      {"name": "cc_emails", "type": "str", "description": "Comma-separated CC addresses", "default": ""},
+      {"name": "is_html", "type": "bool", "description": "Whether body is HTML", "default": true}
+    ],
+    "code": "import smtplib, os\nfrom email.mime.text import MIMEText\nfrom email.mime.multipart import MIMEMultipart\nfrom email.header import Header\nfrom email.utils import formataddr\n\nsmtp_server = os.environ.get('SMTP_SERVER', '')\nsmtp_port = int(os.environ.get('SMTP_PORT', '465'))\nuse_ssl = os.environ.get('SMTP_USE_SSL', 'true').lower() == 'true'\nsender_email = os.environ.get('SENDER_EMAIL', '')\nsender_password = os.environ.get('SENDER_PASSWORD', '')\nsender_name = os.environ.get('SENDER_NAME', 'PyBot')\n\nif not sender_email or not sender_password or not smtp_server:\n    result = {'success': False, 'error': 'SMTP not configured. Set SMTP_SERVER, SENDER_EMAIL, SENDER_PASSWORD env vars.'}\nelse:\n    try:\n        to_list = [e.strip() for e in to_emails.split(',') if e.strip()]\n        cc_list = [e.strip() for e in cc_emails.split(',') if e.strip()] if cc_emails else []\n        msg = MIMEMultipart()\n        msg['From'] = formataddr((sender_name, sender_email))\n        msg['To'] = ', '.join(to_list)\n        msg['Subject'] = Header(subject, 'utf-8')\n        if cc_list:\n            msg['Cc'] = ', '.join(cc_list)\n        content_type = 'html' if is_html else 'plain'\n        msg.attach(MIMEText(body, content_type, 'utf-8'))\n        all_recipients = to_list + cc_list\n        if use_ssl:\n            server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30)\n        else:\n            server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)\n            server.starttls()\n        server.login(sender_email, sender_password)\n        server.sendmail(sender_email, all_recipients, msg.as_string())\n        server.quit()\n        result = {'success': True, 'message': f'Email sent to {len(to_list)} recipients', 'recipients': to_list}\n    except Exception as e:\n        result = {'success': False, 'error': str(e)}",
+    "dependencies": []
+  },
+  {
+    "name": "send_batch_emails",
+    "description": "Send multiple personalized emails. Each email in the batch has its own recipient, subject, and body.",
+    "parameters": [
+      {"name": "emails_json", "type": "str", "description": "JSON array of email objects, each with: to_email, subject, body, is_html(optional)"}
+    ],
+    "code": "import smtplib, os, json\nfrom email.mime.text import MIMEText\nfrom email.mime.multipart import MIMEMultipart\nfrom email.header import Header\nfrom email.utils import formataddr\n\nsmtp_server = os.environ.get('SMTP_SERVER', '')\nsmtp_port = int(os.environ.get('SMTP_PORT', '465'))\nuse_ssl = os.environ.get('SMTP_USE_SSL', 'true').lower() == 'true'\nsender_email = os.environ.get('SENDER_EMAIL', '')\nsender_password = os.environ.get('SENDER_PASSWORD', '')\nsender_name = os.environ.get('SENDER_NAME', 'PyBot')\n\nif not sender_email or not sender_password or not smtp_server:\n    result = {'success': False, 'error': 'SMTP not configured'}\nelse:\n    emails = json.loads(emails_json)\n    sent = 0\n    failed = 0\n    errors = []\n    try:\n        if use_ssl:\n            server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30)\n        else:\n            server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)\n            server.starttls()\n        server.login(sender_email, sender_password)\n        for em in emails:\n            try:\n                msg = MIMEMultipart()\n                msg['From'] = formataddr((sender_name, sender_email))\n                msg['To'] = em['to_email']\n                msg['Subject'] = Header(em['subject'], 'utf-8')\n                ct = 'html' if em.get('is_html', True) else 'plain'\n                msg.attach(MIMEText(em['body'], ct, 'utf-8'))\n                server.sendmail(sender_email, [em['to_email']], msg.as_string())\n                sent += 1\n            except Exception as e:\n                failed += 1\n                errors.append({'to': em.get('to_email'), 'error': str(e)})\n        server.quit()\n        result = {'success': True, 'sent': sent, 'failed': failed, 'errors': errors[:5]}\n    except Exception as e:\n        result = {'success': False, 'error': str(e), 'sent': sent, 'failed': failed}",
+    "dependencies": []
+  }
+]

@@ -1,0 +1,18 @@
+name: test_multi_agent
+description: Test debate and consensus
+nodes:
+  - id: debate_node
+    type: debate
+    topic: "Should AI replace programmers?"
+    agent_a: "pro_ai"
+    agent_b: "con_ai"
+    judge: "judge_ai"
+    rounds: 1
+
+  - id: consensus_node
+    type: consensus
+    question: "What is the capital of France?"
+    agents: ["expert1", "expert2"]
+
+edges:
+  - debate_node -> consensus_node

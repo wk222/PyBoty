@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "example_sqlite": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-sqlite",
+        "--db-path",
+        "workspace/data/agent.db"
+      ]
+    }
+  }
+}

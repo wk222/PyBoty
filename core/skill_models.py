@@ -1,0 +1,47 @@
+"""Shared models for skill discovery and runtime."""
+
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass
+class SkillDefinition:
+    name: str
+    description: str
+    version: str = "1.0.0"
+    author: str = "system"
+    capabilities: list[str] = field(default_factory=list)
+    tools: list[dict[str, Any]] = field(default_factory=list)
+    system_prompt_extension: str = ""
+    enabled: bool = True
+    installed_at: float = field(default_factory=time.time)
+    uv_dependencies: list[str] = field(default_factory=list)
+    source_name: str = "workspace"
+    source_backend: str = "filesystem"
+    source_path: str = ""
+    skill_path: str = ""
+    skill_dir: str = ""
+    writable: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "version": self.version,
+            "author": self.author,
+            "capabilities": self.capabilities,
+            "tools": [{key: value for key, value in tool.items() if key != "_tool_instance"} for tool in self.tools],
+            "system_prompt_extension": self.system_prompt_extension,
+            "enabled": self.enabled,
+            "installed_at": self.installed_at,
+            "uv_dependencies": self.uv_dependencies,
+            "source_name": self.source_name,
+            "source_backend": self.source_backend,
+            "source_path": self.source_path,
+            "skill_path": self.skill_path,
+            "skill_dir": self.skill_dir,
+            "writable": self.writable,
+        }

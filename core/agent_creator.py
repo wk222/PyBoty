@@ -1,0 +1,434 @@
+"""Tool façade for persisted subagent management."""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from langchain.tools import BaseTool
+from pydantic import BaseModel, ConfigDict, Field
+
+from .agent_control import AgentControlPolicy
+from .agent_services import create_agent_record, delegate_agent_task
+from .agent_storage import AgentStorage
+from .approval_queue import ApprovalQueue
+from .event_bus import Event, EventType, event_bus
+from .project_paths import ProjectPaths
+from .subagent_runtime import create_sub_agent_instance
+from .tool_storage import ToolStorage
+
+
+class AgentCreatorInput(BaseModel):
+    """Input schema for creating a persisted subagent."""
+
+    agent_name: str = Field(description="智能体名称（英文+下划线，如 data_analyst）")
+    role: str = Field(description="智能体角色（如：数据分析师、代码审查员、文档撰写者）")
+    description: str = Field(description="智能体功能描述，清晰说明该智能体的专长和用途")
+    system_prompt: str = Field(
+        description="""智能体的系统提示词，定义其行为和能力。
+示例：
+"你是一个专业的数据分析师，擅长：
+1. 数据清洗和预处理
+2. 统计分析和可视化
+3. 生成分析报告
+请用专业但易懂的语言回答问题。"
+"""
+    )
+    capabilities: str = Field(
+        description="""能力标签（JSON数组格式），用于分类和查找。
+示例：["数据分析", "Python", "可视化"]
+""",
+        default="[]",
+    )
+    capability_profile: str = Field(
+        description="""能力画像（JSON格式或 preset 名称）。
+示例：
+{"preset":"builder"}
+{"preset":"researcher"}
+{"preset":"coordinator"}
+{"preset":"maintainer"}
+{"allow_local_tool_creation": true, "allow_agent_delegation": false}
+""",
+        default="specialist",
+    )
+    middleware_profile: str = Field(
+        description="""中间件画像（JSON格式或 preset 名称）。
+示例：
+{"preset":"default"}
+{"preset":"coordinator"}
+{"sections":["prompt_context","delegation_context","tool_control"]}
+""",
+        default="default",
+    )
+    model: str = Field(description="使用的模型", default="gemini-3-flash-preview")
+    temperature: float = Field(description="温度参数（0-1，越高越有创造性）", default=0.7)
+
+
+class AgentCreatorTool(BaseTool):
+    name: str = "create_agent"
+    description: str = """
+🤖 智能体制造器 - 创建专门化的子智能体
+
+适用场景：
+1. 需要特定领域专家（如数据分析师、代码审查员）
+2. 需要分工协作完成复杂任务
+3. 需要不同风格/角色的回答
+4. 构建智能体团队
+"""
+    args_schema: type[BaseModel] = AgentCreatorInput
+    agent_storage: Any = Field(default=None, exclude=True)
+    tool_storage: Any = Field(default=None, exclude=True)
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    def __init__(self, agent_storage=None, tool_storage=None, **kwargs):
+        super().__init__(agent_storage=agent_storage, tool_storage=tool_storage, **kwargs)
+
+    def _run(
+        self,
+        agent_name: str,
+        role: str,
+        description: str,
+        system_prompt: str,
+        capabilities: str = "[]",
+        capability_profile: str = "specialist",
+        middleware_profile: str = "default",
+        model: str = "gemini-3-flash-preview",
+        temperature: float = 0.7,
+    ) -> str:
+        result = create_agent_record(
+            agent_storage=self.agent_storage,
+            agent_name=agent_name,
+            role=role,
+            description=description,
+            system_prompt=system_prompt,
+            capabilities=capabilities,
+            capability_profile=capability_profile,
+            middleware_profile=middleware_profile,
+            model=model,
+            temperature=temperature,
+        )
+        return json.dumps(result, ensure_ascii=False)
+
+
+class DelegateToAgentInput(BaseModel):
+    agent_name: str = Field(description="目标智能体名称")
+    task: str = Field(description="要委派的任务描述")
+    context: str = Field(description="任务上下文信息（可选）", default="")
+
+
+class DelegateToAgentTool(BaseTool):
+    name: str = "delegate_to_agent"
+    description: str = """
+📤 任务委派器 - 将任务委派给子智能体
+
+适合复杂、独立、上下文密集的任务拆分。子智能体会在隔离线程中执行，
+并只把最终结果和受控状态更新返回给主智能体。
+"""
+    args_schema: type[BaseModel] = DelegateToAgentInput
+    agent_storage: Any = Field(default=None, exclude=True)
+    tool_storage: Any = Field(default=None, exclude=True)
+    llm_factory: Any = Field(default=None, exclude=True)
+    control_policy: Any = Field(default=None, exclude=True)
+    global_tool_storage: Any = Field(default=None, exclude=True)
+    approval_queue: Any = Field(default=None, exclude=True)
+    project_paths: Any = Field(default=None, exclude=True)
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    def __init__(
+        self,
+        agent_storage=None,
+        tool_storage=None,
+        llm_factory=None,
+        control_policy=None,
+        global_tool_storage=None,
+        approval_queue=None,
+        project_paths=None,
+        **kwargs,
+    ):
+        super().__init__(
+            agent_storage=agent_storage,
+            tool_storage=tool_storage,
+            llm_factory=llm_factory,
+            control_policy=control_policy,
+            global_tool_storage=global_tool_storage,
+            approval_queue=approval_queue,
+            project_paths=project_paths,
+            **kwargs,
+        )
+
+    def _run(
+        self,
+        agent_name: str,
+        task: str,
+        context: str = "",
+    ) -> str:
+        event_bus.emit(
+            Event(
+                type=EventType.AGENT_START,
+                payload={"agent_name": agent_name, "task": task, "mode": "delegate"},
+                source="delegate_to_agent",
+            )
+        )
+        try:
+            result = delegate_agent_task(
+                agent_storage=self.agent_storage,
+                llm_factory=self.llm_factory,
+                agent_name=agent_name,
+                task=task,
+                context=context,
+                control_policy=self.control_policy,
+                global_tool_storage=self.global_tool_storage,
+                approval_queue=self.approval_queue,
+                project_paths=self.project_paths,
+            )
+        except Exception as exc:
+            result = {
+                "success": False,
+                "agent_name": agent_name,
+                "error": str(exc),
+            }
+        event_bus.emit(
+            Event(
+                type=EventType.AGENT_END,
+                payload={"agent_name": agent_name, "success": result.get("success", False), "mode": "delegate"},
+                source="delegate_to_agent",
+            )
+        )
+        return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+class AskAgentInput(BaseModel):
+    """Input schema for asking a question to an existing agent."""
+
+    agent_name: str = Field(description="目标智能体名称")
+    question: str = Field(description="要问的问题")
+    context: str = Field(description="相关背景信息（可选）", default="")
+
+
+class AskAgentTool(BaseTool):
+    name: str = "ask_agent"
+    description: str = """
+❓ 向智能体提问 - 向已有智能体问一个问题并获取回答
+
+与 delegate_to_agent 不同，这是轻量级的问答，不创建完整任务。
+适合快速咨询某个领域专家的意见。
+"""
+    args_schema: type[BaseModel] = AskAgentInput
+    agent_storage: Any = Field(default=None, exclude=True)
+    tool_storage: Any = Field(default=None, exclude=True)
+    llm_factory: Any = Field(default=None, exclude=True)
+    project_paths: Any = Field(default=None, exclude=True)
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    def __init__(
+        self,
+        agent_storage=None,
+        tool_storage=None,
+        llm_factory=None,
+        project_paths=None,
+        **kwargs,
+    ):
+        super().__init__(
+            agent_storage=agent_storage,
+            tool_storage=tool_storage,
+            llm_factory=llm_factory,
+            project_paths=project_paths,
+            **kwargs,
+        )
+
+    def _run(self, agent_name: str, question: str, context: str = "") -> str:
+        if self.agent_storage is None:
+            return json.dumps({"success": False, "error": "agent_storage not configured"})
+
+        agent_def = self.agent_storage.get_agent(agent_name)
+        if agent_def is None:
+            available = list(self.agent_storage.agents.keys()) if self.agent_storage else []
+            return json.dumps(
+                {
+                    "success": False,
+                    "error": f"智能体 '{agent_name}' 不存在",
+                    "available_agents": available,
+                },
+                ensure_ascii=False,
+            )
+
+        event_bus.emit(
+            Event(
+                type=EventType.AGENT_START,
+                payload={"agent_name": agent_name, "question": question, "mode": "ask"},
+                source="ask_agent",
+            )
+        )
+
+        try:
+            if self.llm_factory is None:
+                return json.dumps({"success": False, "error": "llm_factory not configured"})
+
+            llm = self.llm_factory(
+                model=agent_def.model,
+                temperature=agent_def.temperature,
+            )
+
+            prompt_parts = [agent_def.system_prompt]
+            if context:
+                prompt_parts.append(f"\n背景信息:\n{context}")
+            prompt_parts.append(f"\n问题: {question}")
+            full_prompt = "\n".join(prompt_parts)
+
+            response = llm.invoke(full_prompt)
+            answer = response.content if hasattr(response, "content") else str(response)
+
+            event_bus.emit(
+                Event(
+                    type=EventType.AGENT_END,
+                    payload={"agent_name": agent_name, "success": True, "mode": "ask"},
+                    source="ask_agent",
+                )
+            )
+
+            return json.dumps(
+                {
+                    "success": True,
+                    "agent_name": agent_name,
+                    "answer": answer,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        except Exception as exc:
+            event_bus.emit(
+                Event(
+                    type=EventType.AGENT_END,
+                    payload={"agent_name": agent_name, "success": False, "mode": "ask", "error": str(exc)},
+                    source="ask_agent",
+                )
+            )
+            return json.dumps(
+                {
+                    "success": False,
+                    "agent_name": agent_name,
+                    "error": str(exc),
+                },
+                ensure_ascii=False,
+            )
+
+
+class ListAgentsInput(BaseModel):
+    capability_filter: str = Field(description="按能力筛选（可选）", default="")
+
+
+class ListAgentsTool(BaseTool):
+    name: str = "list_agents"
+    description: str = "📋 列出所有已创建的子智能体及其信息"
+    args_schema: type[BaseModel] = ListAgentsInput
+    agent_storage: Any = Field(default=None, exclude=True)
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    def __init__(self, agent_storage=None, **kwargs):
+        super().__init__(agent_storage=agent_storage, **kwargs)
+
+    def _run(self, capability_filter: str = "") -> str:
+        if capability_filter:
+            agent_list = [agent.to_dict() for agent in self.agent_storage.get_agents_by_capability(capability_filter)]
+        else:
+            agent_list = [agent.to_dict() for agent in self.agent_storage.agents.values()]
+        return json.dumps(
+            {
+                "success": True,
+                "count": len(agent_list),
+                "agents": agent_list,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+
+
+class RemoveAgentInput(BaseModel):
+    agent_name: str = Field(description="要删除的智能体名称")
+
+
+class RemoveAgentTool(BaseTool):
+    name: str = "remove_agent"
+    description: str = "🗑️ 删除一个已创建的子智能体"
+    args_schema: type[BaseModel] = RemoveAgentInput
+    agent_storage: Any = Field(default=None, exclude=True)
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    def __init__(self, agent_storage=None, **kwargs):
+        super().__init__(agent_storage=agent_storage, **kwargs)
+
+    def _run(self, agent_name: str) -> str:
+        if self.agent_storage.remove_agent(agent_name):
+            return json.dumps(
+                {
+                    "success": True,
+                    "message": f"✅ 智能体 '{agent_name}' 已删除",
+                },
+                ensure_ascii=False,
+            )
+        return json.dumps(
+            {
+                "success": False,
+                "error": f"智能体 '{agent_name}' 不存在",
+            },
+            ensure_ascii=False,
+        )
+
+
+def get_agent_creator_tools(
+    agent_storage: AgentStorage,
+    tool_storage: ToolStorage | None = None,
+    llm_factory=None,
+    control_policy: AgentControlPolicy | None = None,
+    approval_queue: ApprovalQueue | None = None,
+    project_paths: ProjectPaths | None = None,
+    *,
+    include_ask: bool = True,
+) -> list[BaseTool]:
+    """Return the tool bundle for creating, listing, and delegating subagents."""
+    tools: list[BaseTool] = [
+        AgentCreatorTool(agent_storage=agent_storage, tool_storage=tool_storage),
+        DelegateToAgentTool(
+            agent_storage=agent_storage,
+            tool_storage=tool_storage,
+            llm_factory=llm_factory,
+            control_policy=control_policy,
+            global_tool_storage=tool_storage,
+            approval_queue=approval_queue,
+            project_paths=project_paths,
+        ),
+        ListAgentsTool(agent_storage=agent_storage),
+        RemoveAgentTool(agent_storage=agent_storage),
+    ]
+    if include_ask:
+        tools.append(
+            AskAgentTool(
+                agent_storage=agent_storage,
+                tool_storage=tool_storage,
+                llm_factory=llm_factory,
+                project_paths=project_paths,
+            )
+        )
+    return tools
+
+
+__all__ = [
+    "AgentCreatorInput",
+    "AgentCreatorTool",
+    "AskAgentInput",
+    "AskAgentTool",
+    "DelegateToAgentInput",
+    "DelegateToAgentTool",
+    "ListAgentsInput",
+    "ListAgentsTool",
+    "RemoveAgentInput",
+    "RemoveAgentTool",
+    "create_sub_agent_instance",
+    "get_agent_creator_tools",
+]

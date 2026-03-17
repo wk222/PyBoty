@@ -1,0 +1,21 @@
+[
+  {
+    "name": "web_search_duckduckgo",
+    "description": "使用 DuckDuckGo 搜索引擎搜索互联网，返回搜索结果摘要。适合获取最新信息、查找资料等。",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "str",
+        "description": "搜索关键词"
+      },
+      {
+        "name": "max_results",
+        "type": "int",
+        "description": "返回结果数量上限",
+        "default": 5
+      }
+    ],
+    "code": "from duckduckgo_search import DDGS\nwith DDGS() as ddgs:\n    results = list(ddgs.text(query, max_results=max_results))\nresult = [{'title': r.get('title',''), 'url': r.get('href',''), 'snippet': r.get('body','')} for r in results]",
+    "dependencies": ["duckduckgo-search"]
+  }
+]

@@ -1,0 +1,59 @@
+[
+  {
+    "name": "read_text_file",
+    "description": "读取文本文件内容。支持 txt、json、csv、md 等文本格式。",
+    "parameters": [
+      {
+        "name": "filepath",
+        "type": "str",
+        "description": "文件路径"
+      },
+      {
+        "name": "encoding",
+        "type": "str",
+        "description": "文件编码",
+        "default": "utf-8"
+      }
+    ],
+    "code": "import os\nabs_path = os.path.abspath(filepath)\nif not os.path.exists(abs_path):\n    result = {'error': f'文件不存在: {filepath}'}\nelse:\n    with open(abs_path, 'r', encoding=encoding) as f:\n        content = f.read()\n    result = {'filepath': abs_path, 'size': len(content), 'content': content[:5000]}",
+    "dependencies": []
+  },
+  {
+    "name": "write_text_file",
+    "description": "写入文本文件。如果文件已存在则覆盖。",
+    "parameters": [
+      {
+        "name": "filepath",
+        "type": "str",
+        "description": "文件路径"
+      },
+      {
+        "name": "content",
+        "type": "str",
+        "description": "要写入的内容"
+      },
+      {
+        "name": "encoding",
+        "type": "str",
+        "description": "文件编码",
+        "default": "utf-8"
+      }
+    ],
+    "code": "import os\nabs_path = os.path.abspath(filepath)\nos.makedirs(os.path.dirname(abs_path) or '.', exist_ok=True)\nwith open(abs_path, 'w', encoding=encoding) as f:\n    f.write(content)\nresult = {'filepath': abs_path, 'bytes_written': len(content.encode(encoding))}",
+    "dependencies": []
+  },
+  {
+    "name": "list_directory",
+    "description": "列出目录中的文件和子目录。",
+    "parameters": [
+      {
+        "name": "dirpath",
+        "type": "str",
+        "description": "目录路径",
+        "default": "."
+      }
+    ],
+    "code": "import os\nabs_path = os.path.abspath(dirpath)\nif not os.path.isdir(abs_path):\n    result = {'error': f'目录不存在: {dirpath}'}\nelse:\n    entries = []\n    for e in sorted(os.scandir(abs_path), key=lambda x: x.name):\n        entries.append({'name': e.name, 'is_dir': e.is_dir(), 'size': e.stat().st_size if e.is_file() else 0})\n    result = {'dirpath': abs_path, 'count': len(entries), 'entries': entries[:100]}",
+    "dependencies": []
+  }
+]
