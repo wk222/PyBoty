@@ -8,6 +8,8 @@
 4. 支持任务的启用/禁用
 """
 
+import json
+import logging
 import os
 import re
 import threading
@@ -15,7 +17,10 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -52,11 +57,15 @@ class TaskScheduler:
     def __init__(self, workspace_dir: str = "workspace"):
         self.workspace_dir = workspace_dir
         self.schedule_path = os.path.join(workspace_dir, "SCHEDULE.md")
+        self._state_path = Path(workspace_dir) / "data" / "scheduler_state.json"
         self.tasks: dict[str, ScheduledTask] = {}
         self._running = False
         self._thread: threading.Thread | None = None
         self._agent_callback: Callable | None = None
+        self._execution_history: list[dict[str, Any]] = []
+        self._history_limit = 200
         self._load_tasks()
+        self._load_run_state()
 
     def _load_tasks(self):
         if not os.path.exists(self.schedule_path):
@@ -123,6 +132,55 @@ class TaskScheduler:
             tasks.append(current_task)
 
         return {"tasks": tasks} if tasks else None
+
+    def _load_run_state(self) -> None:
+        """Restore runtime state (last_run, run_count, etc.) from disk."""
+        if not self._state_path.exists():
+            return
+        try:
+            with self._state_path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            task_states = data.get("tasks", {})
+            for name, state in task_states.items():
+                task = self.tasks.get(name)
+                if task is None:
+                    continue
+                task.last_run = state.get("last_run")
+                task.run_count = state.get("run_count", 0)
+                task.consecutive_failures = state.get("consecutive_failures", 0)
+                task.last_error = state.get("last_error")
+            self._execution_history = data.get("history", [])[-self._history_limit :]
+            logger.info("[Scheduler] Restored run state for %d tasks", len(task_states))
+        except Exception as exc:
+            logger.warning("[Scheduler] Failed to load run state: %s", exc)
+
+    def _save_run_state(self) -> None:
+        """Persist runtime state to disk."""
+        task_states = {}
+        for name, task in self.tasks.items():
+            task_states[name] = {
+                "last_run": task.last_run,
+                "run_count": task.run_count,
+                "consecutive_failures": task.consecutive_failures,
+                "last_error": task.last_error,
+            }
+        data = {
+            "tasks": task_states,
+            "history": self._execution_history[-self._history_limit :],
+            "updated_at": time.time(),
+        }
+        try:
+            self._state_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self._state_path.with_suffix(".tmp")
+            with tmp.open("w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            tmp.replace(self._state_path)
+        except Exception as exc:
+            logger.warning("[Scheduler] Failed to save run state: %s", exc)
+
+    def get_execution_history(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Return recent execution history."""
+        return self._execution_history[-limit:]
 
     def _should_run(self, task: ScheduledTask) -> bool:
         if not task.enabled:
@@ -225,13 +283,19 @@ class TaskScheduler:
     def _execute_task(self, task: ScheduledTask):
         task.last_run = time.time()
         task.run_count += 1
-        print(f"[Scheduler] 执行任务: {task.name}")
+        logger.info("[Scheduler] Executing task: %s", task.name)
+
+        history_entry: dict[str, Any] = {
+            "task": task.name,
+            "started_at": task.last_run,
+            "attempt": 0,
+            "success": False,
+        }
 
         if self._agent_callback:
             attempt = 0
             while attempt <= task.max_retries:
                 try:
-                    # 如果 prompt 是触发工作流的特殊指令
                     if task.prompt.startswith("TRIGGER_WORKFLOW:"):
                         wf_name = task.prompt.split(":", 1)[1].strip()
                         self._agent_callback(f"请执行工作流 {wf_name}", f"schedule-{task.name}")
@@ -239,24 +303,41 @@ class TaskScheduler:
                         self._agent_callback(task.prompt, f"schedule-{task.name}")
                     task.consecutive_failures = 0
                     task.last_error = None
-                    if attempt > 0:
-                        print(f"[Scheduler] 任务 {task.name} 第 {attempt + 1} 次尝试成功")
-                    return
+                    history_entry["success"] = True
+                    history_entry["attempt"] = attempt + 1
+                    history_entry["completed_at"] = time.time()
+                    break
                 except Exception as e:
                     attempt += 1
                     task.consecutive_failures += 1
                     task.last_error = str(e)
+                    history_entry["attempt"] = attempt
+                    history_entry["error"] = str(e)
                     if attempt <= task.max_retries:
                         delay = task.retry_delay * (2 ** (attempt - 1))
-                        print(f"[Scheduler] 任务 {task.name} 第 {attempt} 次执行失败: {e}")
-                        print(f"[Scheduler] 将在 {delay:.1f}s 后重试 (第 {attempt + 1}/{task.max_retries + 1} 次)")
+                        logger.warning(
+                            "[Scheduler] Task %s attempt %d failed: %s. Retrying in %.1fs",
+                            task.name, attempt, e, delay,
+                        )
                         time.sleep(delay)
                     else:
-                        print(f"[Scheduler] 任务 {task.name} 已达最大重试次数 ({task.max_retries})，放弃执行")
+                        logger.error(
+                            "[Scheduler] Task %s exceeded max retries (%d)",
+                            task.name, task.max_retries,
+                        )
+                        history_entry["completed_at"] = time.time()
                         if task.consecutive_failures >= task.max_retries * 2:
-                            print(f"[Scheduler] 任务 {task.name} 连续失败 {task.consecutive_failures} 次，自动禁用")
+                            logger.warning(
+                                "[Scheduler] Task %s auto-disabled after %d consecutive failures",
+                                task.name, task.consecutive_failures,
+                            )
                             task.enabled = False
                             self._save_tasks()
+
+        self._execution_history.append(history_entry)
+        if len(self._execution_history) > self._history_limit:
+            self._execution_history = self._execution_history[-self._history_limit :]
+        self._save_run_state()
 
     def list_tasks(self) -> list[dict]:
         return [task.to_dict() for task in self.tasks.values()]

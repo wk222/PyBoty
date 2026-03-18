@@ -1,19 +1,25 @@
-"""Global publish-subscribe event bus.
+"""Global publish-subscribe event bus with optional SQLite persistence.
 
 All modules (tools, approval, memory, MCP, cost, workflow) emit events
 through a single bus. Handlers can be sync or async, are priority-ordered,
 and are isolated — one handler blowing up won't affect the rest.
+
+When a db_path is provided, events are also persisted to SQLite so that
+event history survives process restarts.
 """
 
 from __future__ import annotations
 
 import asyncio
 import enum
+import json
 import logging
+import sqlite3
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -58,13 +64,30 @@ _DEFAULT_HISTORY_LIMIT = 500
 
 
 class EventBus:
-    """Thread-safe publish-subscribe event bus with priority ordering."""
+    """Thread-safe publish-subscribe event bus with priority ordering.
 
-    def __init__(self, history_limit: int = _DEFAULT_HISTORY_LIMIT):
+    Args:
+        history_limit: Max in-memory history entries.
+        db_path: If set, persist events to SQLite for crash recovery.
+        persist_limit: Max events kept in the SQLite database.
+    """
+
+    def __init__(
+        self,
+        history_limit: int = _DEFAULT_HISTORY_LIMIT,
+        db_path: str | Path | None = None,
+        persist_limit: int = 5000,
+    ):
         self._lock = threading.Lock()
         self._subs: dict[EventType, list[_Subscription]] = {}
         self._history: list[Event] = []
         self._history_limit = history_limit
+        self._db_path = Path(db_path) if db_path else None
+        self._persist_limit = persist_limit
+        self._db_conn: sqlite3.Connection | None = None
+        if self._db_path:
+            self._init_persistence()
+            self._load_history_from_db()
 
     def subscribe(
         self,
@@ -94,6 +117,8 @@ class EventBus:
             if len(self._history) > self._history_limit:
                 self._history = self._history[-self._history_limit :]
 
+        self._persist_event(event)
+
         for sub in subs:
             try:
                 if sub.is_async:
@@ -116,6 +141,8 @@ class EventBus:
             self._history.append(event)
             if len(self._history) > self._history_limit:
                 self._history = self._history[-self._history_limit :]
+
+        self._persist_event(event)
 
         for sub in subs:
             try:
@@ -143,6 +170,133 @@ class EventBus:
             self._subs.clear()
             self._history.clear()
 
+    def _init_persistence(self) -> None:
+        if not self._db_path:
+            return
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._db_conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
+        self._db_conn.execute("""
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                type TEXT NOT NULL,
+                payload TEXT DEFAULT '{}',
+                source TEXT DEFAULT '',
+                session_id TEXT,
+                timestamp REAL NOT NULL
+            )
+        """)
+        self._db_conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_type ON events(type)"
+        )
+        self._db_conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_ts ON events(timestamp)"
+        )
+        self._db_conn.commit()
+
+    def _persist_event(self, event: Event) -> None:
+        if self._db_conn is None:
+            return
+        try:
+            self._db_conn.execute(
+                "INSERT INTO events (type, payload, source, session_id, timestamp) VALUES (?, ?, ?, ?, ?)",
+                (
+                    event.type.value,
+                    json.dumps(event.payload, default=str),
+                    event.source,
+                    event.session_id,
+                    event.timestamp,
+                ),
+            )
+            self._db_conn.commit()
+            self._prune_db()
+        except Exception:
+            logger.exception("Failed to persist event %s", event.type)
+
+    def _prune_db(self) -> None:
+        if self._db_conn is None:
+            return
+        try:
+            count = self._db_conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+            if count > self._persist_limit * 1.2:
+                cutoff = count - self._persist_limit
+                self._db_conn.execute(
+                    "DELETE FROM events WHERE id IN (SELECT id FROM events ORDER BY id LIMIT ?)",
+                    (cutoff,),
+                )
+                self._db_conn.commit()
+        except Exception:
+            logger.exception("Failed to prune event DB")
+
+    def _load_history_from_db(self) -> None:
+        if self._db_conn is None:
+            return
+        try:
+            rows = self._db_conn.execute(
+                "SELECT type, payload, source, session_id, timestamp FROM events ORDER BY id DESC LIMIT ?",
+                (self._history_limit,),
+            ).fetchall()
+            recovered = []
+            for row in reversed(rows):
+                try:
+                    etype = EventType(row[0])
+                except ValueError:
+                    continue
+                recovered.append(Event(
+                    type=etype,
+                    payload=json.loads(row[1]) if row[1] else {},
+                    source=row[2] or "",
+                    session_id=row[3],
+                    timestamp=row[4],
+                ))
+            with self._lock:
+                self._history = recovered
+            logger.info("EventBus: recovered %d events from persistent store", len(recovered))
+        except Exception:
+            logger.exception("Failed to load event history from DB")
+
+    def persistent_history(
+        self,
+        event_type: EventType | None = None,
+        *,
+        limit: int = 100,
+        since: float | None = None,
+    ) -> list[Event]:
+        """Query persisted events (richer than in-memory history)."""
+        if self._db_conn is None:
+            return self.history(event_type, limit=limit)
+
+        query = "SELECT type, payload, source, session_id, timestamp FROM events"
+        params: list[Any] = []
+        conditions = []
+
+        if event_type is not None:
+            conditions.append("type = ?")
+            params.append(event_type.value)
+        if since is not None:
+            conditions.append("timestamp >= ?")
+            params.append(since)
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+
+        rows = self._db_conn.execute(query, params).fetchall()
+        result = []
+        for row in reversed(rows):
+            try:
+                etype = EventType(row[0])
+            except ValueError:
+                continue
+            result.append(Event(
+                type=etype,
+                payload=json.loads(row[1]) if row[1] else {},
+                source=row[2] or "",
+                session_id=row[3],
+                timestamp=row[4],
+            ))
+        return result
+
     def subscriber_count(self, event_type: EventType | None = None) -> int:
         with self._lock:
             if event_type is not None:
@@ -150,4 +304,16 @@ class EventBus:
             return sum(len(s) for s in self._subs.values())
 
 
-event_bus = EventBus()
+def _default_event_db_path() -> str | None:
+    """Try to locate workspace/data/events.db relative to the project."""
+    candidates = [
+        Path("workspace/data/events.db"),
+        Path(__file__).parent.parent / "workspace" / "data" / "events.db",
+    ]
+    for p in candidates:
+        if p.parent.exists() or p.parent.parent.exists():
+            return str(p)
+    return None
+
+
+event_bus = EventBus(db_path=_default_event_db_path())

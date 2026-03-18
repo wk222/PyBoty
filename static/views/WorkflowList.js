@@ -2,6 +2,7 @@ import { ref, onMounted, watch, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { API } from '/static/api/index.js';
 import { toast } from '/static/stores/global.js';
+import { t } from '/static/i18n.js';
 import DagViewer from '/static/components/DagViewer.js';
 
 const NEW_SPEC_TEMPLATE = `name: new_workflow
@@ -229,7 +230,7 @@ export default {
       graphData, graphName, showGraph,
       editName, editContent, editMode, editPreview, showEditor, isNew, saving,
       load, trigger, openTrigger, viewGraph, openEditor, updatePreview,
-      toggleMode, saveWorkflow, remove, wfName, openBuilder,
+      toggleMode, saveWorkflow, remove, wfName, openBuilder, t,
     };
   },
   template: `
@@ -254,7 +255,7 @@ export default {
 
       <div v-else>
         <div v-if="saved.length === 0 && active.length === 0" class="mx-empty">
-          <p>还没有工作流。点 "New" 创建，或在 Chat 中让 AI 自动生成。</p>
+          <p>{{ t('workflows.noWorkflows') }}</p>
         </div>
 
         <div v-if="saved.length > 0" class="mx-section">

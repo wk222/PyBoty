@@ -81,7 +81,7 @@ class WorkflowNodeRuntime:
         self.log_event(workflow, node.id, "start", f"type={node.type.value}")
 
         try:
-            result = self.dispatch_node(node, workflow)
+            result = self._exec_with_timeout(node, workflow)
             self._raise_delegated_pause_if_needed(node=node, workflow=workflow, result=result)
             node.status = NodeStatus.COMPLETED
             node.output = result
@@ -109,6 +109,19 @@ class WorkflowNodeRuntime:
                 node.status = NodeStatus.PENDING
                 return self.exec_node(node, workflow)
 
+            if node.fallback_output is not None:
+                self.log_event(
+                    workflow, node.id, "fallback",
+                    f"Using fallback after {type(exc).__name__}: {exc}",
+                )
+                node.status = NodeStatus.COMPLETED
+                node.output = node.fallback_output
+                node.error = f"fallback: {exc}"
+                node.completed_at = time.time()
+                workflow.variables[f"{node.id}.output"] = node.fallback_output
+                workflow.variables[f"{node.id}.status"] = "fallback"
+                return node.fallback_output
+
             node.status = NodeStatus.FAILED
             node.error = str(exc)
             node.completed_at = time.time()
@@ -116,6 +129,25 @@ class WorkflowNodeRuntime:
             workflow.variables[f"{node.id}.error"] = str(exc)
             self.log_event(workflow, node.id, "failed", str(exc))
             raise
+
+    def _exec_with_timeout(self, node: FlowNode, workflow: Any) -> Any:
+        """Execute node dispatch, enforcing timeout if configured."""
+        timeout = node.timeout_seconds or node.config.get("timeout")
+        if timeout is None:
+            return self.dispatch_node(node, workflow)
+
+        import concurrent.futures
+
+        timeout_secs = float(timeout)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(self.dispatch_node, node, workflow)
+            try:
+                return future.result(timeout=timeout_secs)
+            except concurrent.futures.TimeoutError:
+                future.cancel()
+                raise TimeoutError(
+                    f"Node '{node.id}' timed out after {timeout_secs}s"
+                ) from None
 
     def dispatch_node(self, node: FlowNode, workflow: WorkflowDef) -> Any:
         config = self.resolve_config(node.config, workflow)

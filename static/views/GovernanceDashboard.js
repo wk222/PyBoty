@@ -1,6 +1,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { API } from '/static/api/index.js';
 import { toast } from '/static/stores/global.js';
+import { t } from '/static/i18n.js';
 
 export default {
   name: 'GovernanceDashboard',
@@ -52,9 +53,25 @@ export default {
     async function loadApprovals() {
       loading.value = true;
       try {
-        approvals.value = await API.listApprovals();
+        const data = await API.listApprovals();
+        const pending = (data.pending || data.approvals || []).map(a => {
+          const obj = typeof a === 'object' ? a : {};
+          if (!obj.status) obj.status = 'pending';
+          return obj;
+        });
+        const recent = (data.recent || []).map(a => {
+          const obj = typeof a === 'object' ? a : {};
+          return obj;
+        });
+        const seen = new Set(pending.map(a => a.approval_id || a.id));
+        const merged = [...pending];
+        for (const r of recent) {
+          const rid = r.approval_id || r.id;
+          if (rid && !seen.has(rid)) { merged.push(r); seen.add(rid); }
+        }
+        approvals.value = merged;
       } catch (e) {
-        toast.error(`Failed to load approvals: ${e.message}`);
+        toast('Failed to load approvals: ' + e.message, 'error');
       } finally {
         loading.value = false;
       }
@@ -63,12 +80,12 @@ export default {
     async function resolve(id, approved) {
       try {
         await API.resolveApproval(id, approved, resolveNote.value, resolveApprover.value);
-        toast.success(approved ? 'Approved' : 'Denied');
+        toast(approved ? 'Approved' : 'Denied', 'success');
         selectedApproval.value = null;
         resolveNote.value = '';
         await loadApprovals();
       } catch (e) {
-        toast.error(`Failed: ${e.message}`);
+        toast('Failed: ' + e.message, 'error');
       }
     }
 
@@ -99,7 +116,7 @@ export default {
       approvals, loading, activeTab, tabs, filteredApprovals, stats,
       selectedApproval, resolveNote, resolveApprover,
       loadApprovals, resolve, selectApproval, closeDetail,
-      formatTime, timeSince, riskColor,
+      formatTime, timeSince, riskColor, t,
     };
   },
   template: `
@@ -110,40 +127,40 @@ export default {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="24" height="24">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
             </svg>
-            Governance Dashboard
+            {{ t('governance.title') }}
           </h1>
-          <button class="mx-btn mx-btn-ghost" @click="loadApprovals" title="Refresh">↻ Refresh</button>
+          <button class="mx-btn mx-btn-ghost" @click="loadApprovals" :title="t('governance.refresh')">↻ {{ t('governance.refresh') }}</button>
         </div>
 
         <div class="gov-stats-row">
           <div class="gov-stat-card">
             <span class="gov-stat-num">{{ stats.total }}</span>
-            <span class="gov-stat-lbl">Total</span>
+            <span class="gov-stat-lbl">{{ t('governance.total') }}</span>
           </div>
           <div class="gov-stat-card gov-stat-pending">
             <span class="gov-stat-num">{{ stats.pending }}</span>
-            <span class="gov-stat-lbl">Pending</span>
+            <span class="gov-stat-lbl">{{ t('governance.pending') }}</span>
           </div>
           <div class="gov-stat-card gov-stat-approved">
             <span class="gov-stat-num">{{ stats.approved }}</span>
-            <span class="gov-stat-lbl">Approved</span>
+            <span class="gov-stat-lbl">{{ t('governance.approved') }}</span>
           </div>
           <div class="gov-stat-card gov-stat-denied">
             <span class="gov-stat-num">{{ stats.denied }}</span>
-            <span class="gov-stat-lbl">Denied</span>
+            <span class="gov-stat-lbl">{{ t('governance.denied') }}</span>
           </div>
           <div class="gov-stat-card">
             <span class="gov-stat-num">{{ stats.avgWait }}</span>
-            <span class="gov-stat-lbl">Avg Wait</span>
+            <span class="gov-stat-lbl">{{ t('governance.avgWait') }}</span>
           </div>
         </div>
 
         <div class="gov-tabs">
-          <button v-for="t in tabs" :key="t.key"
-                  class="gov-tab" :class="{ active: activeTab === t.key }"
-                  @click="activeTab = t.key">
-            <span class="gov-tab-icon">{{ t.icon }}</span> {{ t.label }}
-            <span v-if="t.key === 'pending' && stats.pending > 0" class="gov-tab-badge">{{ stats.pending }}</span>
+          <button v-for="tab in tabs" :key="tab.key"
+                  class="gov-tab" :class="{ active: activeTab === tab.key }"
+                  @click="activeTab = tab.key">
+            <span class="gov-tab-icon">{{ tab.icon }}</span> {{ tab.label }}
+            <span v-if="tab.key === 'pending' && stats.pending > 0" class="gov-tab-badge">{{ stats.pending }}</span>
           </button>
         </div>
       </header>
@@ -151,7 +168,7 @@ export default {
       <div v-if="loading" class="hub-loading"><div class="mx-spinner"></div></div>
 
       <div v-else-if="filteredApprovals.length === 0" class="hub-empty">
-        <p>No {{ activeTab === 'all' ? '' : activeTab }} approvals</p>
+        <p>{{ t('governance.noApprovals') }}</p>
       </div>
 
       <div v-else class="gov-list">
@@ -181,57 +198,57 @@ export default {
       <div v-if="selectedApproval" class="hub-modal-overlay" @click.self="closeDetail">
         <div class="hub-modal gov-modal">
           <button class="hub-modal-close" @click="closeDetail">×</button>
-          <h3 class="gov-detail-title">Approval Request</h3>
+          <h3 class="gov-detail-title">{{ t('governance.approvalRequest') }}</h3>
           <div class="gov-detail-grid">
             <div class="gov-detail-field">
-              <label>Action</label>
+              <label>{{ t('governance.action') }}</label>
               <span>{{ selectedApproval.action || selectedApproval.tool_name || '—' }}</span>
             </div>
             <div class="gov-detail-field">
-              <label>Agent</label>
+              <label>{{ t('governance.agent') }}</label>
               <span>{{ selectedApproval.agent_name || '—' }}</span>
             </div>
             <div class="gov-detail-field">
-              <label>Status</label>
+              <label>{{ t('governance.status') }}</label>
               <span class="gov-detail-status" :class="'gov-status-' + selectedApproval.status">
                 {{ selectedApproval.status }}
               </span>
             </div>
             <div class="gov-detail-field">
-              <label>Risk</label>
+              <label>{{ t('governance.risk') }}</label>
               <span :style="{ color: riskColor(selectedApproval.risk_level) }">
                 {{ selectedApproval.risk_level || 'unset' }}
               </span>
             </div>
             <div class="gov-detail-field gov-detail-wide" v-if="selectedApproval.reason">
-              <label>Reason</label>
+              <label>{{ t('governance.reason') }}</label>
               <span>{{ selectedApproval.reason }}</span>
             </div>
             <div class="gov-detail-field gov-detail-wide" v-if="selectedApproval.context">
-              <label>Context</label>
+              <label>{{ t('governance.context') }}</label>
               <pre class="gov-detail-pre">{{ JSON.stringify(selectedApproval.context, null, 2) }}</pre>
             </div>
           </div>
 
           <div v-if="selectedApproval.status === 'pending'" class="gov-resolve-section">
             <div class="gov-resolve-input">
-              <label>Note (optional)</label>
-              <textarea v-model="resolveNote" rows="2" class="hub-input" placeholder="Add a note..."></textarea>
+              <label>{{ t('governance.note') }}</label>
+              <textarea v-model="resolveNote" rows="2" class="hub-input" :placeholder="t('governance.notePlaceholder')"></textarea>
             </div>
             <div class="gov-resolve-actions">
               <button class="mx-btn gov-btn-deny" @click="resolve(selectedApproval.approval_id || selectedApproval.id, false)">
-                ✗ Deny
+                ✗ {{ t('governance.deny') }}
               </button>
               <button class="mx-btn mx-btn-primary gov-btn-approve" @click="resolve(selectedApproval.approval_id || selectedApproval.id, true)">
-                ✓ Approve
+                ✓ {{ t('governance.approve') }}
               </button>
             </div>
           </div>
 
           <div v-else class="gov-resolved-info">
-            <span v-if="selectedApproval.resolved_by">Resolved by: {{ selectedApproval.resolved_by }}</span>
-            <span v-if="selectedApproval.resolved_at">at {{ formatTime(selectedApproval.resolved_at) }}</span>
-            <span v-if="selectedApproval.note">Note: {{ selectedApproval.note }}</span>
+            <span v-if="selectedApproval.resolved_by">{{ t('governance.resolvedBy') }}: {{ selectedApproval.resolved_by }}</span>
+            <span v-if="selectedApproval.resolved_at">{{ formatTime(selectedApproval.resolved_at) }}</span>
+            <span v-if="selectedApproval.note">{{ t('governance.note') }}: {{ selectedApproval.note }}</span>
           </div>
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { ref, onMounted } from 'vue';
 import { API } from '/static/api/index.js';
 import { toast } from '/static/stores/global.js';
+import { t } from '/static/i18n.js';
 import { useEntityList } from '/static/composables/useEntityList.js';
 import EntityCard from '/static/components/EntityCard.js';
 
@@ -34,7 +35,7 @@ export default {
 
     onMounted(load);
 
-    return { tools, templates, loading, filter, load, remove, sorted, TOOL_ICON };
+    return { tools, templates, loading, filter, load, remove, sorted, TOOL_ICON, t };
   },
   template: `
     <div class="mx-page">
@@ -53,8 +54,8 @@ export default {
 
       <div v-else>
         <div v-if="tools.length === 0" class="mx-empty">
-          <p>No custom tools yet. Tell PyBot to create one in Chat.</p>
-          <router-link to="/chat" class="mx-btn mx-btn--primary">Go to Chat</router-link>
+          <p>{{ t('tools.noTools') }}</p>
+          <router-link to="/chat" class="mx-btn mx-btn--primary">{{ t('agents.goToChat') }}</router-link>
         </div>
 
         <div v-else class="mx-card-grid">

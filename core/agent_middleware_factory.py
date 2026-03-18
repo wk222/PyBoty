@@ -8,10 +8,13 @@ from .agent_capability_profile import AgentCapabilityProfile
 from .agent_control import AgentControlPolicy
 from .agent_middleware_profile import AgentMiddlewareProfile
 from .agent_prompt_middleware import PromptSectionMiddleware
+from .insight_vault_middleware import InsightVaultConfig, InsightVaultMiddleware
 from .lc_bus_middleware import LCBusMiddleware
 from .lc_memory_middleware import LCMemoryMiddleware
+from .loop_guard_middleware import LoopGuardConfig, LoopGuardMiddleware
 from .patch_tool_calls import PatchToolCallsMiddleware
 from .prompts import build_runtime_prompt_sections
+from .reasoning_frame_middleware import ReasoningFrameConfig, ReasoningFrameMiddleware
 from .subagent_sandbox import SubagentSandbox
 from .summarization_middleware import SummarizationConfig, SummarizationMiddleware
 from .todo_middleware import TodoListMiddleware
@@ -25,14 +28,20 @@ def build_root_langchain_middleware(
     summarize_fn: Any | None = None,
     summarization_config: SummarizationConfig | None = None,
     eviction_dir: str | None = None,
+    loop_guard_config: LoopGuardConfig | None = None,
+    insight_vault_config: InsightVaultConfig | None = None,
+    reasoning_frame_config: ReasoningFrameConfig | None = None,
+    vector_store: Any | None = None,
 ) -> list[Any]:
     """Assemble the root-agent LangChain middleware stack.
 
-    Ordering follows DeepAgents convention:
-      TodoList → PromptContext → Memory → Summarization → BusRecorder →
-      ToolEviction → DynamicToolMiddleware → AnthropicCaching → PatchToolCalls
+    Ordering:
+      LoopGuard → TodoList → PromptContext → InsightVault → ReasoningFrame →
+      Memory → Summarization → BusRecorder → ToolEviction →
+      DynamicToolMiddleware → AnthropicCaching → PatchToolCalls
     """
     stack: list[Any] = [
+        LoopGuardMiddleware(config=loop_guard_config),
         TodoListMiddleware(),
         PromptSectionMiddleware(
             name="RootPromptContextMiddleware",
@@ -42,6 +51,11 @@ def build_root_langchain_middleware(
                 skill_extensions=runtime.skill_registry.get_active_prompt_extensions(progressive=True),
             ),
         ),
+        InsightVaultMiddleware(
+            vector_store=vector_store,
+            config=insight_vault_config,
+        ),
+        ReasoningFrameMiddleware(config=reasoning_frame_config),
         LCMemoryMiddleware(runtime.memory),
         SummarizationMiddleware(
             summarize_fn=summarize_fn,
@@ -70,10 +84,29 @@ def build_subagent_langchain_middleware(
     middleware_profile: AgentMiddlewareProfile,
     effective_policy: AgentControlPolicy,
     tool_middleware: DynamicToolMiddleware,
+    vector_store: Any | None = None,
+    distill_fn: Any | None = None,
 ) -> list[Any]:
-    """Assemble the subagent LangChain middleware stack."""
+    """Assemble the subagent LangChain middleware stack.
+
+    Enhancement sections (loop_guard, insight_vault, reasoning_frame) are
+    created only when present in the middleware profile, giving the parent
+    agent full control over which enhancements each child receives.
+    """
     stack: list[Any] = []
     for section in middleware_profile.stack_names():
+        if section == "loop_guard":
+            stack.append(LoopGuardMiddleware())
+            continue
+        if section == "insight_vault":
+            stack.append(InsightVaultMiddleware(
+                vector_store=vector_store,
+                distill_fn=distill_fn,
+            ))
+            continue
+        if section == "reasoning_frame":
+            stack.append(ReasoningFrameMiddleware())
+            continue
         if section == "prompt_context":
             stack.append(
                 PromptSectionMiddleware(

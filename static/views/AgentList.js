@@ -1,6 +1,7 @@
 import { ref, onMounted } from 'vue';
 import { API } from '/static/api/index.js';
 import { toast } from '/static/stores/global.js';
+import { t } from '/static/i18n.js';
 import { useEntityList } from '/static/composables/useEntityList.js';
 import EntityCard from '/static/components/EntityCard.js';
 
@@ -115,6 +116,7 @@ export default {
       missingAssignedTools,
       assignableTools,
       AGENT_ICON,
+      t,
     };
   },
   template: `
@@ -127,8 +129,8 @@ export default {
       <div v-if="loading" class="mx-loading"><div class="mx-spinner"></div><span>Loading...</span></div>
 
       <div v-else-if="agents.length === 0" class="mx-empty">
-        <p>No agents yet. Tell PyBot to create one in Chat.</p>
-        <router-link to="/chat" class="mx-btn mx-btn--primary">Go to Chat</router-link>
+        <p>{{ t('agents.noAgents') }}</p>
+        <router-link to="/chat" class="mx-btn mx-btn--primary">{{ t('agents.goToChat') }}</router-link>
       </div>
 
       <div v-else class="mx-card-grid">

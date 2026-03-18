@@ -1,5 +1,6 @@
 import { ref, watch } from 'vue';
 import { API } from '/static/api/index.js';
+import { locale, toggleLocale, t } from '/static/i18n.js';
 
 const TYPE_ROUTES = {
   tool: '/tools',
@@ -48,7 +49,9 @@ export default {
     function closeResults() { showResults.value = false; }
     function delayClose() { setTimeout(() => closeResults(), 200); }
 
-    return { query, results, showResults, route, color, closeResults, delayClose };
+    function searchPlaceholder() { return t('common.search'); }
+
+    return { query, results, showResults, route, color, closeResults, delayClose, locale, toggleLocale, searchPlaceholder };
   },
   template: `
     <header class="mx-topbar">
@@ -64,7 +67,7 @@ export default {
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
           <input v-model="query" @focus="showResults = results.length > 0" type="text"
-                 placeholder="Search tools, skills, workflows, agents, apps..."
+                 :placeholder="searchPlaceholder()"
                  class="mx-search-input" />
           <div v-if="showResults" class="mx-search-results">
             <router-link v-for="(r, i) in results" :key="i" :to="route(r)"
@@ -77,6 +80,12 @@ export default {
         </div>
       </div>
       <div class="mx-topbar-right">
+        <button @click="toggleLocale" :title="locale === 'en' ? '切换中文' : 'Switch to English'"
+          style="font-size:11px;font-weight:700;letter-spacing:0.03em;padding:4px 10px;border-radius:100px;border:1px solid var(--border);background:var(--bg-secondary);cursor:pointer;color:var(--text-primary);transition:all 0.15s;white-space:nowrap;"
+          @mouseenter="$event.target.style.borderColor='var(--accent)';$event.target.style.color='var(--accent)'"
+          @mouseleave="$event.target.style.borderColor='var(--border)';$event.target.style.color='var(--text-primary)'">
+          {{ locale === 'en' ? '中文' : 'EN' }}
+        </button>
         <router-link to="/chat" class="mx-topbar-action" title="Chat">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>

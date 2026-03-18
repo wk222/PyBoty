@@ -381,6 +381,15 @@ async def delete_schedule_task(
     return {"success": True}
 
 
+@router.get("/api/schedule/history")
+async def get_schedule_history(
+    limit: int = 50,
+    services: WebServices = Depends(get_services),
+) -> dict[str, object]:
+    """Get scheduled task execution history."""
+    return {"history": services.task_scheduler.get_execution_history(limit=limit)}
+
+
 @router.get("/api/uv/envs")
 async def list_uv_envs(services: WebServices = Depends(get_services)) -> dict[str, object]:
     return {"envs": services.uv_env_mgr.list_envs()}

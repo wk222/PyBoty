@@ -312,9 +312,7 @@ async def get_cost_summary(services: WebServices = SERVICES_DEPENDENCY) -> dict[
 async def get_task_status(services: WebServices = SERVICES_DEPENDENCY) -> dict[str, object]:
     """Get background task queue status."""
     try:
-        queue = getattr(services, "_task_queue", None)
-        if queue is None:
-            return {"tasks": [], "summary": {}}
+        queue = services.task_queue
         return {
             "tasks": [
                 {
@@ -325,6 +323,7 @@ async def get_task_status(services: WebServices = SERVICES_DEPENDENCY) -> dict[s
                     "started_at": t.started_at,
                     "completed_at": t.completed_at,
                     "error": t.error,
+                    "metadata": t.metadata,
                 }
                 for t in queue.list_all()
             ],
@@ -332,6 +331,33 @@ async def get_task_status(services: WebServices = SERVICES_DEPENDENCY) -> dict[s
         }
     except Exception as exc:
         return {"tasks": [], "summary": {}, "error": str(exc)}
+
+
+@router.post("/api/debug/tasks/{task_id}/cancel")
+async def cancel_task(task_id: str, services: WebServices = SERVICES_DEPENDENCY) -> dict[str, object]:
+    """Cancel a pending or running background task."""
+    cancelled = services.task_queue.cancel(task_id)
+    if not cancelled:
+        raise HTTPException(status_code=404, detail="Task not found or already finished")
+    return {"success": True, "task_id": task_id}
+
+
+@router.get("/api/debug/tasks/{task_id}")
+async def get_task_detail(task_id: str, services: WebServices = SERVICES_DEPENDENCY) -> dict[str, object]:
+    """Get detailed status for a single background task."""
+    info = services.task_queue.get_status(task_id)
+    if info is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {
+        "task_id": info.task_id,
+        "name": info.name,
+        "status": info.status.value,
+        "created_at": info.created_at,
+        "started_at": info.started_at,
+        "completed_at": info.completed_at,
+        "error": info.error,
+        "metadata": info.metadata,
+    }
 
 
 @router.get("/api/debug/mcp")

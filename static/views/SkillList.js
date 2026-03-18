@@ -1,6 +1,7 @@
 import { ref, onMounted } from 'vue';
 import { API } from '/static/api/index.js';
 import { toast } from '/static/stores/global.js';
+import { t } from '/static/i18n.js';
 import { useEntityList } from '/static/composables/useEntityList.js';
 import EntityCard from '/static/components/EntityCard.js';
 
@@ -75,7 +76,7 @@ export default {
     return {
       skills, loading, editSkill, editFiles, editFilePath, editContent,
       showEditor, fileLoading,
-      load, toggle, remove, openEditor, openFile, saveFile, fileIcon, SKILL_ICON,
+      load, toggle, remove, openEditor, openFile, saveFile, fileIcon, SKILL_ICON, t,
     };
   },
   template: `
@@ -88,7 +89,7 @@ export default {
       <div v-if="loading" class="mx-loading"><div class="mx-spinner"></div><span>Loading...</span></div>
 
       <div v-else-if="skills.length === 0" class="mx-empty">
-        <p>No skills installed yet.</p>
+        <p>{{ t('skills.noSkills') }}</p>
       </div>
 
       <div v-else class="mx-card-grid">

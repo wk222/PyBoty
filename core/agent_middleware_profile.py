@@ -8,10 +8,16 @@ from typing import Any
 
 _REQUIRED_SECTIONS = ("tool_control",)
 
+_OPTIONAL_ENHANCEMENT_SECTIONS = ("loop_guard", "insight_vault", "reasoning_frame")
+
 
 @dataclass(frozen=True)
 class AgentMiddlewareProfile:
-    """Persisted middleware stack profile for a subagent."""
+    """Persisted middleware stack profile for a subagent.
+
+    Enhancement sections (loop_guard, insight_vault, reasoning_frame) are
+    optional and can be toggled per-agent at creation time.
+    """
 
     preset: str = "default"
     sections: tuple[str, ...] = ("prompt_context", "policy_context", "tool_control")
@@ -64,11 +70,22 @@ def _preset_values(preset: str) -> dict[str, Any]:
     if preset == "reviewer":
         return {"sections": ("policy_context", "prompt_context", "tool_control")}
     if preset == "coordinator":
-        return {"sections": ("prompt_context", "delegation_context", "policy_context", "tool_control")}
+        return {"sections": (
+            "loop_guard", "prompt_context", "delegation_context",
+            "policy_context", "reasoning_frame", "tool_control",
+        )}
     if preset == "builder":
-        return {"sections": ("prompt_context", "execution_context", "policy_context", "tool_control")}
+        return {"sections": (
+            "loop_guard", "prompt_context", "execution_context",
+            "policy_context", "reasoning_frame", "tool_control",
+        )}
     if preset == "locked_down":
-        return {"sections": ("policy_context", "tool_control")}
+        return {"sections": ("loop_guard", "policy_context", "tool_control")}
+    if preset == "enhanced":
+        return {"sections": (
+            "loop_guard", "prompt_context", "insight_vault",
+            "reasoning_frame", "policy_context", "tool_control",
+        )}
     return {"sections": ("prompt_context", "policy_context", "tool_control")}
 
 
@@ -83,9 +100,10 @@ def list_middleware_presets() -> list[dict[str, Any]]:
             ("default", "Balanced runtime + policy context with enforced tool controls."),
             ("focused", "Minimal prompt context plus tool controls for narrow specialists."),
             ("reviewer", "Policy-heavy context for audit or review roles."),
-            ("coordinator", "Delegation-oriented stack for planning and orchestration roles."),
-            ("builder", "Execution-oriented stack for implementation and tool-building roles."),
-            ("locked_down", "Only policy context plus tool controls for tightly governed agents."),
+            ("coordinator", "Delegation + loop guard + reasoning frame for orchestration roles."),
+            ("builder", "Execution + loop guard + reasoning frame for implementation roles."),
+            ("locked_down", "Only policy + loop guard for tightly governed agents."),
+            ("enhanced", "Full enhancement stack: loop guard + insight vault + reasoning frame."),
         )
     ]
 

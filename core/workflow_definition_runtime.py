@@ -7,7 +7,15 @@ import time
 import uuid
 from typing import Any
 
-from .workflow_models import FlowEdge, FlowNode, NodeStatus, NodeType, WorkflowDef, WorkflowStatus
+from .workflow_models import (
+    FlowEdge,
+    FlowNode,
+    NodeExceptionConfig,
+    NodeStatus,
+    NodeType,
+    WorkflowDef,
+    WorkflowStatus,
+)
 
 _INLINE_CONFIG_KEYS = (
     "command",
@@ -220,6 +228,20 @@ class WorkflowDefinitionRuntime:
             node_type = NodeType(raw_node.get("type", "exec"))
             config = self._extract_config(raw_node)
             position = self._normalize_position(raw_node.get("position"), index)
+            exc_raw = raw_node.get("exception_config", {})
+            if not exc_raw:
+                exc_raw = {}
+                if raw_node.get("timeout"):
+                    exc_raw["timeout_seconds"] = raw_node["timeout"]
+                if raw_node.get("max_retries") or raw_node.get("retries"):
+                    exc_raw["max_retries"] = raw_node.get("max_retries") or raw_node.get("retries", 0)
+                if raw_node.get("retry_delay"):
+                    exc_raw["retry_delay"] = raw_node["retry_delay"]
+                if raw_node.get("on_error"):
+                    exc_raw["on_error"] = raw_node["on_error"]
+                if raw_node.get("fallback_output") or raw_node.get("fallback_data"):
+                    exc_raw["fallback_output"] = raw_node.get("fallback_output") or raw_node.get("fallback_data")
+
             workflow.nodes[node_id] = FlowNode(
                 id=node_id,
                 type=node_type,
@@ -232,6 +254,7 @@ class WorkflowDefinitionRuntime:
                 completed_at=raw_node.get("completed_at"),
                 position=position,
                 retry_count=int(raw_node.get("retry_count", 0)),
+                exception_config=NodeExceptionConfig.from_dict(exc_raw),
             )
 
         raw_edges = data.get("edges", [])

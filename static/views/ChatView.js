@@ -1,6 +1,7 @@
 import { ref, reactive, onMounted, nextTick, watch } from 'vue';
 import { API } from '/static/api/index.js';
 import { toast } from '/static/stores/global.js';
+import { t } from '/static/i18n.js';
 
 function escapeHtml(str) {
   if (!str) return '';
@@ -236,7 +237,7 @@ export default {
       convSearch, messagesEl, inputEl, fileInput,
       filteredConversations, loadConversations, createConversation,
       deleteConversation, switchConversation, sendMessage, onInputKeydown,
-      handleFileUpload, formatTime, escapeHtml, formatBytes,
+      handleFileUpload, formatTime, escapeHtml, formatBytes, t,
     };
   },
   template: `
@@ -251,12 +252,12 @@ export default {
           <span>+</span> New Chat
         </button>
         <div style="padding:0 12px 8px;">
-          <input v-model="convSearch" type="text" placeholder="Search conversations..."
+          <input v-model="convSearch" type="text" :placeholder="t('chat.searchConversations')"
             style="width:100%;padding:6px 10px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-size:12px;outline:none;" />
         </div>
         <div class="conversation-list">
           <div v-if="filteredConversations().length === 0" style="padding:24px 12px;text-align:center;color:var(--text-muted);font-size:12px;">
-            No conversations yet
+            {{ t('chat.noConversations') }}
           </div>
           <div v-for="c in filteredConversations()" :key="c.thread_id"
                class="conv-item" :class="{ active: c.thread_id === currentThreadId }"
@@ -283,9 +284,8 @@ export default {
         <div class="chat-messages" ref="messagesEl">
           <div v-if="messages.length === 0 && !isStreaming" class="empty-state">
             <div class="logo">&#x1F6E0;</div>
-            <h2>Welcome to PyBot</h2>
-            <p>I can <strong>create tools and agents</strong> autonomously.<br>
-            Try: "Create a tool to calculate circle area" or "Create a data analyst agent".</p>
+            <h2>{{ t('chat.welcome') }}</h2>
+            <p v-html="t('chat.welcomeHint')"></p>
           </div>
 
           <div v-for="(msg, i) in messages" :key="i" class="message" :class="msg.role">
@@ -334,7 +334,7 @@ export default {
             <textarea ref="inputEl" v-model="inputText"
               :disabled="!currentThreadId"
               @keydown="onInputKeydown"
-              :placeholder="currentThreadId ? 'Type a message... (Enter to send, Shift+Enter for newline)' : 'Loading conversation...'"
+              :placeholder="currentThreadId ? t('chat.inputPlaceholder') : t('chat.loadingConversation')"
               rows="1"
               @input="e => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px'; }"></textarea>
             <button class="send-btn" @click="sendMessage" :disabled="!currentThreadId || isSending">

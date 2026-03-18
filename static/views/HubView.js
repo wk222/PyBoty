@@ -1,5 +1,7 @@
 import { ref, computed, onMounted, watch } from 'vue';
+import { API } from '/static/api/index.js';
 import { toast } from '/static/stores/global.js';
+import { t } from '/static/i18n.js';
 
 const HUB_URL = localStorage.getItem('pyhub_url') || 'http://localhost:8000';
 const HUB_TOKEN = localStorage.getItem('pyhub_token') || '';
@@ -82,7 +84,7 @@ export default {
       try {
         selectedPkg.value = await hubRequest(`/packages/${slug}`);
       } catch (e) {
-        toast.error(`Failed to load: ${e.message}`);
+        toast('Failed to load: ' + e.message, 'error');
       } finally {
         detailLoading.value = false;
       }
@@ -133,15 +135,33 @@ export default {
       return `${s.toFixed(i ? 1 : 0)} ${u[i]}`;
     }
 
+    const installing = ref(false);
+
+    async function installPackage(slug, type) {
+      installing.value = true;
+      try {
+        const hubUrl = localStorage.getItem('pyhub_url') || 'http://localhost:8000';
+        const hubToken = localStorage.getItem('pyhub_token') || '';
+        await API.installAppFromHub({
+          slug, version: 'latest', overwrite: false,
+          hub_url: hubUrl, hub_token: hubToken,
+        });
+        toast('Installed "' + slug + '"', 'success');
+      } catch (e) {
+        toast('Install failed: ' + e.message, 'error');
+      }
+      installing.value = false;
+    }
+
     onMounted(loadPackages);
 
     return {
       packages, total, loading, searchQuery, activeType, sortBy,
       page, totalPages, selectedPkg, detailLoading, hubConnected,
-      configOpen, hubUrlInput,
+      configOpen, hubUrlInput, installing,
       types, loadPackages, searchPackages, openDetail, closeDetail,
       setType, setSort, prevPage, nextPage, doSearch, saveConfig,
-      typeColor, typeIcon, formatDate, formatSize,
+      typeColor, typeIcon, formatDate, formatSize, installPackage, t,
     };
   },
   template: `
@@ -154,11 +174,11 @@ export default {
               <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
               <line x1="12" y1="22.08" x2="12" y2="12"/>
             </svg>
-            <h1>PyHub <span class="hub-subtitle">Marketplace</span></h1>
+            <h1>{{ t('hub.title') }} <span class="hub-subtitle">{{ t('hub.marketplace') }}</span></h1>
           </div>
           <div class="hub-actions">
             <span class="hub-status" :class="hubConnected ? 'connected' : 'disconnected'">
-              {{ hubConnected ? 'Connected' : 'Disconnected' }}
+              {{ hubConnected ? t('hub.connected') : t('hub.disconnected') }}
             </span>
             <button class="hub-config-btn" @click="configOpen = !configOpen" title="Configure registry">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
@@ -169,10 +189,10 @@ export default {
         </div>
 
         <div v-if="configOpen" class="hub-config-panel">
-          <label>Registry URL</label>
+          <label>{{ t('hub.registryUrl') }}</label>
           <div class="hub-config-row">
             <input v-model="hubUrlInput" placeholder="http://localhost:8000" class="hub-input" />
-            <button class="mx-btn mx-btn-primary" @click="saveConfig">Save</button>
+            <button class="mx-btn mx-btn-primary" @click="saveConfig">{{ t('hub.save') }}</button>
           </div>
         </div>
 
@@ -180,22 +200,22 @@ export default {
           <svg class="hub-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
-          <input v-model="searchQuery" @keyup.enter="doSearch" placeholder="Search packages..." class="hub-search-input" />
+          <input v-model="searchQuery" @keyup.enter="doSearch" :placeholder="t('hub.searchPlaceholder')" class="hub-search-input" />
         </div>
 
         <div class="hub-filters">
           <div class="hub-type-tabs">
-            <button v-for="t in types" :key="t.key"
-                    class="hub-type-tab" :class="{ active: activeType === t.key }"
-                    @click="setType(t.key)">
-              {{ t.label }}
+            <button v-for="tp in types" :key="tp.key"
+                    class="hub-type-tab" :class="{ active: activeType === tp.key }"
+                    @click="setType(tp.key)">
+              {{ tp.label }}
             </button>
           </div>
           <select v-model="sortBy" @change="doSearch" class="hub-sort-select">
-            <option value="updated">Recently Updated</option>
-            <option value="downloads">Most Downloads</option>
-            <option value="stars">Most Stars</option>
-            <option value="created">Newest</option>
+            <option value="updated">{{ t('hub.recentlyUpdated') }}</option>
+            <option value="downloads">{{ t('hub.mostDownloads') }}</option>
+            <option value="stars">{{ t('hub.mostStars') }}</option>
+            <option value="created">{{ t('hub.newest') }}</option>
           </select>
         </div>
       </header>
@@ -208,12 +228,12 @@ export default {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48" style="opacity:.4">
           <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
         </svg>
-        <p>Cannot connect to PyHub registry</p>
-        <p class="hub-empty-sub">Click the settings icon to configure registry URL</p>
+        <p>{{ t('hub.noConnect') }}</p>
+        <p class="hub-empty-sub">{{ t('hub.configHint') }}</p>
       </div>
 
       <div v-else-if="packages.length === 0" class="hub-empty">
-        <p>No packages found</p>
+        <p>{{ t('hub.noPackages') }}</p>
       </div>
 
       <div v-else class="hub-grid">
@@ -231,8 +251,8 @@ export default {
           <div class="hub-card-footer">
             <span class="hub-card-type" :style="{ color: typeColor(pkg.type) }">{{ pkg.type }}</span>
             <div class="hub-card-stats">
-              <span title="Downloads">↓ {{ pkg.stats_downloads }}</span>
-              <span title="Stars">★ {{ pkg.stats_stars }}</span>
+              <span :title="t('hub.downloads')">↓ {{ pkg.stats_downloads }}</span>
+              <span :title="t('hub.stars')">★ {{ pkg.stats_stars }}</span>
             </div>
           </div>
           <div v-if="pkg.badges && pkg.badges.length" class="hub-card-badges">
@@ -262,18 +282,18 @@ export default {
           </div>
           <p class="hub-detail-summary">{{ selectedPkg.summary || 'No description' }}</p>
           <div class="hub-detail-stats">
-            <div class="hub-stat"><span class="hub-stat-val">{{ selectedPkg.stats_downloads }}</span><span class="hub-stat-label">Downloads</span></div>
-            <div class="hub-stat"><span class="hub-stat-val">{{ selectedPkg.stats_stars }}</span><span class="hub-stat-label">Stars</span></div>
-            <div class="hub-stat"><span class="hub-stat-val">{{ selectedPkg.stats_versions }}</span><span class="hub-stat-label">Versions</span></div>
-            <div class="hub-stat"><span class="hub-stat-val">{{ selectedPkg.stats_comments || 0 }}</span><span class="hub-stat-label">Comments</span></div>
+            <div class="hub-stat"><span class="hub-stat-val">{{ selectedPkg.stats_downloads }}</span><span class="hub-stat-label">{{ t('hub.downloads') }}</span></div>
+            <div class="hub-stat"><span class="hub-stat-val">{{ selectedPkg.stats_stars }}</span><span class="hub-stat-label">{{ t('hub.stars') }}</span></div>
+            <div class="hub-stat"><span class="hub-stat-val">{{ selectedPkg.stats_versions }}</span><span class="hub-stat-label">{{ t('hub.versions') }}</span></div>
+            <div class="hub-stat"><span class="hub-stat-val">{{ selectedPkg.stats_comments || 0 }}</span><span class="hub-stat-label">{{ t('hub.comments') }}</span></div>
           </div>
           <div v-if="selectedPkg.latest_version" class="hub-detail-version">
-            <h4>Latest: v{{ selectedPkg.latest_version.version }}</h4>
+            <h4>{{ t('hub.latest') }}: v{{ selectedPkg.latest_version.version }}</h4>
             <p v-if="selectedPkg.latest_version.changelog" class="hub-detail-changelog">{{ selectedPkg.latest_version.changelog }}</p>
             <div class="hub-detail-files">{{ selectedPkg.latest_version.file_count }} files · {{ formatSize(selectedPkg.latest_version.total_size) }}</div>
           </div>
           <div v-if="selectedPkg.versions && selectedPkg.versions.length > 1" class="hub-detail-versions">
-            <h4>All Versions</h4>
+            <h4>{{ t('hub.allVersions') }}</h4>
             <div class="hub-version-list">
               <div v-for="v in selectedPkg.versions" :key="v.id" class="hub-version-row">
                 <span class="hub-version-tag">v{{ v.version }}</span>
@@ -283,8 +303,13 @@ export default {
             </div>
           </div>
           <div class="hub-detail-meta">
-            <span>Owner: {{ selectedPkg.owner_username }}</span>
-            <span>Created: {{ formatDate(selectedPkg.created_at) }}</span>
+            <span>{{ t('hub.owner') }}: {{ selectedPkg.owner_username }}</span>
+            <span>{{ t('hub.created') }}: {{ formatDate(selectedPkg.created_at) }}</span>
+          </div>
+          <div style="margin-top:16px;display:flex;gap:8px;">
+            <button class="mx-btn mx-btn--primary" @click="installPackage(selectedPkg.slug, selectedPkg.type)" :disabled="installing">
+              {{ installing ? t('hub.installing') : t('hub.installToPybot') }}
+            </button>
           </div>
         </div>
       </div>

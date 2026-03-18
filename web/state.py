@@ -19,6 +19,7 @@ from core.config import get_agent_control_config, get_llm_config
 from core.memory_manager import MemoryManager
 from core.project_paths import ProjectPaths
 from core.skill_registry import SkillRegistry
+from core.task_queue import TaskQueue
 from core.task_scheduler import TaskScheduler
 from core.uv_env_manager import UvEnvManager
 from core.workspace_manager import WorkspaceManager
@@ -191,6 +192,7 @@ class WebServices:
     memory_mgr: MemoryManager
     skill_registry: SkillRegistry
     task_scheduler: TaskScheduler
+    task_queue: TaskQueue
     uv_env_mgr: UvEnvManager
     app_manager: AppManager
 
@@ -223,6 +225,7 @@ class WebServices:
             memory_mgr=MemoryManager(str(resolved_paths.workspace_dir)),
             skill_registry=SkillRegistry(str(resolved_paths.skills_dir)),
             task_scheduler=TaskScheduler(str(resolved_paths.workspace_dir)),
+            task_queue=TaskQueue(max_workers=4),
             uv_env_mgr=UvEnvManager(str(resolved_paths.uv_envs_dir)),
             app_manager=AppManager(str(resolved_paths.apps_dir), project_paths=resolved_paths),
         )
@@ -257,3 +260,4 @@ class WebServices:
 
     def shutdown(self) -> None:
         self.task_scheduler.stop()
+        self.task_queue.shutdown(wait=False)

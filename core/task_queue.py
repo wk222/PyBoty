@@ -209,6 +209,66 @@ class TaskQueue:
             self._futures.pop(tid, None)
 
 
+    def submit_batch(
+        self,
+        batch_fn: Callable[..., dict[str, Any]],
+        *,
+        name: str = "",
+        batch_size: int = 100,
+        max_batches: int = 0,
+        initial_cursor: str | None = None,
+        delay_between: float = 0.0,
+        metadata: dict[str, Any] | None = None,
+    ) -> TaskHandle:
+        """Submit a self-scheduling batch job.
+
+        The batch_fn must accept (cursor: str|None, batch_size: int) and
+        return a dict with keys: cursor, processed, done.
+
+        The queue auto-schedules continuation batches until done or
+        max_batches is reached.
+        """
+
+        def _run_batches() -> dict[str, Any]:
+            cursor = initial_cursor
+            total_processed = 0
+            batch_count = 0
+
+            while True:
+                if 0 < max_batches <= batch_count:
+                    return {
+                        "status": "paused",
+                        "cursor": cursor,
+                        "total_processed": total_processed,
+                        "batch_count": batch_count,
+                    }
+
+                result = batch_fn(cursor, batch_size)
+                cursor = result.get("cursor")
+                processed = result.get("processed", 0)
+                done = result.get("done", False)
+
+                total_processed += processed
+                batch_count += 1
+
+                if done or processed == 0:
+                    return {
+                        "status": "completed",
+                        "cursor": cursor,
+                        "total_processed": total_processed,
+                        "batch_count": batch_count,
+                    }
+
+                if delay_between > 0:
+                    time.sleep(delay_between)
+
+        return self.submit(
+            _run_batches,
+            name=name or "batch_job",
+            metadata={**(metadata or {}), "batch_size": batch_size},
+        )
+
+
 class CheckpointerFactory:
     """Factory for creating LangGraph checkpoint savers."""
 

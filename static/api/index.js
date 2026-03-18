@@ -118,6 +118,11 @@ export const API = {
     method: 'PATCH', body: JSON.stringify({ enabled })
   }),
   deleteScheduleTask: (name) => request(`/api/schedule/tasks/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  getScheduleHistory: (limit = 50) => request(`/api/schedule/history?limit=${limit}`),
+
+  getBackgroundTasks: () => request('/api/debug/tasks'),
+  getBackgroundTask: (id) => request(`/api/debug/tasks/${encodeURIComponent(id)}`),
+  cancelBackgroundTask: (id) => request(`/api/debug/tasks/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
 
   listUvEnvs: () => request('/api/uv/envs'),
   getUvEnv: (name) => request(`/api/uv/envs/${encodeURIComponent(name)}`),
@@ -156,6 +161,19 @@ export const API = {
     method: 'POST', body: JSON.stringify(data)
   }),
   getProviders: () => request('/api/debug/providers'),
+
+  exportAppBundle: (name) => request(`/api/apps/${encodeURIComponent(name)}/bundle`),
+  downloadAppZip: (name) => `${BASE}/api/apps/${encodeURIComponent(name)}/download`,
+  getAppDependencies: (name) => request(`/api/apps/${encodeURIComponent(name)}/dependencies`),
+  publishApp: (name, data) => request(`/api/apps/${encodeURIComponent(name)}/publish`, {
+    method: 'POST', body: JSON.stringify(data)
+  }),
+  installAppFromHub: (data) => request('/api/apps/install-from-hub', {
+    method: 'POST', body: JSON.stringify(data)
+  }),
+  importAppBundle: (data) => request('/api/apps/import', {
+    method: 'POST', body: JSON.stringify(data)
+  }),
 
   globalSearch: (q) => request(`/api/search?q=${encodeURIComponent(q)}`),
 

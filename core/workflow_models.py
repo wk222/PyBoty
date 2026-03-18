@@ -71,6 +71,44 @@ class WorkflowStatus(str, Enum):
 
 
 @dataclass
+class NodeExceptionConfig:
+    """Per-node exception handling policy (inspired by Coze's ExceptionConfig)."""
+
+    timeout_seconds: float | None = None
+    max_retries: int = 0
+    retry_delay: float = 1.0
+    max_retry_delay: float = 60.0
+    on_error: OnErrorStrategy = OnErrorStrategy.STOP_WORKFLOW
+    fallback_output: Any = None
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {}
+        if self.timeout_seconds is not None:
+            d["timeout_seconds"] = self.timeout_seconds
+        if self.max_retries > 0:
+            d["max_retries"] = self.max_retries
+            d["retry_delay"] = self.retry_delay
+            d["max_retry_delay"] = self.max_retry_delay
+        if self.on_error != OnErrorStrategy.STOP_WORKFLOW:
+            d["on_error"] = self.on_error.value
+        if self.fallback_output is not None:
+            d["fallback_output"] = self.fallback_output
+        return d
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> NodeExceptionConfig:
+        on_err = raw.get("on_error", "stop_workflow")
+        return cls(
+            timeout_seconds=raw.get("timeout_seconds") or raw.get("timeout"),
+            max_retries=int(raw.get("max_retries", 0)),
+            retry_delay=float(raw.get("retry_delay", 1.0)),
+            max_retry_delay=float(raw.get("max_retry_delay", 60.0)),
+            on_error=OnErrorStrategy(on_err) if isinstance(on_err, str) else on_err,
+            fallback_output=raw.get("fallback_output") or raw.get("fallback_data"),
+        )
+
+
+@dataclass
 class FlowNode:
     id: str
     type: NodeType
@@ -84,11 +122,32 @@ class FlowNode:
     position: dict[str, float] = field(default_factory=lambda: {"x": 0, "y": 0})
     retry_count: int = 0
     skip_condition: str | None = None
-    on_error: OnErrorStrategy = OnErrorStrategy.STOP_WORKFLOW
-    max_retries: int = 0
-    retry_delay: float = 1.0
-    max_retry_delay: float = 60.0
+    exception_config: NodeExceptionConfig = field(default_factory=NodeExceptionConfig)
     error_output: Any = None
+
+    @property
+    def on_error(self) -> OnErrorStrategy:
+        return self.exception_config.on_error
+
+    @property
+    def max_retries(self) -> int:
+        return self.exception_config.max_retries
+
+    @property
+    def retry_delay(self) -> float:
+        return self.exception_config.retry_delay
+
+    @property
+    def max_retry_delay(self) -> float:
+        return self.exception_config.max_retry_delay
+
+    @property
+    def timeout_seconds(self) -> float | None:
+        return self.exception_config.timeout_seconds
+
+    @property
+    def fallback_output(self) -> Any:
+        return self.exception_config.fallback_output
 
     def to_dict(self) -> dict[str, Any]:
         d = {
@@ -106,12 +165,9 @@ class FlowNode:
         }
         if self.skip_condition:
             d["skip_condition"] = self.skip_condition
-        if self.on_error != OnErrorStrategy.STOP_WORKFLOW:
-            d["on_error"] = self.on_error.value
-        if self.max_retries > 0:
-            d["max_retries"] = self.max_retries
-            d["retry_delay"] = self.retry_delay
-            d["max_retry_delay"] = self.max_retry_delay
+        exc_dict = self.exception_config.to_dict()
+        if exc_dict:
+            d["exception_config"] = exc_dict
         if self.error_output is not None:
             d["error_output"] = self.error_output
         return d

@@ -1,6 +1,7 @@
 import { ref, onMounted } from 'vue';
 import { API } from '/static/api/index.js';
 import { toast } from '/static/stores/global.js';
+import { t } from '/static/i18n.js';
 
 function ensureDraft(drafts, approvalId) {
   if (!drafts.value[approvalId]) {
@@ -74,32 +75,33 @@ export default {
       formatTime,
       statusLabel,
       statusColor,
+      t,
     };
   },
   template: `
     <div class="mx-page">
       <div class="mx-page-header">
         <div>
-          <h1 class="mx-page-title">Approval Center</h1>
+          <h1 class="mx-page-title">{{ t('governance.title') }}</h1>
           <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">
-            Pending {{ counts.pending }} · Approved {{ counts.approved }} · Rejected {{ counts.rejected }}
+            {{ t('governance.pending') }} {{ counts.pending }} · {{ t('governance.approved') }} {{ counts.approved }} · {{ t('governance.rejected') }} {{ counts.rejected }}
           </div>
         </div>
-        <button class="mx-btn mx-btn--ghost" @click="load">Refresh</button>
+        <button class="mx-btn mx-btn--ghost" @click="load">{{ t('common.refresh') }}</button>
       </div>
 
-      <div v-if="loading" class="mx-loading"><div class="mx-spinner"></div><span>Loading...</span></div>
+      <div v-if="loading" class="mx-loading"><div class="mx-spinner"></div><span>{{ t('common.loading') }}</span></div>
 
       <div v-else style="display:flex;flex-direction:column;gap:24px;">
         <section>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-            <h2 style="font-size:18px;font-weight:700;">Pending Approvals</h2>
-            <span class="mx-badge mx-badge--waiting">{{ approvals.length }} open</span>
+            <h2 style="font-size:18px;font-weight:700;">{{ t('governance.pendingApprovals') }}</h2>
+            <span class="mx-badge mx-badge--waiting">{{ approvals.length }} {{ t('governance.open') }}</span>
           </div>
 
           <div v-if="approvals.length === 0" class="mx-empty">
-            <p>No pending approvals.</p>
-            <p style="font-size:12px;margin-top:8px;">Workflow gates and risky tool calls will appear here.</p>
+            <p>{{ t('governance.noPending') }}</p>
+            <p style="font-size:12px;margin-top:8px;">{{ t('governance.noPendingHint') }}</p>
           </div>
 
           <div v-else class="mx-card-grid">
@@ -109,32 +111,32 @@ export default {
                   <div class="mx-entity-card-name" style="font-size:16px;">{{ appr.summary || appr.kind }}</div>
                   <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">{{ appr.scope }}</div>
                 </div>
-                <span class="mx-badge mx-badge--waiting">Waiting</span>
+                <span class="mx-badge mx-badge--waiting">{{ t('governance.waiting') }}</span>
               </div>
 
               <div style="background:var(--bg-hover);padding:12px;border-radius:6px;font-size:13px;line-height:1.5;border:1px solid var(--border);">
-                <strong>Prompt:</strong><br/>
+                <strong>{{ t('governance.prompt') }}:</strong><br/>
                 {{ appr.prompt }}
               </div>
 
               <input
                 v-model="drafts[appr.approval_id].approver"
                 class="mx-input"
-                placeholder="Approver name (optional)"
+                :placeholder="t('governance.approverPlaceholder')"
               />
 
               <textarea
                 v-model="drafts[appr.approval_id].note"
                 class="mx-textarea"
                 rows="3"
-                placeholder="Approval note (optional)"
+                :placeholder="t('governance.notePlaceholder')"
               ></textarea>
 
               <div style="display:flex;justify-content:space-between;align-items:center;">
                 <div style="font-size:11px;color:var(--text-muted);">{{ formatTime(appr.created_at) }}</div>
                 <div style="display:flex;gap:8px;">
-                  <button class="mx-btn mx-btn--ghost" style="color:var(--error);" @click="resolve(appr.approval_id, false)">Reject</button>
-                  <button class="mx-btn mx-btn--primary" style="background:#10b981;border-color:#10b981;" @click="resolve(appr.approval_id, true)">Approve</button>
+                  <button class="mx-btn mx-btn--ghost" style="color:var(--error);" @click="resolve(appr.approval_id, false)">{{ t('governance.reject') }}</button>
+                  <button class="mx-btn mx-btn--primary" style="background:#10b981;border-color:#10b981;" @click="resolve(appr.approval_id, true)">{{ t('governance.approve') }}</button>
                 </div>
               </div>
             </div>
@@ -143,12 +145,12 @@ export default {
 
         <section>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-            <h2 style="font-size:18px;font-weight:700;">Recent Decisions</h2>
-            <span style="font-size:12px;color:var(--text-muted);">Last {{ recentApprovals.length }}</span>
+            <h2 style="font-size:18px;font-weight:700;">{{ t('governance.recentDecisions') }}</h2>
+            <span style="font-size:12px;color:var(--text-muted);">{{ t('governance.last') }} {{ recentApprovals.length }}</span>
           </div>
 
           <div v-if="recentApprovals.length === 0" class="mx-empty">
-            <p>No approval history yet.</p>
+            <p>{{ t('governance.noHistory') }}</p>
           </div>
 
           <div v-else class="mx-card-grid">
@@ -167,13 +169,13 @@ export default {
               </div>
 
               <div style="font-size:12px;color:var(--text-muted);line-height:1.6;">
-                <div>Created: {{ formatTime(appr.created_at) }}</div>
-                <div>Resolved: {{ formatTime(appr.resolved_at) || 'Not resolved' }}</div>
-                <div>Approver: {{ appr.resolved_by || 'N/A' }}</div>
+                <div>{{ t('governance.created') }}: {{ formatTime(appr.created_at) }}</div>
+                <div>{{ t('governance.resolved') }}: {{ formatTime(appr.resolved_at) || t('governance.notResolved') }}</div>
+                <div>{{ t('governance.approver') }}: {{ appr.resolved_by || 'N/A' }}</div>
               </div>
 
               <div v-if="appr.resolution_note" style="background:var(--bg-hover);padding:12px;border-radius:6px;border:1px solid var(--border);font-size:13px;">
-                <strong>Note:</strong><br/>
+                <strong>{{ t('governance.note') }}:</strong><br/>
                 {{ appr.resolution_note }}
               </div>
             </div>

@@ -1,4 +1,8 @@
-"""Reusable approval queue shared by workflows and agent tool calls."""
+"""Reusable approval / interrupt queue shared by workflows and agent tool calls.
+
+Supports typed interrupts (inspired by Coze's interrupt system) while
+remaining backward-compatible with the existing approval-only flow.
+"""
 
 from __future__ import annotations
 
@@ -8,10 +12,55 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
 ApprovalCallback = Callable[[bool, str], Any]
+
+
+class InterruptKind(str, Enum):
+    """Typed interrupt categories extending the basic approval model.
+
+    The ``kind`` field on ``ApprovalRequest`` can be any string for backward
+    compatibility, but using these constants enables richer UI and routing.
+    """
+
+    TOOL_APPROVAL = "tool_approval"
+    USER_QUESTION = "user_question"
+    MISSING_PARAMS = "missing_params"
+    OAUTH_REQUIRED = "oauth_required"
+    WORKFLOW_INPUT = "workflow_input"
+    WORKFLOW_CONFIRM = "workflow_confirm"
+    SAFETY_REVIEW = "safety_review"
+    CUSTOM = "custom"
+
+    @classmethod
+    def from_str(cls, value: str) -> InterruptKind:
+        try:
+            return cls(value)
+        except ValueError:
+            return cls.CUSTOM
+
+
+@dataclass
+class ResumePayload:
+    """Structured data returned when an interrupt is resolved."""
+
+    approved: bool = True
+    user_input: str = ""
+    params: dict[str, Any] = field(default_factory=dict)
+    oauth_token: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"approved": self.approved}
+        if self.user_input:
+            d["user_input"] = self.user_input
+        if self.params:
+            d["params"] = self.params
+        if self.oauth_token is not None:
+            d["oauth_token"] = self.oauth_token
+        return d
 
 
 @dataclass
@@ -34,11 +83,29 @@ class ApprovalRequest:
     policy_tags: tuple[str, ...] = ()
     resolution_labels: tuple[str, ...] = ()
     resolution_result: Any = None
+    resume_payload: ResumePayload | None = None
+
+    @property
+    def interrupt_kind(self) -> InterruptKind:
+        return InterruptKind.from_str(self.kind)
+
+    @property
+    def requires_user_input(self) -> bool:
+        return self.interrupt_kind in (
+            InterruptKind.USER_QUESTION,
+            InterruptKind.MISSING_PARAMS,
+            InterruptKind.WORKFLOW_INPUT,
+        )
+
+    @property
+    def requires_external_action(self) -> bool:
+        return self.interrupt_kind == InterruptKind.OAUTH_REQUIRED
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d = {
             "approval_id": self.approval_id,
             "kind": self.kind,
+            "interrupt_kind": self.interrupt_kind.value,
             "scope": self.scope,
             "summary": self.summary,
             "prompt": self.prompt,
@@ -55,10 +122,24 @@ class ApprovalRequest:
             "policy_tags": list(self.policy_tags),
             "resolution_labels": list(self.resolution_labels),
             "resolution_result": self.resolution_result,
+            "requires_user_input": self.requires_user_input,
+            "requires_external_action": self.requires_external_action,
         }
+        if self.resume_payload is not None:
+            d["resume_payload"] = self.resume_payload.to_dict()
+        return d
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> ApprovalRequest:
+        resume_raw = payload.get("resume_payload")
+        resume = None
+        if isinstance(resume_raw, dict):
+            resume = ResumePayload(
+                approved=resume_raw.get("approved", True),
+                user_input=resume_raw.get("user_input", ""),
+                params=resume_raw.get("params", {}),
+                oauth_token=resume_raw.get("oauth_token"),
+            )
         return cls(
             approval_id=str(payload.get("approval_id", "")),
             kind=str(payload.get("kind", "")),
@@ -78,6 +159,7 @@ class ApprovalRequest:
             policy_tags=_normalize_names(payload.get("policy_tags")),
             resolution_labels=_normalize_names(payload.get("resolution_labels")),
             resolution_result=payload.get("resolution_result"),
+            resume_payload=resume,
         )
 
 

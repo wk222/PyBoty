@@ -1,4 +1,4 @@
-"""Sub-application APIs, shared DB access, and app file serving."""
+"""Sub-application APIs, shared DB access, app file serving, and Hub sync."""
 
 from __future__ import annotations
 
@@ -6,9 +6,10 @@ import sqlite3
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
+from core.app_packager import AppPackager
 from core.path_utils import safe_resolve
 from web.dependencies import get_services
 from web.state import WebServices
@@ -32,6 +33,27 @@ class DbQueryRequest(BaseModel):
 class DbWriteRequest(BaseModel):
     sql: str
     params: list[Any] = []
+
+
+class AppPublishRequest(BaseModel):
+    version: str = "0.1.0"
+    changelog: str = ""
+    hub_url: str = ""
+    hub_token: str = ""
+
+
+class AppInstallRequest(BaseModel):
+    slug: str
+    version: str = "latest"
+    overwrite: bool = False
+    hub_url: str = ""
+    hub_token: str = ""
+
+
+class AppImportRequest(BaseModel):
+    bundle: dict[str, Any]
+    overwrite: bool = False
+    target_name: str = ""
 
 
 @router.get("/api/apps")
@@ -168,3 +190,101 @@ async def serve_app_index(
     services: WebServices = Depends(get_services),
 ) -> FileResponse:
     return await serve_app_file(app_name, "", services)
+
+
+def _get_packager(services: WebServices) -> AppPackager:
+    return AppPackager(services.app_manager.apps_dir)
+
+
+def _get_hub_client(hub_url: str, hub_token: str) -> Any:
+    from core.pyhub_client import PyHubClient
+
+    url = hub_url or "http://localhost:8000"
+    return PyHubClient(registry_url=url, api_key=hub_token or None)
+
+
+@router.get("/api/apps/{app_name}/bundle")
+async def export_app_bundle(
+    app_name: str,
+    services: WebServices = Depends(get_services),
+) -> dict[str, object]:
+    packager = _get_packager(services)
+    result = packager.export_bundle(app_name)
+    if not result.get("success"):
+        raise HTTPException(status_code=404, detail=result.get("error"))
+    return result
+
+
+@router.get("/api/apps/{app_name}/download")
+async def download_app_zip(
+    app_name: str,
+    services: WebServices = Depends(get_services),
+) -> Response:
+    packager = _get_packager(services)
+    zip_data = packager.export_zip(app_name)
+    if zip_data is None:
+        raise HTTPException(status_code=404, detail="App not found")
+    return Response(
+        content=zip_data,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{app_name}.zip"'},
+    )
+
+
+@router.get("/api/apps/{app_name}/dependencies")
+async def get_app_dependencies(
+    app_name: str,
+    services: WebServices = Depends(get_services),
+) -> dict[str, object]:
+    packager = _get_packager(services)
+    result = packager.get_dependency_info(app_name)
+    if not result.get("success"):
+        raise HTTPException(status_code=404, detail=result.get("error"))
+    return result
+
+
+@router.post("/api/apps/{app_name}/publish")
+async def publish_app_to_hub(
+    app_name: str,
+    req: AppPublishRequest,
+    services: WebServices = Depends(get_services),
+) -> dict[str, object]:
+    packager = _get_packager(services)
+    hub_client = _get_hub_client(req.hub_url, req.hub_token)
+    result = packager.publish_to_hub(
+        app_name, hub_client, version=req.version, changelog=req.changelog,
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    return result
+
+
+@router.post("/api/apps/install-from-hub")
+async def install_app_from_hub(
+    req: AppInstallRequest,
+    services: WebServices = Depends(get_services),
+) -> dict[str, object]:
+    packager = _get_packager(services)
+    hub_client = _get_hub_client(req.hub_url, req.hub_token)
+    result = packager.install_from_hub(
+        req.slug, hub_client, version=req.version, overwrite=req.overwrite,
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    services.app_manager.reload_apps()
+    return result
+
+
+@router.post("/api/apps/import")
+async def import_app_bundle(
+    req: AppImportRequest,
+    services: WebServices = Depends(get_services),
+) -> dict[str, object]:
+    packager = _get_packager(services)
+    result = packager.import_bundle(
+        req.bundle, overwrite=req.overwrite, target_name=req.target_name or None,
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    services.app_manager.reload_apps()
+    return result

@@ -1,6 +1,7 @@
 import { ref, reactive, onMounted } from 'vue';
 import { API } from '/static/api/index.js';
 import { toast } from '/static/stores/global.js';
+import { t, locale } from '/static/i18n.js';
 
 function formatBytes(b) {
   if (!b) return '0 B';
@@ -26,6 +27,12 @@ export default {
     const envPkgInput = ref('');
     const envCode = ref('');
     const envOutput = ref('');
+
+    const showNewTask = ref(false);
+    const newTask = reactive({ name: '', description: '', cron: '0 * * * *', prompt: '', enabled: true });
+    const schedHistory = ref([]);
+    const bgTasks = ref([]);
+    const bgSummary = ref({});
 
     const llmConfig = reactive({
       provider: '', api_key: '', api_base: '', model: '', temperature: 0.7,
@@ -105,6 +112,40 @@ export default {
         const data = await API.listScheduleTasks();
         schedTasks.value = data.tasks || [];
       } catch (_) {}
+      try {
+        const h = await API.getScheduleHistory(20);
+        schedHistory.value = h.history || [];
+      } catch (_) {}
+    }
+
+    async function createTask() {
+      if (!newTask.name || !newTask.cron || !newTask.prompt) {
+        toast('Name, cron, and prompt are required', 'error');
+        return;
+      }
+      try {
+        await API.createScheduleTask({ ...newTask });
+        showNewTask.value = false;
+        Object.assign(newTask, { name: '', description: '', cron: '0 * * * *', prompt: '', enabled: true });
+        loadSchedule();
+        toast('Task created', 'success');
+      } catch (e) { toast('Create failed: ' + e.message, 'error'); }
+    }
+
+    async function loadBgTasks() {
+      try {
+        const data = await API.getBackgroundTasks();
+        bgTasks.value = data.tasks || [];
+        bgSummary.value = data.summary || {};
+      } catch (_) {}
+    }
+
+    async function cancelBgTask(id) {
+      try {
+        await API.cancelBackgroundTask(id);
+        loadBgTasks();
+        toast('Task cancelled', 'success');
+      } catch (e) { toast('Cancel failed: ' + e.message, 'error'); }
     }
 
     async function loadMemory() {
@@ -219,13 +260,25 @@ export default {
       } catch (e) { envOutput.value = 'Error: ' + e.message; }
     }
 
-    function switchTab(t) {
-      tab.value = t;
-      if (t === 'llm') loadLlmConfig();
-      if (t === 'workspace') { loadWorkspace(); loadUploads(); }
-      if (t === 'schedule') loadSchedule();
-      if (t === 'memory') loadMemory();
-      if (t === 'uv') loadUvEnvs();
+    function switchTab(newTab) {
+      tab.value = newTab;
+      if (newTab === 'llm') loadLlmConfig();
+      if (newTab === 'workspace') { loadWorkspace(); loadUploads(); }
+      if (newTab === 'schedule') loadSchedule();
+      if (newTab === 'memory') loadMemory();
+      if (newTab === 'uv') loadUvEnvs();
+      if (newTab === 'tasks') loadBgTasks();
+    }
+
+    function formatTimeAgo(ts) {
+      if (!ts) return '—';
+      const d = new Date(ts * 1000);
+      const now = Date.now();
+      const diff = (now - d.getTime()) / 1000;
+      if (diff < 60) return Math.floor(diff) + 's ago';
+      if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+      if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+      return d.toLocaleDateString();
     }
 
     onMounted(() => { loadLlmConfig(); });
@@ -235,24 +288,26 @@ export default {
       editFile, editContent, showEditor, envDetail, envPkgInput, envCode, envOutput,
       llmConfig, llmFallback, obsConfig, ragConfig, providers,
       llmTesting, llmTestResult, llmSaving,
+      showNewTask, newTask, schedHistory, bgTasks, bgSummary,
       switchTab, openFile, saveFile, toggleSched, deleteSched,
       showEnv, createEnv, deleteEnv, installPkg, uninstallPkg, runCode,
       saveLlmConfig, testConnection, addFallback, removeFallback, loadLlmConfig,
-      formatBytes,
+      createTask, loadBgTasks, cancelBgTask, formatBytes, formatTimeAgo, t,
     };
   },
   template: `
     <div class="mx-page">
       <div class="mx-page-header">
-        <h1 class="mx-page-title">Settings</h1>
+        <h1 class="mx-page-title">{{ $root.st ? $root.st('title') : 'Settings' }}</h1>
       </div>
 
       <div class="mx-tabs">
-        <button class="mx-tab" :class="{ active: tab==='llm' }" @click="switchTab('llm')">LLM Config</button>
+        <button class="mx-tab" :class="{ active: tab==='llm' }" @click="switchTab('llm')">LLM</button>
         <button class="mx-tab" :class="{ active: tab==='workspace' }" @click="switchTab('workspace')">Workspace</button>
         <button class="mx-tab" :class="{ active: tab==='schedule' }" @click="switchTab('schedule')">Schedule</button>
         <button class="mx-tab" :class="{ active: tab==='memory' }" @click="switchTab('memory')">Memory</button>
         <button class="mx-tab" :class="{ active: tab==='uv' }" @click="switchTab('uv')">UV Envs</button>
+        <button class="mx-tab" :class="{ active: tab==='tasks' }" @click="switchTab('tasks')">{{ t('settings.bgTasks') || 'Tasks' }}</button>
       </div>
 
       <!-- LLM Config Tab -->
@@ -422,20 +477,75 @@ export default {
 
       <!-- Schedule Tab -->
       <div v-if="tab==='schedule'">
-        <div v-if="schedTasks.length === 0" class="mx-empty"><p>No scheduled tasks. Configure via SCHEDULE.md or API.</p></div>
-        <div v-for="t in schedTasks" :key="t.name" class="mx-entity-card" style="margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h2 class="mx-section-title" style="margin:0;">{{ t('settings.scheduledTasks') || 'Scheduled Tasks' }}</h2>
+          <button class="mx-btn mx-btn--primary mx-btn--sm" @click="showNewTask = true">+ {{ t('settings.newTask') || 'New Task' }}</button>
+        </div>
+
+        <div v-if="showNewTask" class="mx-section" style="border:1px solid var(--border);border-radius:var(--radius-md);padding:16px;margin-bottom:16px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div>
+              <label class="mx-label">{{ t('settings.taskName') || 'Name' }}</label>
+              <input v-model="newTask.name" class="mx-input" placeholder="daily_report" />
+            </div>
+            <div>
+              <label class="mx-label">Cron</label>
+              <input v-model="newTask.cron" class="mx-input" placeholder="0 18 * * *" style="font-family:monospace;" />
+            </div>
+            <div style="grid-column:1/-1;">
+              <label class="mx-label">{{ t('settings.taskDesc') || 'Description' }}</label>
+              <input v-model="newTask.description" class="mx-input" :placeholder="t('settings.taskDescPlaceholder') || 'What does this task do'" />
+            </div>
+            <div style="grid-column:1/-1;">
+              <label class="mx-label">Prompt</label>
+              <textarea v-model="newTask.prompt" class="mx-textarea" rows="2" :placeholder="t('settings.promptPlaceholder') || 'Prompt to send to the agent'"></textarea>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:12px;">
+            <button class="mx-btn mx-btn--primary mx-btn--sm" @click="createTask">{{ t('settings.create') || 'Create' }}</button>
+            <button class="mx-btn mx-btn--ghost mx-btn--sm" @click="showNewTask = false">{{ t('settings.cancel') || 'Cancel' }}</button>
+          </div>
+        </div>
+
+        <div v-if="schedTasks.length === 0 && !showNewTask" class="mx-empty">
+          <p>{{ t('settings.noSchedule') }}</p>
+        </div>
+        <div v-for="st in schedTasks" :key="st.name" class="mx-entity-card" style="margin-bottom:8px;">
           <div class="mx-entity-card-header">
             <div class="mx-entity-card-info">
-              <div class="mx-entity-card-name">{{ t.name }}</div>
-              <div class="mx-entity-card-desc">{{ t.description || '' }}</div>
+              <div class="mx-entity-card-name">{{ st.name }}</div>
+              <div class="mx-entity-card-desc">{{ st.description || '' }}</div>
+              <div v-if="st.last_run || st.run_count" style="font-size:10px;color:var(--text-muted);margin-top:4px;">
+                {{ t('settings.runs') || 'Runs' }}: {{ st.run_count || 0 }}
+                <span v-if="st.last_run"> · {{ t('settings.lastRun') || 'Last' }}: {{ formatTimeAgo(st.last_run) }}</span>
+                <span v-if="st.consecutive_failures > 0" style="color:var(--error);"> · {{ st.consecutive_failures }} {{ t('settings.failures') || 'failures' }}</span>
+              </div>
+              <div v-if="st.last_error" style="font-size:10px;color:var(--error);margin-top:2px;">{{ st.last_error }}</div>
             </div>
             <div class="mx-entity-card-actions">
-              <span class="mx-tag" style="font-family:monospace;color:var(--accent)">{{ t.cron }}</span>
+              <span class="mx-tag" style="font-family:monospace;color:var(--accent)">{{ st.cron }}</span>
               <label class="toggle-switch">
-                <input type="checkbox" :checked="t.enabled" @change="toggleSched(t.name, $event.target.checked)">
+                <input type="checkbox" :checked="st.enabled" @change="toggleSched(st.name, $event.target.checked)">
                 <span class="toggle-slider"></span>
               </label>
-              <button class="mx-btn-icon mx-btn-icon--danger" @click="deleteSched(t.name)">&times;</button>
+              <button class="mx-btn-icon mx-btn-icon--danger" @click="deleteSched(st.name)">&times;</button>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="schedHistory.length > 0" class="mx-section" style="margin-top:16px;">
+          <h2 class="mx-section-title">{{ t('settings.executionHistory') || 'Execution History' }}</h2>
+          <div style="max-height:200px;overflow-y:auto;">
+            <div v-for="(h, idx) in schedHistory" :key="idx"
+                 style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:6px 8px;border-bottom:1px solid var(--border);">
+              <div>
+                <span style="font-weight:600;">{{ h.task }}</span>
+                <span v-if="h.attempt > 1" style="color:var(--warning);margin-left:6px;">attempt #{{ h.attempt }}</span>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <span :style="{ color: h.success ? 'var(--success)' : 'var(--error)' }">{{ h.success ? '✓' : '✗' }}</span>
+                <span style="color:var(--text-muted);">{{ formatTimeAgo(h.started_at) }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -493,6 +603,49 @@ export default {
             <textarea v-model="envCode" class="mx-textarea" rows="3" placeholder="print('hello')"></textarea>
             <button class="mx-btn mx-btn--primary mx-btn--sm" style="margin-top:4px;" @click="runCode">Run</button>
             <pre v-if="envOutput" style="font-size:10px;color:var(--text-muted);max-height:120px;overflow:auto;white-space:pre-wrap;margin-top:6px;background:var(--bg-primary);padding:8px;border-radius:var(--radius-sm);">{{ envOutput }}</pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Background Tasks Tab -->
+      <div v-if="tab==='tasks'">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h2 class="mx-section-title" style="margin:0;">{{ t('settings.backgroundTasks') || 'Background Tasks' }}</h2>
+          <button class="mx-btn mx-btn--ghost mx-btn--sm" @click="loadBgTasks">{{ t('common.refresh') || 'Refresh' }}</button>
+        </div>
+
+        <div v-if="Object.keys(bgSummary).length > 0" style="display:flex;gap:12px;margin-bottom:16px;">
+          <div v-for="(count, status) in bgSummary" :key="status"
+               style="padding:8px 16px;border-radius:var(--radius-sm);border:1px solid var(--border);font-size:12px;">
+            <div style="font-weight:700;font-size:18px;">{{ count }}</div>
+            <div style="color:var(--text-muted);text-transform:capitalize;">{{ status }}</div>
+          </div>
+        </div>
+
+        <div v-if="bgTasks.length === 0" class="mx-empty">
+          <p>{{ t('settings.noBgTasks') || 'No background tasks running.' }}</p>
+        </div>
+
+        <div v-for="task in bgTasks" :key="task.task_id" class="mx-entity-card" style="margin-bottom:8px;">
+          <div class="mx-entity-card-header">
+            <div class="mx-entity-card-info">
+              <div class="mx-entity-card-name">{{ task.name }}</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">
+                ID: {{ task.task_id }}
+                · {{ t('settings.created') || 'Created' }}: {{ formatTimeAgo(task.created_at) }}
+                <span v-if="task.started_at"> · {{ t('settings.started') || 'Started' }}: {{ formatTimeAgo(task.started_at) }}</span>
+              </div>
+              <div v-if="task.error" style="font-size:10px;color:var(--error);margin-top:2px;">{{ task.error }}</div>
+            </div>
+            <div class="mx-entity-card-actions">
+              <span class="mx-tag" :style="{
+                color: task.status === 'completed' ? 'var(--success)' : task.status === 'failed' ? 'var(--error)' : task.status === 'running' ? 'var(--accent)' : 'var(--text-muted)',
+                borderColor: task.status === 'completed' ? 'var(--success)' : task.status === 'failed' ? 'var(--error)' : task.status === 'running' ? 'var(--accent)' : 'var(--border)',
+              }">{{ task.status }}</span>
+              <button v-if="task.status === 'pending' || task.status === 'running'"
+                      class="mx-btn mx-btn--ghost mx-btn--sm" style="color:var(--error);"
+                      @click="cancelBgTask(task.task_id)">{{ t('settings.cancel') || 'Cancel' }}</button>
+            </div>
           </div>
         </div>
       </div>

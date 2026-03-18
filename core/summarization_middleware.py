@@ -60,10 +60,18 @@ You have a `compact_conversation` tool. Use it when:
 _TRUNCATABLE_TOOLS = frozenset({"write_file", "edit_file", "create_file"})
 
 
+EPISODE_SUMMARY_PROMPT = (
+    "Condense this tool interaction into one concise line. "
+    "Include: tool name, key input, and outcome. Example: "
+    "'write_file(main.py) → created 45-line Flask app'\n\n{text}"
+)
+
+
 @dataclass
 class SummarizationConfig:
     token_trigger: int = 100_000
     keep_recent_messages: int = 20
+    mid_tier_messages: int = 14
     max_tool_arg_chars: int = 2000
     tool_arg_truncation_text: str = "...(truncated)"
     tool_arg_trigger_messages: int = 30
@@ -212,14 +220,33 @@ class SummarizationMiddleware(AgentMiddleware if _HAS_LC else object):  # type: 
 
     def _do_summarize(self, effective: list[Any]) -> int | None:
         keep = self._config.keep_recent_messages
+        mid = self._config.mid_tier_messages
         if len(effective) <= keep:
             return None
+
         cutoff = len(effective) - keep
         to_summarize = effective[:cutoff]
 
         self._offload(to_summarize)
 
-        summary_text = self._generate_summary(to_summarize)
+        if cutoff > mid:
+            old_batch = to_summarize[: cutoff - mid]
+            mid_batch = to_summarize[cutoff - mid:]
+            bulk_summary = self._generate_summary(old_batch)
+            episode_summaries = self._generate_episode_summaries(mid_batch)
+            parts = []
+            if bulk_summary:
+                parts.append(f"### Earlier context\n{bulk_summary}")
+            if episode_summaries:
+                parts.append("### Recent actions\n" + "\n".join(f"- {s}" for s in episode_summaries))
+            summary_text = "\n\n".join(parts) if parts else None
+        else:
+            episode_summaries = self._generate_episode_summaries(to_summarize)
+            if episode_summaries:
+                summary_text = "### Recent actions\n" + "\n".join(f"- {s}" for s in episode_summaries)
+            else:
+                summary_text = self._generate_summary(to_summarize)
+
         if not summary_text:
             return None
 
@@ -234,6 +261,37 @@ class SummarizationMiddleware(AgentMiddleware if _HAS_LC else object):  # type: 
         old_cutoff = self._cutoff_index
         self._cutoff_index = old_cutoff + cutoff - (1 if self._summary_message else 0)
         return len(to_summarize)
+
+    def _generate_episode_summaries(self, messages: list[Any]) -> list[str]:
+        """Generate per-episode one-line summaries for mid-tier messages."""
+        summaries: list[str] = []
+        i = 0
+        while i < len(messages):
+            msg = messages[i]
+            if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
+                tc = msg.tool_calls[0]
+                tool_name = tc.get("name", "unknown")
+                args_preview = str(tc.get("args", {}))[:80]
+                result_preview = ""
+                if i + 1 < len(messages):
+                    next_msg = messages[i + 1]
+                    result_content = getattr(next_msg, "content", "")
+                    if isinstance(result_content, str):
+                        result_preview = result_content[:100]
+                if self._summarize_fn:
+                    try:
+                        text = f"Tool: {tool_name}, Args: {args_preview}, Result: {result_preview}"
+                        one_liner = self._summarize_fn(EPISODE_SUMMARY_PROMPT.format(text=text))
+                        summaries.append(one_liner.strip())
+                        i += 2
+                        continue
+                    except Exception:
+                        pass
+                summaries.append(f"{tool_name}({args_preview[:40]}) → {result_preview[:60]}")
+                i += 2
+                continue
+            i += 1
+        return summaries
 
     def _generate_summary(self, messages: list[Any]) -> str | None:
         if self._summarize_fn:
