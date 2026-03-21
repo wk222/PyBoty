@@ -14,6 +14,7 @@ from typing import Any
 
 from core.path_utils import safe_resolve
 from core.project_paths import ProjectPaths
+from core.tool_arg_repair import _repair_js_regex as sanitize_js_content
 
 APP_METADATA_FILE = "app.json"
 APP_ENTRY_FILE = "index.html"
@@ -24,13 +25,34 @@ APP_HELPERS_JS = """// PyBot App Helpers — DO NOT overwrite this file
 // These helpers are always available in app.js
 
 const _BASE = window.location.origin;
+const _APP_NAME = (() => {
+    const m = window.location.pathname.match(/\\/apps\\/([^/]+)/);
+    return m ? m[1] : '';
+})();
 
 async function apiCall(endpoint, options = {}) {
-    const resp = await fetch(_BASE + endpoint, {
-        headers: { 'Content-Type': 'application/json' },
-        ...options
-    });
-    return resp.json();
+    const isAppAction = !endpoint.startsWith('/') && !endpoint.startsWith('http');
+    const url = isAppAction
+        ? _BASE + '/api/apps/' + _APP_NAME + '/api'
+        : _BASE + endpoint;
+
+    const fetchOpts = isAppAction
+        ? {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: endpoint, payload: options }),
+        }
+        : {
+            headers: { 'Content-Type': 'application/json' },
+            ...options,
+        };
+
+    const resp = await fetch(url, fetchOpts);
+    const data = await resp.json();
+    if (isAppAction && data && data.success && data.result !== undefined) {
+        return data.result;
+    }
+    return data;
 }
 
 async function dbQuery(sql) {
@@ -68,15 +90,27 @@ async function agentChat(message, onChunk) {
     if (!onChunk) return resp.json();
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
-    let full = '';
+    let contentFull = '';
+    let buffer = '';
     while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const text = decoder.decode(value, { stream: true });
-        full += text;
-        onChunk(text, full);
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data: ')) continue;
+            try {
+                const evt = JSON.parse(trimmed.slice(6));
+                if (evt.type === 'done' || evt.type === 'error') {
+                    contentFull = evt.content || '';
+                    onChunk(evt.content || '', contentFull);
+                }
+            } catch (_) {}
+        }
     }
-    return full;
+    return contentFull;
 }
 
 async function agentRunWorkflow(workflowName, inputVars = {}) {
@@ -102,10 +136,16 @@ async function agentListTools() {
 }
 
 async function agentCallTool(toolName, args = {}) {
-    return apiCall('/api/tools/' + encodeURIComponent(toolName) + '/run', {
+    const raw = await apiCall('/api/tools/' + encodeURIComponent(toolName) + '/run', {
         method: 'POST',
         body: JSON.stringify(args)
     });
+    if (Array.isArray(raw)) {
+        Object.defineProperty(raw, 'list', { value: raw, enumerable: false });
+        Object.defineProperty(raw, 'data', { value: raw, enumerable: false });
+        Object.defineProperty(raw, 'result', { value: raw, enumerable: false });
+    }
+    return raw;
 }
 """
 
@@ -284,15 +324,60 @@ class AppManager:
         self._persist_definition(updated)
         return updated
 
+    _IMPORT_TO_PACKAGE: dict[str, str] = {
+        "requests": "requests",
+        "httpx": "httpx",
+        "aiohttp": "aiohttp",
+        "bs4": "beautifulsoup4",
+        "lxml": "lxml",
+        "yaml": "pyyaml",
+        "PIL": "pillow",
+        "pandas": "pandas",
+        "numpy": "numpy",
+        "pydantic": "pydantic",
+    }
+
+    @staticmethod
+    def _detect_dependencies(api_code: str) -> list[str]:
+        """Scan api.py imports and return pip package names for third-party modules."""
+        import re as _re
+        imports: set[str] = set()
+        for m in _re.finditer(r"^\s*(?:import|from)\s+(\w+)", api_code, _re.MULTILINE):
+            mod = m.group(1)
+            if mod in AppManager._IMPORT_TO_PACKAGE:
+                imports.add(AppManager._IMPORT_TO_PACKAGE[mod])
+        return sorted(imports)
+
     def _runner_script(self, api_path: Path, db_path: Path) -> str:
+        try:
+            api_code = api_path.read_text(encoding="utf-8")
+        except Exception:
+            api_code = ""
+        deps = self._detect_dependencies(api_code)
+        deps_str = json.dumps(deps)
+
         return f"""# /// script
 # requires-python = ">=3.10"
-# dependencies = []
+# dependencies = {deps_str}
 # ///
-import json, os, sys, traceback
+import json, os, sys, traceback, sqlite3
 
 DB_PATH = {json.dumps(str(db_path))}
 os.environ["DB_PATH"] = DB_PATH
+
+def db_query(sql, params=None):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.execute(sql, params or [])
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+def db_execute(sql, params=None):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(sql, params or [])
+    conn.commit()
+    conn.close()
 
 try:
     with open(sys.argv[1], "r", encoding="utf-8") as file:
@@ -311,6 +396,8 @@ try:
         "payload": payload,
         "DB_PATH": DB_PATH,
         "result": None,
+        "db_query": db_query,
+        "db_execute": db_execute,
     }}
     exec(api_code, exec_globals)
     result = exec_globals.get("result")
@@ -424,6 +511,8 @@ except Exception as exc:
             return {"success": False, "error": "Path traversal not allowed"}
 
         relative_path = full_path.relative_to(app_dir).as_posix()
+        if full_path.suffix == ".js":
+            content = sanitize_js_content(content)
         try:
             if relative_path == APP_METADATA_FILE:
                 metadata = json.loads(content)

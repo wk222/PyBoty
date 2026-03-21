@@ -51,6 +51,8 @@ _DEFAULTS: dict[str, Any] = {
         "blocked_tools": [],
         "blocked_dynamic_tools": [],
         "risky_tools": [],
+        "approval_required_tools": [],
+        "approval_required_dynamic_tools": False,
         "allow_dynamic_tools": True,
         "allow_tool_mutation": True,
         "allow_agent_mutation": True,

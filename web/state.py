@@ -142,6 +142,15 @@ class AgentPool:
     def get(self, thread_id: str) -> Any | None:
         return self._agents.get(thread_id)
 
+    def _fresh_llm_config(self) -> dict[str, Any]:
+        """Re-read config.json so hot-updated API keys are picked up."""
+        try:
+            from core.config import reload_config
+
+            return reload_config().get("llm_config", self.llm_config)
+        except Exception:
+            return self.llm_config
+
     def get_or_create(self, thread_id: str) -> Any:
         agent = self._agents.get(thread_id)
         if agent is not None:
@@ -150,11 +159,12 @@ class AgentPool:
         with self._lock:
             agent = self._agents.get(thread_id)
             if agent is None:
+                cfg = self._fresh_llm_config()
                 agent = create_tool_creator_agent(
-                    model=self.llm_config.get("model", "gpt-4"),
+                    model=cfg.get("model", "gpt-4"),
                     thread_id=thread_id,
-                    api_key=self.llm_config.get("api_key"),
-                    base_url=self.llm_config.get("api_base"),
+                    api_key=cfg.get("api_key"),
+                    base_url=cfg.get("api_base"),
                     paths=self.paths,
                     control_config=self.control_config,
                     approval_queue=self.approval_queue,
@@ -165,7 +175,8 @@ class AgentPool:
     @property
     def has_api_key(self) -> bool:
         """Check if an LLM API key is configured."""
-        key = self.llm_config.get("api_key") or ""
+        cfg = self._fresh_llm_config()
+        key = cfg.get("api_key") or ""
         if key:
             return True
         import os

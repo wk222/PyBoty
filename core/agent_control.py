@@ -65,10 +65,12 @@ class AgentControlPolicy:
         blocked_tools = _merge_names(preset["blocked_tools"], raw.get("blocked_tools"))
         blocked_dynamic_tools = _merge_names(preset["blocked_dynamic_tools"], raw.get("blocked_dynamic_tools"))
         risky_tools = _merge_names(preset["risky_tools"], raw.get("risky_tools"))
-        approval_required_tools = _merge_names(
-            preset["approval_required_tools"],
-            raw.get("approval_required_tools"),
-        )
+
+        # approval_required_tools: explicit config overrides preset (allows empty list to disable)
+        if "approval_required_tools" in raw:
+            approval_required_tools = _merge_names(raw["approval_required_tools"])
+        else:
+            approval_required_tools = _merge_names(preset["approval_required_tools"])
 
         return cls(
             mode=mode,

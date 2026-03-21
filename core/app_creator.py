@@ -51,7 +51,7 @@ Built-in JS helpers for agent-driven apps:
 - agentRunWorkflow(name, vars): Trigger a workflow
 - agentKnowledgeQuery(query, collection, topK): Search knowledge base
 - agentSearch(query): Global search
-- agentCallTool(toolName, args): Call a registered tool
+- agentCallTool(toolName, args): Call a registered tool — returns the tool result DIRECTLY (not wrapped). If the tool returns a list, agentCallTool returns an Array. Always check with Array.isArray() before accessing .list or .data properties.
 - dbQuery(sql), dbWrite(sql, params): Database access
 
 After creating, use update_app_file to customize the HTML/CSS/JS further."""
@@ -102,18 +102,28 @@ Common files:
 - static/pybot-helpers.js: Auto-generated. DO NOT overwrite — contains all agent helpers.
 - api.py: Backend API handler (receives 'action' and 'payload' variables, set 'result' to return data)
 
-Agent-driven JS helpers (all in pybot-helpers.js):
+FRONTEND JS helpers (in pybot-helpers.js, available ONLY in app.js):
 - agentChat(message, onChunk): Stream AI conversation. onChunk(chunk, full) for real-time display.
 - agentRunWorkflow(name, vars): Trigger a workflow and get results.
 - agentKnowledgeQuery(query, collection, topK): Search the knowledge base.
 - agentSearch(query): Global search across tools, agents, workflows.
-- agentCallTool(toolName, args): Call any registered tool directly.
-- apiCall(endpoint, options): Call any API endpoint.
-- dbQuery(sql): Run SELECT on shared DB.
-- dbWrite(sql, params): Run INSERT/UPDATE/DELETE on shared DB.
+- agentCallTool(toolName, args): Call any registered tool directly. Returns the tool result DIRECTLY (not wrapped). If the tool returns a list, agentCallTool returns an Array. Always check with Array.isArray().
+- apiCall(actionName, payloadObj): Call api.py backend (e.g. apiCall('fetch_hot', {count: 10})).
+- dbQuery(sql): Run SELECT on shared DB (frontend shortcut).
+- dbWrite(sql, params): Run INSERT/UPDATE/DELETE on shared DB (frontend shortcut).
+
+BACKEND api.py environment (runs in isolated Python, NO frontend helpers available):
+- Variables: action (str), payload (dict), DB_PATH (str), result (set this to return data)
+- Built-in: db_query(sql) returns list of dicts, db_execute(sql, params) runs INSERT/UPDATE/DELETE
+- Available: import json, sqlite3, os, re, datetime, requests, etc. (third-party packages are auto-installed)
+- ⚠️ DO NOT use agentCallTool, agentChat, dbQuery, dbWrite in api.py — those are JS-only!
 
 IMPORTANT: When overwriting index.html, always keep the pybot-helpers.js script tag.
-For api.py backend, you have access to: action (str), payload (dict), DB_PATH (str), result (set this to return).
+App.js MUST be wrapped in document.addEventListener('DOMContentLoaded', () => { ... });
+
+⚠️ JSON ESCAPING — JUST USE \\n NORMALLY:
+Write the JS code content naturally with \\n for line breaks. The system auto-repairs escaping issues.
+Do NOT double-escape line breaks between statements (no \\\\n for newlines in code structure).
 """
     args_schema: type[BaseModel] = UpdateAppFileInput
     model_config = ConfigDict(arbitrary_types_allowed=True)

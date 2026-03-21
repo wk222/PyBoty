@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import traceback
 from typing import Any
 
@@ -179,10 +180,35 @@ class PyBot:
             return pending
 
         messages = response.get("messages", [])
-        last_message = messages[-1] if messages else None
-        reply = last_message.content if last_message else "（无回复）"
+        reply = self._extract_final_reply(messages)
         self._refresh_root_agent_if_tools_changed(tools_before)
         return {"status": "completed", "response": reply}
+
+    @staticmethod
+    def _extract_final_reply(messages: list[Any]) -> str:
+        """Extract the best text reply from a finished agent message list.
+
+        Strategy: walk backwards to find the last AIMessage with non-empty
+        text content.  Falls back to the last ToolMessage content (which may
+        be the result of a return_direct tool) if no AIMessage is found.
+        Applies deduplication to catch LLM repetition loops.
+        """
+        from langchain_core.messages import AIMessage, ToolMessage
+
+        last_tool_content: str | None = None
+        for msg in reversed(messages):
+            if isinstance(msg, AIMessage):
+                text = (msg.content or "").strip()
+                if text:
+                    return _deduplicate_response(text)
+            elif isinstance(msg, ToolMessage) and last_tool_content is None:
+                text = (msg.content or "").strip()
+                if text:
+                    last_tool_content = text
+
+        if last_tool_content:
+            return last_tool_content
+        return "（无回复）"
 
     def _register_tool_approval(
         self,
@@ -528,6 +554,62 @@ class PyBot:
 
     def export_agents(self, filepath: str) -> None:
         self.agent_storage.export_to_json(filepath)
+
+
+def _deduplicate_response(text: str, min_block_len: int = 60) -> str:
+    """Remove repeated text blocks from an LLM response.
+
+    LLMs sometimes enter a token-level repetition loop, producing the same
+    paragraph many times.  This function detects and truncates such output.
+    """
+    if len(text) < min_block_len * 2:
+        return text
+
+    lines = text.split("\n")
+    if len(lines) < 4:
+        best = text
+        for block_len in range(min_block_len, len(text) // 2 + 1, 20):
+            tail = text[-block_len:]
+            first_occurrence = text.find(tail)
+            if first_occurrence < len(text) - block_len:
+                best = text[: first_occurrence + block_len].rstrip()
+                break
+        return best
+
+    seen_blocks: list[str] = []
+    result_lines: list[str] = []
+    repeat_count = 0
+    max_repeats = 2
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+
+        matched = False
+        for block_size in range(3, min(8, len(lines) - i + 1)):
+            candidate = "\n".join(lines[i : i + block_size])
+            if len(candidate) < min_block_len:
+                continue
+            if candidate in seen_blocks:
+                repeat_count += 1
+                if repeat_count >= max_repeats:
+                    i = len(lines)
+                    matched = True
+                    break
+                i += block_size
+                matched = True
+                break
+
+        if not matched:
+            result_lines.append(line)
+            i += 1
+
+        if len(result_lines) >= 3:
+            block = "\n".join(result_lines[-3:])
+            if len(block) >= min_block_len and block not in seen_blocks:
+                seen_blocks.append(block)
+
+    return "\n".join(result_lines).rstrip()
 
 
 def create_tool_creator_agent(

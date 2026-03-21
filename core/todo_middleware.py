@@ -75,10 +75,11 @@ class TodoState:
 
 TODO_PROMPT = """## Task Management — write_todos
 
-You have a `write_todos` tool. Use it proactively for multi-step tasks:
-- Create todos at the start of complex work
-- Mark items in_progress / completed as you go
-- Only one item should be in_progress at a time
+You have a `write_todos` tool for tracking multi-step tasks:
+- Create todos ONCE at the start of complex work (3+ steps)
+- Batch status updates: update multiple items in a single call
+- Do NOT call write_todos between every tool call — only at key milestones
+- Skip write_todos for simple tasks (< 3 steps)
 """
 
 

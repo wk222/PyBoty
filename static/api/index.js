@@ -9,7 +9,12 @@ async function request(path, options = {}) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || err.error || `HTTP ${res.status}`);
   }
-  return res.json();
+  const data = await res.json();
+  // Detect server-side errors returned with HTTP 200
+  if (data && typeof data === 'object' && data.error && !data.success) {
+    throw new Error(data.error);
+  }
+  return data;
 }
 
 export const API = {
@@ -180,4 +185,10 @@ export const API = {
   getCapabilities: () => request('/api/capabilities'),
   getCapabilityGraph: () => request('/api/capabilities/graph'),
   getCapabilityEvents: () => request('/api/capabilities/events'),
+
+  getGovernancePolicy: () => request('/api/governance/policy'),
+  updateGovernancePolicy: (policy) => request('/api/governance/policy', {
+    method: 'PUT', body: JSON.stringify({ policy })
+  }),
+  getGovernanceOptions: () => request('/api/agents/governance/options'),
 };

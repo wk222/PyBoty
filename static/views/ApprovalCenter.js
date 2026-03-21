@@ -18,6 +18,7 @@ export default {
     const counts = ref({ pending: 0, approved: 0, rejected: 0 });
     const drafts = ref({});
     const loading = ref(true);
+    const resolving = ref({});
 
     async function load() {
       loading.value = true;
@@ -35,13 +36,21 @@ export default {
     }
 
     async function resolve(approvalId, approved) {
+      if (resolving.value[approvalId]) return;
+      resolving.value[approvalId] = true;
       const draft = ensureDraft(drafts, approvalId);
       try {
-        await API.resolveApproval(approvalId, approved, draft.note || '', draft.approver || '');
+        const result = await API.resolveApproval(approvalId, approved, draft.note || '', draft.approver || '');
+        if (result && result.success === false) {
+          toast(result.error || 'Resolve failed', 'error');
+          return;
+        }
         toast(`Approval ${approved ? 'Granted' : 'Rejected'}`, 'success');
         await load();
       } catch (e) {
         toast('Failed to resolve approval: ' + e.message, 'error');
+      } finally {
+        resolving.value[approvalId] = false;
       }
     }
 
@@ -70,6 +79,7 @@ export default {
       counts,
       drafts,
       loading,
+      resolving,
       load,
       resolve,
       formatTime,
@@ -135,8 +145,16 @@ export default {
               <div style="display:flex;justify-content:space-between;align-items:center;">
                 <div style="font-size:11px;color:var(--text-muted);">{{ formatTime(appr.created_at) }}</div>
                 <div style="display:flex;gap:8px;">
-                  <button class="mx-btn mx-btn--ghost" style="color:var(--error);" @click="resolve(appr.approval_id, false)">{{ t('governance.reject') }}</button>
-                  <button class="mx-btn mx-btn--primary" style="background:#10b981;border-color:#10b981;" @click="resolve(appr.approval_id, true)">{{ t('governance.approve') }}</button>
+                  <button class="mx-btn mx-btn--ghost" style="color:var(--error);"
+                    :disabled="resolving[appr.approval_id]"
+                    @click="resolve(appr.approval_id, false)">
+                    {{ resolving[appr.approval_id] ? '...' : t('governance.reject') }}
+                  </button>
+                  <button class="mx-btn mx-btn--primary" style="background:#10b981;border-color:#10b981;"
+                    :disabled="resolving[appr.approval_id]"
+                    @click="resolve(appr.approval_id, true)">
+                    {{ resolving[appr.approval_id] ? '...' : t('governance.approve') }}
+                  </button>
                 </div>
               </div>
             </div>

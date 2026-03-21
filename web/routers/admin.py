@@ -15,6 +15,7 @@ from core.agent_tool_inventory import build_agent_tool_inventory
 from core.agent_tool_sync import AgentToolSyncError, sync_agent_tool
 from core.subagent_governance import build_subagent_governance_snapshot
 from core.subagent_sandbox import list_sandbox_adapters
+from core.tool_runtime import execute_tool_script
 from core.tool_storage import ToolStorage
 from web.dependencies import get_services
 from web.state import WebServices
@@ -287,9 +288,87 @@ async def delete_tool(
     return {"success": True, "deleted": tool_name}
 
 
+@router.post("/api/tools/{tool_name}/run")
+async def run_tool(
+    tool_name: str,
+    request: Request,
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> Any:
+    storage = ToolStorage(base_dir=str(services.paths.global_tools_dir))
+    tool_def = storage.get_tool(tool_name)
+    if tool_def is None and services.llm_configured:
+        tool_def = _require_agent(services).storage.get_tool(tool_name)
+    if tool_def is None:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found")
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    code = tool_def.get("code", "")
+    dependencies = list(tool_def.get("dependencies", []))
+    result = execute_tool_script(
+        tool_name=tool_name,
+        code=code,
+        dependencies=dependencies,
+        kwargs=body,
+        project_paths=services.paths,
+    )
+    if result.get("success"):
+        return result.get("result", result)
+    raise HTTPException(status_code=500, detail=result.get("error", "Tool execution failed"))
+
+
 @router.get("/api/agent-control")
 async def get_agent_control(services: WebServices = SERVICES_DEPENDENCY) -> dict[str, object]:
     return _require_agent(services).get_control_snapshot()
+
+
+@router.get("/api/governance/policy")
+async def get_governance_policy(services: WebServices = SERVICES_DEPENDENCY) -> dict[str, object]:
+    """Read the current agent control policy for visual configuration."""
+    from core.agent_control import AgentControlPolicy
+
+    policy = AgentControlPolicy.from_config(services.control_config)
+    return {
+        "policy": policy.to_dict(),
+        "presets": {
+            "open": AgentControlPolicy.from_config({"mode": "open"}).to_dict(),
+            "balanced": AgentControlPolicy.from_config({"mode": "balanced"}).to_dict(),
+            "strict": AgentControlPolicy.from_config({"mode": "strict"}).to_dict(),
+        },
+    }
+
+
+class GovernancePolicyUpdateRequest(BaseModel):
+    policy: dict[str, object]
+
+
+@router.put("/api/governance/policy")
+async def update_governance_policy(
+    req: GovernancePolicyUpdateRequest,
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> dict[str, object]:
+    """Update the agent control policy and persist to config.json."""
+    from core.agent_control import AgentControlPolicy
+    from core.config import get_config, save_config
+
+    new_policy_raw = dict(req.policy)
+
+    validated = AgentControlPolicy.from_config(new_policy_raw)
+
+    config = get_config()
+    config.setdefault("agent_control", {}).update(new_policy_raw)
+    save_config(config)
+
+    services.control_config.update(new_policy_raw)
+
+    return {
+        "success": True,
+        "policy": validated.to_dict(),
+        "message": "策略已保存。新的会话将使用更新后的策略。",
+    }
 
 
 # --- Phase 8: Debug Panel APIs ---

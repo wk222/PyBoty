@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -11,9 +12,12 @@ from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
 from .agent_control import ToolControlDecision, ToolRiskLevel
+from .tool_arg_repair import repair_tool_args
 from .tool_control_runtime import ToolControlRuntime
 from .tool_delegation_runtime import DelegatedToolApprovalRuntime
 from .tool_dynamic_inventory import DynamicToolInventory
+
+logger = logging.getLogger(__name__)
 
 
 class ToolCallRuntime:
@@ -40,6 +44,8 @@ class ToolCallRuntime:
         tool_args = self.tool_args(tool_call)
         tool_call_id = self.tool_call_id(tool_call)
         is_dynamic = self._inventory.is_dynamic_tool(tool_name)
+
+        request = self._try_repair_args(request, tool_call, tool_name, tool_args)
 
         control_result = self._control_runtime.enforce_tool_call(
             tool_name=tool_name,
@@ -86,6 +92,8 @@ class ToolCallRuntime:
         tool_args = self.tool_args(tool_call)
         tool_call_id = self.tool_call_id(tool_call)
         is_dynamic = self._inventory.is_dynamic_tool(tool_name)
+
+        request = self._try_repair_args(request, tool_call, tool_name, tool_args)
 
         control_result = self._control_runtime.enforce_tool_call(
             tool_name=tool_name,
@@ -167,7 +175,44 @@ class ToolCallRuntime:
                 is_dynamic=is_dynamic,
             )
 
+            if (
+                result.status != "error"
+                and not is_internal_error
+                and self._inventory.is_return_direct(tool_name)
+            ):
+                return Command(goto="end", update={"messages": [result]})
+
         return result
+
+    def _try_repair_args(
+        self,
+        request: Any,
+        tool_call: Any,
+        tool_name: str,
+        tool_args: dict[str, Any],
+    ) -> Any:
+        """Auto-repair tool arguments before Pydantic validation.
+
+        If the LLM passes a list where a str is expected (or vice versa),
+        coerce the arguments to match the tool's schema. This prevents
+        ValidationError from surfacing as user-facing errors.
+        """
+        try:
+            current_tools = getattr(self._inventory, "_current_tools", [])
+            if not current_tools:
+                return request
+
+            repaired_args = repair_tool_args(tool_name, tool_args, current_tools)
+            if repaired_args is not tool_args:
+                if isinstance(tool_call, dict):
+                    tool_call["args"] = repaired_args
+                elif hasattr(tool_call, "args"):
+                    tool_call.args = repaired_args  # type: ignore[attr-defined]
+                logger.info("[ToolCallRuntime] Auto-repaired args for '%s'", tool_name)
+        except Exception as exc:
+            logger.debug("[ToolCallRuntime] Arg repair failed for '%s': %s", tool_name, exc)
+
+        return request
 
     def _increment_usage(self, tool_name: str) -> None:
         self._control_runtime.increment_usage(tool_name)

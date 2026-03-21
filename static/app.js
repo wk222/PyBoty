@@ -17,6 +17,7 @@ import ScheduleList from '/static/views/ScheduleList.js';
 import ApprovalCenter from '/static/views/ApprovalCenter.js';
 import HubView from '/static/views/HubView.js';
 import GovernanceDashboard from '/static/views/GovernanceDashboard.js';
+import PolicyEditor from '/static/views/PolicyEditor.js';
 import DebugPanel from '/static/views/DebugPanel.js';
 import Settings from '/static/views/Settings.js';
 
@@ -34,6 +35,7 @@ const routes = [
   { path: '/schedules', component: ScheduleList },
   { path: '/approvals', component: ApprovalCenter },
   { path: '/governance', component: GovernanceDashboard },
+  { path: '/governance/policy', component: PolicyEditor },
   { path: '/debug', component: DebugPanel },
   { path: '/settings', component: Settings },
 ];

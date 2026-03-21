@@ -75,6 +75,12 @@ class DynamicToolInventory:
     def is_dynamic_tool(self, tool_name: str) -> bool:
         return tool_name in self.get_dynamic_tool_names()
 
+    def is_return_direct(self, tool_name: str) -> bool:
+        for tool in self._current_tools:
+            if tool.name == tool_name:
+                return getattr(tool, "return_direct", False)
+        return False
+
     def note_tool_mutation(self, *, tool_name: str, result: ToolMessage) -> None:
         if tool_name not in {"create_custom_tool", "remove_custom_tool"} or result.status == "error":
             return

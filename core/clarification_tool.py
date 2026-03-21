@@ -9,13 +9,14 @@
 """
 
 import json
+from typing import Any, Union
 
 from langchain.tools import BaseTool
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ClarifyInput(BaseModel):
-    questions: str = Field(
+    questions: Union[str, list[Any]] = Field(
         description="""需要向用户确认的问题列表(JSON数组格式)。
 每个问题应包含:
 - question: 问题内容
@@ -30,6 +31,16 @@ class ClarifyInput(BaseModel):
 """
     )
     context: str = Field(description="当前理解到的需求摘要，展示给用户确认", default="")
+
+    @field_validator("questions", mode="before")
+    @classmethod
+    def coerce_questions(cls, v: Any) -> Union[str, list[Any]]:
+        """LLM 可能传 str 也可能传原生 list，都接受并统一处理。"""
+        if isinstance(v, list):
+            return json.dumps(v, ensure_ascii=False)
+        if isinstance(v, dict):
+            return json.dumps([v], ensure_ascii=False)
+        return str(v)
 
 
 class AskClarificationTool(BaseTool):
@@ -52,15 +63,21 @@ class AskClarificationTool(BaseTool):
 用户说"计算半径5的圆面积" → 不需要追问，直接做
 """
     args_schema: type[BaseModel] = ClarifyInput
+    return_direct: bool = True
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    def _run(self, questions: str, context: str = "") -> str:
+    def _run(self, questions: str | list[Any], context: str = "") -> str:
         try:
-            q_list = json.loads(questions) if isinstance(questions, str) else questions
+            if isinstance(questions, list):
+                q_list = questions
+            elif isinstance(questions, str):
+                q_list = json.loads(questions)
+            else:
+                q_list = [{"question": str(questions), "why": "", "default": ""}]
             if not isinstance(q_list, list):
                 q_list = [{"question": str(q_list), "why": "", "default": ""}]
         except (json.JSONDecodeError, ValueError):
-            q_list = [{"question": questions, "why": "", "default": ""}]
+            q_list = [{"question": str(questions), "why": "", "default": ""}]
 
         formatted_questions = []
         for i, q in enumerate(q_list, 1):

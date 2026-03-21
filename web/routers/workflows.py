@@ -411,14 +411,29 @@ async def api_resolve_approval(
 ) -> dict[str, object]:
     try:
         request = services.approval_queue.get_request(approval_id)
+        if request is None:
+            raise HTTPException(status_code=404, detail=f"Approval '{approval_id}' not found")
         metadata = request.metadata if request is not None else {}
-        result = services.approvals.resolve(
-            approval_id,
-            approved=req.approved,
-            note=req.note,
-            approver=req.approver,
-            resolution_labels=req.labels,
-        )
+
+        # Try orchestrator resolve first; fall back to direct queue resolve on agent errors
+        try:
+            result = services.approvals.resolve(
+                approval_id,
+                approved=req.approved,
+                note=req.note,
+                approver=req.approver,
+                resolution_labels=req.labels,
+            )
+        except Exception as agent_exc:
+            logger.warning("Orchestrator resolve failed, falling back to direct queue resolve: %s", agent_exc)
+            result = services.approval_queue.resolve(
+                approval_id,
+                approved=req.approved,
+                note=req.note,
+                resolved_by=req.approver,
+                resolution_labels=req.labels,
+            )
+
         if result.get("success"):
             return result
         if req.resume_token:
@@ -431,9 +446,13 @@ async def api_resolve_approval(
                 note=req.note,
                 resolved_by=req.approver,
             )
-        return result
+        # Return error with proper HTTP status
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed to resolve approval"))
+    except HTTPException:
+        raise
     except Exception as exc:
-        return {"error": str(exc)}
+        logger.exception("Approval resolve failed for %s", approval_id)
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # --- Workflow Version Control ---

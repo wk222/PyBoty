@@ -37,9 +37,25 @@ from .agent_prompt_middleware import append_to_system_message
 logger = logging.getLogger(__name__)
 
 
-def _tool_call_fingerprint(tc: dict[str, Any]) -> str:
-    """Stable hash of tool-name + sorted args for dedup comparison."""
-    raw = json.dumps({"n": tc.get("name", ""), "a": tc.get("args", {})}, sort_keys=True)
+LOOP_GUARD_IGNORED_TOOLS = frozenset({
+    "write_todos",
+    "compact_conversation",
+    "list_tools",
+    "tool_stats",
+    "capability_bus",
+})
+
+
+def _tool_call_fingerprint(tc: dict[str, Any]) -> str | None:
+    """Stable hash of tool-name + sorted args for dedup comparison.
+
+    Returns None for infrastructure tools that should not participate
+    in loop detection (e.g. write_todos is called between real work steps).
+    """
+    name = tc.get("name", "")
+    if name in LOOP_GUARD_IGNORED_TOOLS:
+        return None
+    raw = json.dumps({"n": name, "a": tc.get("args", {})}, sort_keys=True)
     return hashlib.md5(raw.encode()).hexdigest()
 
 
@@ -94,6 +110,8 @@ class LoopGuardMiddleware(AgentMiddleware if _HAS_LC else object):  # type: igno
                 continue
             for tc in getattr(msg, "tool_calls", None) or []:
                 fp = _tool_call_fingerprint(tc)
+                if fp is None:
+                    continue
                 if not self._recent_fingerprints or self._recent_fingerprints[-1] != fp:
                     self._recent_fingerprints.append(fp)
 

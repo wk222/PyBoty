@@ -181,7 +181,10 @@ async def serve_app_file(
         raise HTTPException(status_code=403, detail="Access denied") from exc
     if not full_path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {requested_path}")
-    return FileResponse(str(full_path))
+    headers = {}
+    if full_path.suffix in (".js", ".css", ".html"):
+        headers["Cache-Control"] = "no-cache, must-revalidate"
+    return FileResponse(str(full_path), headers=headers)
 
 
 @router.get("/apps/{app_name}/")

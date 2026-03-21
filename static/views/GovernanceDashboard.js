@@ -12,6 +12,7 @@ export default {
     const selectedApproval = ref(null);
     const resolveNote = ref('');
     const resolveApprover = ref('admin');
+    const resolving = ref(false);
 
     const tabs = [
       { key: 'pending', label: 'Pending', icon: '⏳' },
@@ -78,14 +79,22 @@ export default {
     }
 
     async function resolve(id, approved) {
+      if (resolving.value) return;
+      resolving.value = true;
       try {
-        await API.resolveApproval(id, approved, resolveNote.value, resolveApprover.value);
+        const result = await API.resolveApproval(id, approved, resolveNote.value, resolveApprover.value);
+        if (result && result.success === false) {
+          toast(result.error || 'Resolve failed', 'error');
+          return;
+        }
         toast(approved ? 'Approved' : 'Denied', 'success');
         selectedApproval.value = null;
         resolveNote.value = '';
         await loadApprovals();
       } catch (e) {
         toast('Failed: ' + e.message, 'error');
+      } finally {
+        resolving.value = false;
       }
     }
 
@@ -114,7 +123,7 @@ export default {
 
     return {
       approvals, loading, activeTab, tabs, filteredApprovals, stats,
-      selectedApproval, resolveNote, resolveApprover,
+      selectedApproval, resolveNote, resolveApprover, resolving,
       loadApprovals, resolve, selectApproval, closeDetail,
       formatTime, timeSince, riskColor, t,
     };
@@ -129,6 +138,13 @@ export default {
             </svg>
             {{ t('governance.title') }}
           </h1>
+          <router-link to="/governance/policy" class="mx-btn mx-btn-ghost" style="text-decoration:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16" style="vertical-align:-2px;margin-right:4px">
+              <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            策略配置
+          </router-link>
           <button class="mx-btn mx-btn-ghost" @click="loadApprovals" :title="t('governance.refresh')">↻ {{ t('governance.refresh') }}</button>
         </div>
 
@@ -236,11 +252,15 @@ export default {
               <textarea v-model="resolveNote" rows="2" class="hub-input" :placeholder="t('governance.notePlaceholder')"></textarea>
             </div>
             <div class="gov-resolve-actions">
-              <button class="mx-btn gov-btn-deny" @click="resolve(selectedApproval.approval_id || selectedApproval.id, false)">
-                ✗ {{ t('governance.deny') }}
+              <button class="mx-btn gov-btn-deny"
+                :disabled="resolving"
+                @click="resolve(selectedApproval.approval_id || selectedApproval.id, false)">
+                {{ resolving ? '...' : '✗' }} {{ t('governance.deny') }}
               </button>
-              <button class="mx-btn mx-btn-primary gov-btn-approve" @click="resolve(selectedApproval.approval_id || selectedApproval.id, true)">
-                ✓ {{ t('governance.approve') }}
+              <button class="mx-btn mx-btn-primary gov-btn-approve"
+                :disabled="resolving"
+                @click="resolve(selectedApproval.approval_id || selectedApproval.id, true)">
+                {{ resolving ? '...' : '✓' }} {{ t('governance.approve') }}
               </button>
             </div>
           </div>

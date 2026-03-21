@@ -17,6 +17,20 @@ ERROR_PATTERNS = ("error", "错误", "失败", "alert(", "toast")
 SEVERITY_PENALTIES = {"critical": 20, "warning": 10, "info": 3}
 
 
+def _fix_broken_regex_literals(js: str, js_path: Path) -> tuple[str, bool]:
+    """Detect and auto-fix regex literals broken by raw newlines.
+
+    Returns the (possibly fixed) JS content and whether a fix was applied.
+    """
+    from core.tool_arg_repair import _repair_js_regex
+
+    fixed = _repair_js_regex(js)
+    if fixed != js:
+        js_path.write_text(fixed, encoding="utf-8")
+        return fixed, True
+    return js, False
+
+
 def issue(severity: str, category: str, message: str, fix: str) -> dict[str, str]:
     """Build a JSON-serializable issue payload."""
     return {
@@ -103,6 +117,18 @@ def check_html(html: str) -> list[dict[str, str]]:
 def check_javascript(js: str, js_path: Path) -> list[dict[str, str]]:
     """Validate JavaScript syntax and common frontend risks."""
     issues: list[dict[str, str]] = []
+
+    js, regex_fixed = _fix_broken_regex_literals(js, js_path)
+
+    if regex_fixed:
+        issues.append(
+            issue(
+                "warning",
+                "javascript",
+                "检测到正则表达式中包含原始换行符（JSON 反序列化导致），已自动修复",
+                "在 JSON 中使用 \\\\n 代替 \\n 来表示正则中的换行匹配",
+            )
+        )
 
     try:
         result = subprocess.run(

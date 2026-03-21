@@ -13,7 +13,7 @@ from langchain_core.language_models import BaseChatModel
 from .agent_capability_profile import AgentCapabilityProfile
 from .agent_control import AgentControlPolicy
 from .agent_middleware_profile import AgentMiddlewareProfile
-from .agent_storage import AgentDefinition, AgentStorage
+from .agent_storage import AgentDefinition, AgentModelConfig, AgentStorage
 from .agent_tool_inventory import build_agent_tool_inventory
 from .approval_queue import ApprovalQueue
 from .delegation_payload import normalize_delegation_payload
@@ -70,8 +70,7 @@ def create_agent_record(
         description=description,
         system_prompt=system_prompt,
         tools=[],
-        model=model,
-        temperature=temperature,
+        model_config_data=AgentModelConfig(model_id=model, temperature=temperature),
         capabilities=caps,
         capability_profile=profile.to_dict(),
         middleware_profile=middleware.to_dict(),
