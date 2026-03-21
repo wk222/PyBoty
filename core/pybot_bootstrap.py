@@ -379,15 +379,22 @@ def create_root_agent(
     *,
     runtime: PyBotRuntime,
     assembly: ToolAssembly,
+    response_format: Any | None = None,
 ) -> Any:
-    """Build the root LangChain agent instance."""
+    """Build the root LangChain agent instance.
+
+    Args:
+        response_format: Optional Pydantic model or ResponseFormat to enforce
+            structured output from the agent. When provided, the agent's
+            final response will be validated against this schema.
+    """
     from .summarization_middleware import SummarizationConfig
 
     summ_config = SummarizationConfig(
         offload_dir=str(getattr(runtime, "_conversation_offload_dir", "")),
         thread_id=getattr(runtime, "_thread_id", "default"),
     )
-    return create_agent(
+    kwargs: dict[str, Any] = dict(
         model=runtime.llm,
         tools=assembly.all_tools,
         system_prompt=assembly.system_prompt,
@@ -399,6 +406,9 @@ def create_root_agent(
         ),
         checkpointer=runtime.checkpointer,
     )
+    if response_format is not None:
+        kwargs["response_format"] = response_format
+    return create_agent(**kwargs)
 
 
 def delegate_to_sub_agent(

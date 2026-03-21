@@ -218,7 +218,12 @@ class WorkflowNodeRuntime:
     def _run_exec(self, config: dict[str, Any]) -> dict[str, Any]:
         command = config.get("command", "")
         timeout = min(config.get("timeout", 30), 120)
-        cwd = config.get("cwd", self.workspace_dir)
+        project_root = os.path.dirname(self.workspace_dir.rstrip("/\\")) or self.workspace_dir
+        cwd = config.get("cwd", project_root)
+        resolved_cwd = os.path.realpath(cwd)
+        allowed_root = os.path.realpath(project_root)
+        if not resolved_cwd.startswith(allowed_root):
+            raise RuntimeError(f"cwd 路径越界: {cwd} 不在 {allowed_root} 内")
         try:
             result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=timeout, cwd=cwd)
         except subprocess.TimeoutExpired as exc:

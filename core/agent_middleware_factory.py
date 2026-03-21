@@ -18,6 +18,7 @@ from .reasoning_frame_middleware import ReasoningFrameConfig, ReasoningFrameMidd
 from .subagent_sandbox import SubagentSandbox
 from .summarization_middleware import SummarizationConfig, SummarizationMiddleware
 from .todo_middleware import TodoListMiddleware
+from .tool_arg_repair_middleware import ToolArgRepairMiddleware
 from .tool_eviction_middleware import LCToolEvictionMiddleware
 from .tool_middleware import DynamicToolMiddleware
 
@@ -65,6 +66,10 @@ def build_root_langchain_middleware(
     ]
     if eviction_dir:
         stack.append(LCToolEvictionMiddleware(eviction_dir=eviction_dir))
+
+    arg_repair = ToolArgRepairMiddleware()
+    stack.append(arg_repair)
+
     stack.append(runtime.middleware)
     try:
         from langchain_anthropic.chat_models import AnthropicPromptCachingMiddleware
@@ -152,6 +157,9 @@ def build_subagent_langchain_middleware(
                     ),
                 )
             )
+            continue
+        if section == "tool_arg_repair":
+            stack.append(ToolArgRepairMiddleware())
             continue
         if section == "tool_control":
             stack.append(tool_middleware)

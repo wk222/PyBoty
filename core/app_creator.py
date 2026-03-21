@@ -124,6 +124,10 @@ App.js MUST be wrapped in document.addEventListener('DOMContentLoaded', () => { 
 ⚠️ JSON ESCAPING — JUST USE \\n NORMALLY:
 Write the JS code content naturally with \\n for line breaks. The system auto-repairs escaping issues.
 Do NOT double-escape line breaks between statements (no \\\\n for newlines in code structure).
+
+⚠️ AUTO-VALIDATION: After writing, the system automatically checks the file for errors.
+If validation finds critical issues, you MUST call update_app_file again with fixed content.
+Do NOT ignore validation warnings in the response.
 """
     args_schema: type[BaseModel] = UpdateAppFileInput
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -131,7 +135,43 @@ Do NOT double-escape line breaks between statements (no \\\\n for newlines in co
     def _run(self, app_name: str, file_path: str, content: str) -> str:
         mgr = _get_app_manager()
         result = mgr.update_app_file(app_name, file_path, content)
+        if not result.get("success"):
+            return json.dumps(result, ensure_ascii=False, indent=2)
+
+        validation = self._validate_file(mgr, app_name, file_path)
+        if validation:
+            result["validation"] = validation
+            critical = [v for v in validation if v.get("severity") == "critical"]
+            if critical:
+                result["has_critical_issues"] = True
+                result["action_required"] = (
+                    f"发现 {len(critical)} 个严重问题，必须修复后重新调用 update_app_file。"
+                )
+
         return json.dumps(result, ensure_ascii=False, indent=2)
+
+    @staticmethod
+    def _validate_file(mgr: AppManager, app_name: str, file_path: str) -> list[dict[str, str]]:
+        from pathlib import Path
+
+        from core.app_verifier_checks import check_api, check_html, check_javascript
+
+        app_dir = Path(mgr.apps_dir) / app_name
+        norm = file_path.replace("\\", "/")
+
+        if norm == "index.html":
+            html_path = app_dir / "index.html"
+            if html_path.exists():
+                return check_html(html_path.read_text(encoding="utf-8"))
+        elif norm == "static/app.js":
+            js_path = app_dir / "static" / "app.js"
+            if js_path.exists():
+                return check_javascript(js_path.read_text(encoding="utf-8"), js_path)
+        elif norm == "api.py":
+            api_path = app_dir / "api.py"
+            if api_path.exists():
+                return check_api(api_path.read_text(encoding="utf-8"))
+        return []
 
 
 class ListAppsInput(BaseModel):

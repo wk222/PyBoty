@@ -11,11 +11,20 @@ from typing import Any
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
+try:
+    from langgraph.errors import GraphInterrupt as _GraphInterrupt
+except ImportError:
+    _GraphInterrupt = None  # type: ignore[assignment,misc]
+
 from .agent_control import ToolControlDecision, ToolRiskLevel
+from .errors import ToolTimeoutError, ToolRateLimitError, format_error
+from .retry_policy import RetryPolicy, RetryConfig
 from .tool_arg_repair import repair_tool_args
 from .tool_control_runtime import ToolControlRuntime
 from .tool_delegation_runtime import DelegatedToolApprovalRuntime
 from .tool_dynamic_inventory import DynamicToolInventory
+
+_RETRYABLE_EXCEPTIONS = (ConnectionError, TimeoutError, OSError, ToolTimeoutError)
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +38,24 @@ class ToolCallRuntime:
         inventory: DynamicToolInventory,
         control_runtime: ToolControlRuntime,
         delegated_runtime: DelegatedToolApprovalRuntime,
+        retry_policy: RetryPolicy | None = None,
+        per_tool_retry: dict[str, RetryPolicy] | None = None,
     ):
         self._inventory = inventory
         self._control_runtime = control_runtime
         self._delegated_runtime = delegated_runtime
+        self._default_retry = retry_policy or RetryPolicy(
+            config=RetryConfig(max_attempts=2, base_delay_seconds=0.5, max_delay_seconds=5.0),
+            should_retry=lambda exc: isinstance(exc, _RETRYABLE_EXCEPTIONS),
+            on_retry=lambda info: logger.warning(
+                "[ToolCallRuntime] %s: retry %d/%d — %s",
+                info.label, info.attempt, info.max_attempts - 1, type(info.error).__name__,
+            ),
+        )
+        self._per_tool_retry: dict[str, RetryPolicy] = per_tool_retry or {}
+
+    def _get_retry_policy(self, tool_name: str) -> RetryPolicy:
+        return self._per_tool_retry.get(tool_name, self._default_retry)
 
     def run_tool_call(
         self,
@@ -64,7 +87,9 @@ class ToolCallRuntime:
         started_at = time.time()
 
         try:
-            result = handler(request)
+            result = self._get_retry_policy(tool_name).execute(
+                handler, request, label=f"tool:{tool_name}",
+            )
             return self.finalize_tool_result(
                 tool_name=tool_name,
                 tool_args=tool_args,
@@ -74,13 +99,15 @@ class ToolCallRuntime:
                 result=result,
             )
         except Exception as exc:
+            if _GraphInterrupt is not None and isinstance(exc, _GraphInterrupt):
+                raise
             self._record_execution_error(
                 tool_name=tool_name,
                 tool_args=tool_args,
                 is_dynamic=is_dynamic,
                 error=exc,
             )
-            raise
+            return self._error_to_tool_message(exc, tool_name, tool_call_id)
 
     async def run_tool_call_async(
         self,
@@ -122,13 +149,15 @@ class ToolCallRuntime:
                 result=result,
             )
         except Exception as exc:
+            if _GraphInterrupt is not None and isinstance(exc, _GraphInterrupt):
+                raise
             self._record_execution_error(
                 tool_name=tool_name,
                 tool_args=tool_args,
                 is_dynamic=is_dynamic,
                 error=exc,
             )
-            raise
+            return self._error_to_tool_message(exc, tool_name, tool_call_id)
 
     def finalize_tool_result(
         self,
@@ -217,6 +246,22 @@ class ToolCallRuntime:
     def _increment_usage(self, tool_name: str) -> None:
         self._control_runtime.increment_usage(tool_name)
         self._inventory.increment_usage(tool_name)
+
+    @staticmethod
+    def _error_to_tool_message(
+        exc: Exception, tool_name: str, tool_call_id: str,
+    ) -> ToolMessage:
+        error_msg = format_error(exc)
+        retry_hint = ""
+        if isinstance(exc, (ConnectionError, TimeoutError, OSError, ToolTimeoutError)):
+            retry_hint = " 这是一个临时错误，可以重试。"
+        elif isinstance(exc, ToolRateLimitError):
+            retry_hint = f" 请等待 {exc.retry_after_seconds}s 后重试。" if exc.retry_after_seconds else " 请稍后重试。"
+        content = json.dumps(
+            {"error": error_msg + retry_hint, "tool": tool_name, "recoverable": bool(retry_hint)},
+            ensure_ascii=False,
+        )
+        return ToolMessage(content=content, tool_call_id=tool_call_id, status="error")
 
     def _record_execution_error(
         self,

@@ -231,3 +231,19 @@ _register(MiddlewareDescriptor(
     default_enabled_for_subagent=False,
     tags=("decision_quality", "transparency", "debugging"),
 ))
+
+_register(MiddlewareDescriptor(
+    section_key="tool_arg_repair",
+    display_name="Tool Argument Repair",
+    summary="Auto-repairs LLM tool arguments before Pydantic validation — fixes type mismatches and broken JS code.",
+    category="infrastructure",
+    module_path=".tool_arg_repair_middleware",
+    class_name="ToolArgRepairMiddleware",
+    token_cost_estimate="~0 tokens (runtime repair only)",
+    when_to_enable="Always — prevents ValidationError from LLM type mismatches and JS regex damage.",
+    when_to_disable="Only if custom pre-validation logic is used instead.",
+    applies_to=("root", "subagent"),
+    default_enabled_for_root=True,
+    default_enabled_for_subagent=True,
+    tags=("reliability", "tool_quality", "auto_repair"),
+))

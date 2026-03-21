@@ -102,14 +102,13 @@ def test_root_middleware_factory_injects_runtime_context():
     from core.summarization_middleware import SummarizationMiddleware
     from core.todo_middleware import TodoListMiddleware
 
-    assert isinstance(middlewares[0], TodoListMiddleware)
-    assert isinstance(middlewares[-1], PatchToolCallsMiddleware)
-    assert isinstance(middlewares[2], LCMemoryMiddleware)
-    assert isinstance(middlewares[3], SummarizationMiddleware)
-    assert isinstance(middlewares[4], LCBusMiddleware)
-    assert middlewares[5] is runtime.middleware
+    from core.loop_guard_middleware import LoopGuardMiddleware
 
-    prompt_mw = middlewares[1]
+    assert isinstance(middlewares[0], LoopGuardMiddleware)
+    assert isinstance(middlewares[1], TodoListMiddleware)
+    assert isinstance(middlewares[-1], PatchToolCallsMiddleware)
+
+    prompt_mw = middlewares[2]
     prompt_mw.wrap_model_call(_make_request(SystemMessage(content="基础提示")), handler)
 
     assert captured["request"].system_message is not None

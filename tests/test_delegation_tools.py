@@ -6,7 +6,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 from core.agent_creator import AskAgentTool, DelegateToAgentTool, get_agent_creator_tools
-from core.agent_storage import AgentDefinition, AgentStorage
+from core.agent_storage import AgentDefinition, AgentModelConfig, AgentStorage
 from core.event_bus import EventType, event_bus
 
 
@@ -17,8 +17,7 @@ def _make_agent_def(name="test_agent"):
         description="A test agent",
         system_prompt="You are a test agent.",
         capabilities=["testing"],
-        model="gpt-4",
-        temperature=0.5,
+        model_config_data=AgentModelConfig(model_id="gpt-4", temperature=0.5),
     )
 
 

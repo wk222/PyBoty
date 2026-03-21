@@ -123,9 +123,35 @@ class WorkflowDefinitionRuntime:
         current_node: dict[str, Any] | None = None
         current_edge: dict[str, Any] | None = None
         section = None
+        multiline_key: str | None = None
+        multiline_target: dict[str, Any] | None = None
+        multiline_lines: list[str] = []
+        multiline_indent: int = 0
 
-        for line in content.split("\n"):
+        def _flush_multiline() -> None:
+            nonlocal multiline_key, multiline_target, multiline_lines, multiline_indent
+            if multiline_key and multiline_target is not None:
+                multiline_target[multiline_key] = "\n".join(multiline_lines)
+            multiline_key = None
+            multiline_target = None
+            multiline_lines = []
+            multiline_indent = 0
+
+        lines = content.split("\n")
+        for i, line in enumerate(lines):
             stripped = line.strip()
+
+            if multiline_key is not None:
+                raw_indent = len(line) - len(line.lstrip())
+                if stripped and raw_indent >= multiline_indent:
+                    multiline_lines.append(line[multiline_indent:])
+                    continue
+                elif not stripped:
+                    multiline_lines.append("")
+                    continue
+                else:
+                    _flush_multiline()
+
             if not stripped or stripped.startswith("#"):
                 continue
 
@@ -154,7 +180,15 @@ class WorkflowDefinitionRuntime:
                 if current_node and ":" in stripped:
                     key, val = stripped.split(":", 1)
                     key = key.strip()
-                    val = val.strip().strip('"').strip("'")
+                    val = val.strip()
+                    if val in ("|", "|+", "|-", ">", ">+", ">-"):
+                        raw_indent = len(line) - len(line.lstrip())
+                        multiline_key = key
+                        multiline_target = current_node
+                        multiline_lines = []
+                        multiline_indent = raw_indent + 2
+                        continue
+                    val = val.strip('"').strip("'")
                     if val.lower() == "true":
                         val = True
                     elif val.lower() == "false":
@@ -170,6 +204,7 @@ class WorkflowDefinitionRuntime:
                 key, val = stripped.split(":", 1)
                 current_edge[key.strip()] = val.strip().strip('"').strip("'")
 
+        _flush_multiline()
         if current_node:
             nodes.append(current_node)
         if current_edge:
