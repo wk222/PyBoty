@@ -23,7 +23,7 @@ from core.assets.agents import (
 from core.assets.tools import ToolStorage, execute_tool_script
 from core.modes.builtin_packs import ensure_builtin_packs
 from core.modes.pack import get_global_registry
-from core.system_model import build_system_model
+from core.modes.system_model import build_system_model
 from core.systems.governance import AgentControlPolicy
 from core.systems.integration import discover_plugins, get_plugin_registry, reset_plugin_registry
 from core.systems.memory import SemanticMemoryManager
@@ -912,7 +912,7 @@ async def update_governance_policy(
 async def get_cost_summary(services: WebServices = SERVICES_DEPENDENCY) -> dict[str, object]:
     """Get LLM cost and usage summary for the debug panel."""
     try:
-        from core.cost_tracker import CostTracker
+        from core.systems.runtime.cost_tracker import CostTracker
 
         persist_path = str(services.paths.workspace_dir / "cost_tracker.json")
         tracker = CostTracker(persist_path=persist_path)
@@ -1140,7 +1140,7 @@ _feedback_store = None
 def _get_feedback_store():
     global _feedback_store
     if _feedback_store is None:
-        from core.training import FeedbackStore
+        from core.systems.runtime.training import FeedbackStore
 
         _feedback_store = FeedbackStore("workspace/feedback_store.json")
     return _feedback_store
@@ -1149,7 +1149,7 @@ def _get_feedback_store():
 @router.post("/api/feedback")
 async def submit_feedback(request: Request) -> dict[str, object]:
     """Submit feedback for an agent's output."""
-    from core.training import FeedbackRecord
+    from core.systems.runtime.training import FeedbackRecord
 
     try:
         body = await request.json()

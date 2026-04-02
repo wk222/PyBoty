@@ -278,7 +278,7 @@ def _get_packager(services: WebServices) -> AppPackager:
 
 
 def _get_hub_client(hub_url: str, hub_token: str) -> Any:
-    from core.pyhub_client import PyHubClient
+    from core.systems.integration.pyhub_client import PyHubClient
 
     url = hub_url or "http://localhost:8000"
     return PyHubClient(registry_url=url, api_key=hub_token or None)

@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from core.entrypoints import DEFAULT_WEB_PORT, ensure_utf8_stdio, resolve_port
+from core.systems.runtime.entrypoints import DEFAULT_WEB_PORT, ensure_utf8_stdio, resolve_port
 from core.systems.runtime import ProjectPaths, get_pybot_version
 from core.systems.runtime.event_bus import Event, EventType, event_bus
 from web.gateway_guard import GatewayGuardMiddleware

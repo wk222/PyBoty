@@ -17,7 +17,7 @@ from core.assets.skills.openclaw_compat import (
 from core.assets.skills.skill_diagnostics import build_skill_diagnostics
 from core.assets.workflows.scheduling import ScheduledTask
 from core.systems.runtime import get_config, get_openclaw_compat_config, save_config
-from core.tool_templates import get_templates_by_category, list_templates
+from core.assets.tools.tool_templates import get_templates_by_category, list_templates
 from web.dependencies import get_services
 from web.state import WebServices
 
@@ -268,7 +268,7 @@ async def import_openclaw_into_pybot(
         services.skill_registry = WebServices._build_skill_registry(services.paths)
     else:
         from core.assets.skills import SkillRegistry
-        from core.skill_sources import SkillSource
+        from core.assets.skills.skill_sources import SkillSource
 
         filtered_sources = [source for source in existing_runtime_sources if source.name not in source_names]
         filtered_sources.extend(
@@ -334,7 +334,7 @@ async def register_openclaw_skill_source(
         services.skill_registry = WebServices._build_skill_registry(services.paths)
     else:
         from core.assets.skills import SkillRegistry
-        from core.skill_sources import SkillSource
+        from core.assets.skills.skill_sources import SkillSource
 
         filtered_sources = [source for source in existing_runtime_sources if source.name != req.name]
         filtered_sources.append(

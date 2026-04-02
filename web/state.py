@@ -263,7 +263,7 @@ class WebServices:
 
     @staticmethod
     def _build_skill_registry(resolved_paths: ProjectPaths) -> SkillRegistry:
-        from core.skill_sources import SkillSource
+        from core.assets.skills.skill_sources import SkillSource
 
         extra_cfg = get_extra_skill_sources()
         if not extra_cfg:

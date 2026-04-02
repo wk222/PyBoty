@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from core.system_model import build_system_summary
+from core.modes.system_model import build_system_summary
 from core.systems.runtime import get_pybot_version
 from web.dependencies import get_services
 from web.state import WebServices

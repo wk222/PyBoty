@@ -25,9 +25,17 @@ from core.modes import (
     resolve_mode_surface_method,
     should_attach_admin_runtime,
 )
+from core.modes.system_model import build_system_model
 from core.plugin_sdk import MessageHookContext
-from core.system_model import build_system_model
 from core.systems.governance import ApprovalQueue
+from core.systems.governance.tool_approval_runtime import (
+    approval_interrupt_from_metadata,
+    build_delegated_approval_resume_command,
+    build_tool_approval_resume_command,
+    create_tool_approval_request,
+    extract_delegated_approval_interrupts,
+    extract_tool_approval_interrupts,
+)
 from core.systems.integration import get_plugin_registry
 from core.systems.runtime import (
     ProjectPaths,
@@ -37,14 +45,6 @@ from core.systems.runtime import (
     create_root_agent,
     invoke_sub_agent,
     stream_chat_events,
-)
-from core.tool_approval_runtime import (
-    approval_interrupt_from_metadata,
-    build_delegated_approval_resume_command,
-    build_tool_approval_resume_command,
-    create_tool_approval_request,
-    extract_delegated_approval_interrupts,
-    extract_tool_approval_interrupts,
 )
 
 
@@ -154,7 +154,7 @@ class PyBot:
     def _lc_middleware_names(self) -> list[str]:
         """Return display names for the active LangChain middleware stack."""
         try:
-            from core.agent_middleware_factory import build_root_langchain_middleware
+            from core.systems.middleware.agent_middleware_factory import build_root_langchain_middleware
 
             mws = build_root_langchain_middleware(runtime=self.runtime)
             return [getattr(m, "name", None) or type(m).__name__ for m in mws]

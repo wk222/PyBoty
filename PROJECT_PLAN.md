@@ -1,6 +1,6 @@
 # PyBot Maturity Plan
 
-Last updated: 2026-04-01
+Last updated: 2026-04-02
 
 ## North Star
 
@@ -22,6 +22,7 @@ The common foundation underneath those modes should stay governed, testable, and
 
 ## Recently Completed
 
+- [x] Completed the mainline import sweep: all flat `core.*` imports removed from `agent.py`, `web/app.py`, `web/state.py`, and every `web/routers/*` file; all now point directly to `core/assets/` or `core/systems/` canonical paths. Also fixed 5 silent import bugs in `core/__init__.py` (`AppMatrixRuntime`, `AppPackager`, `BatchProcessor`, `InsightVaultMiddleware`, `ReasoningFrameMiddleware` were referencing non-existent flat stubs) and migrated all 270+ `_EXPORTS` entries to canonical paths.
 - [x] Extended the session spine into a real run timeline by feeding tool runs, delegated subagent runs, and background durable-task slices into `SessionRuntime`, and added budget-driven context compaction with durable compaction metadata
 - [x] Refactored the session spine into the canonical run backbone by projecting gateway runs and workflow runs into the same timeline and wiring the web service's system agent to that shared runtime
 - [x] Hardened the session spine with append-only session event logs, a restart-time resume scrubber for interrupted run state, layered compaction, and a typed memory policy for durable notes
@@ -88,10 +89,11 @@ The common foundation underneath those modes should stay governed, testable, and
 - [ ] Extend the first telemetry synthesis close-loop from local draft/validate/publish/rollout into stronger automated remote publish, post-release verification, and rollback automation
 - [ ] Harden Phase 1 of the OpenClaw-alignment track with richer channel message coverage, outbound auth flows, and operator-facing surfaces
 - [ ] Keep converging docs, prompts, UI, and runtime summaries around the canonical system model
-- [ ] Start the actual package migration with `core/modes/` and shrink `agent.py` into a thinner façade
+- [x] Cut all remaining flat `core.*` imports in `agent.py`, `web/app.py`, `web/state.py`, and all `web/routers/*` to canonical `core/assets/` and `core/systems/` paths — main entry points are now flat-import-free
+- [x] Fixed 5 silent import bugs in `core/__init__.py` where `AppMatrixRuntime`, `AppPackager`, `BatchProcessor`, `InsightVaultMiddleware`, and `ReasoningFrameMiddleware` referenced non-existent flat stub modules; updated all 270+ `_EXPORTS` entries to canonical paths
 - [ ] Push more contributor-facing and creator-facing surfaces to classify new abilities by root mode / product concept / supporting system before adding them
 - [ ] Keep refining the APP Brain control plane so app-to-app collaboration is explicit and reusable
-- [ ] Keep shrinking the “repo as runtime” feel by moving more state behind clear runtime services
+- [ ] Keep shrinking the "repo as runtime" feel by moving more state behind clear runtime services
 - [ ] Continue the Claude-Code-alignment track by building on the new session spine and extending it toward memory taxonomy, context economics, and team-style agent organization
 - [x] Standardize public branding around `PyBot`
 
@@ -171,6 +173,8 @@ The common foundation underneath those modes should stay governed, testable, and
 - [ ] Keep moving remaining agent/tool helpers and tests behind those asset entrypoints
 - [x] Start migrating cross-cutting planes into `core/systems/*`
 - [ ] Continue migrating more runtime / memory / governance / integration surfaces behind those new system entrypoints
+- [x] Sweep all mainline consumers (`agent.py`, `web/app.py`, `web/state.py`, `web/routers/*`) off flat `core.*` stubs onto canonical `core/assets/` and `core/systems/` paths
+- [x] Align `core/__init__.py` `_EXPORTS` map to use only canonical paths — no flat-stub indirection in the public API surface
 
 ## Suggested Build Order
 
