@@ -5,15 +5,21 @@ from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 
-from core.agent_storage import AgentStorage
-from core.config import get_llm_config
-from core.entrypoints import DEFAULT_API_PORT, ensure_utf8_stdio, resolve_port
-from core.project_paths import ProjectPaths
-from core.pybot_bootstrap import create_llm_client, invoke_sub_agent
-from core.tool_storage import ToolStorage
-from core.version import get_pybot_version
+from core.assets.agents import AgentStorage
+from core.assets.tools import ToolStorage
+from core.systems.runtime import (
+    DEFAULT_API_PORT,
+    ProjectPaths,
+    create_llm_client,
+    ensure_utf8_stdio,
+    get_llm_config,
+    get_pybot_version,
+    invoke_sub_agent,
+    resolve_port,
+)
 
 ensure_utf8_stdio()
 logger = logging.getLogger(__name__)
@@ -48,13 +54,37 @@ def create_app(
         )
 
     app = FastAPI(
-        title="PyBot Super Matrix API",
-        description="超级母体 API 服务, 用于管理和调用动态创建的子智能体",
+        title="PyBot API",
+        description="PyBot API surface for calling persisted agents and runtime services.",
         version=get_pybot_version(),
     )
     app.state.agent_storage = agent_storage
     app.state.llm_config = resolved_llm_config
     app.state.paths = resolved_paths
+
+    @app.get("/")
+    async def api_root() -> dict[str, object]:
+        return {
+            "name": "PyBot API",
+            "status": "ok",
+            "version": get_pybot_version(),
+            "docs_url": "/docs",
+            "openapi_url": "/openapi.json",
+            "health_url": "/health",
+            "agents_url": "/api/v1/agents",
+        }
+
+    @app.get("/health")
+    async def health_check() -> dict[str, object]:
+        return {
+            "status": "ok",
+            "version": get_pybot_version(),
+            "service": "api",
+        }
+
+    @app.get("/favicon.ico")
+    async def favicon() -> Response:
+        return Response(status_code=204)
 
     @app.get("/api/v1/agents")
     async def list_agents() -> dict[str, object]:

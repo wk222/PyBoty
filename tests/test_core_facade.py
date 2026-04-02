@@ -21,3 +21,4 @@ def test_core_facade_preserves_common_exports():
 
     assert core.ProjectPaths.__name__ == "ProjectPaths"
     assert callable(core.get_templates_by_category)
+    assert core.AdminPlanner.__name__ == "AdminPlanner"

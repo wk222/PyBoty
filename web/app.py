@@ -2,21 +2,29 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI
+from dotenv import load_dotenv
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from core.entrypoints import DEFAULT_WEB_PORT, ensure_utf8_stdio, resolve_port
-from core.project_paths import ProjectPaths
-from core.version import get_pybot_version
-from web.routers import admin, apps, chat, workflows, workspace
+from core.systems.runtime import ProjectPaths, get_pybot_version
+from core.systems.runtime.event_bus import Event, EventType, event_bus
+from web.gateway_guard import GatewayGuardMiddleware
+from web.routers import admin, apps, chat, gateway, sessions, workflows, workspace
 from web.state import WebServices
+
+load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_CORS_ORIGINS = (
     "http://localhost",
@@ -70,11 +78,51 @@ def create_app(
         allow_headers=["*"],
     )
 
+    # Load API keys from environment or config
+    # Format: PYBOT_API_KEYS="key1:admin,chat;key2:chat"
+    api_keys_config = os.environ.get("PYBOT_API_KEYS", "")
+    api_keys = {}
+    if api_keys_config:
+        for pair in api_keys_config.split(";"):
+            if ":" in pair:
+                k, scopes = pair.split(":", 1)
+                api_keys[k.strip()] = [s.strip() for s in scopes.split(",")]
+    else:
+        # Default dev key if none provided (for backward compatibility)
+        api_keys["dev-key"] = ["*"]
+
+    app.add_middleware(
+        GatewayGuardMiddleware,
+        api_keys=api_keys,
+        exclude_paths={"/health", "/", "/metrics", "/openapi.json", "/docs"},
+        app_manager=services.app_manager,
+    )
+
     app.include_router(chat.router)
+    app.include_router(sessions.router)
+    app.include_router(gateway.router)
     app.include_router(admin.router)
     app.include_router(workspace.router)
     app.include_router(apps.router)
     app.include_router(workflows.router)
+
+    @app.exception_handler(Exception)
+    async def _global_exception_handler(request: Request, exc: Exception):
+        logger.error("Unhandled error on %s %s: %s", request.method, request.url.path, exc)
+        logger.debug(traceback.format_exc())
+
+        event_bus.emit(
+            Event(
+                type=EventType.ERROR,
+                source=f"API:{request.method}:{request.url.path}",
+                payload={"error": str(exc), "traceback": traceback.format_exc()},
+            )
+        )
+
+        return JSONResponse(
+            status_code=500,
+            content={"error": "internal_server_error", "detail": str(exc)},
+        )
 
     @app.get("/")
     async def serve_index():
@@ -82,6 +130,20 @@ def create_app(
         if index_path.exists():
             return FileResponse(index_path)
         return {"message": "static/index.html not found"}
+
+    @app.get("/health")
+    async def health_check():
+        return {
+            "status": "ok",
+            "version": get_pybot_version(),
+        }
+
+    @app.get("/favicon.ico")
+    async def favicon():
+        favicon_path = Path(static_dir / "favicon.ico")
+        if favicon_path.exists():
+            return FileResponse(favicon_path)
+        return Response(status_code=204)
 
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
     return app

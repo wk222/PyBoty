@@ -16,15 +16,28 @@ export default {
     const autoRefresh = ref(true);
     let timer = null;
 
+    async function fetchWithAuth(url) {
+      let apiKey = localStorage.getItem('pybot_api_key') || 'dev-key';
+      let res = await fetch(url, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+      if (res.status === 401) {
+        const newKey = prompt("API Key required. Please enter your PyBot API key:", apiKey);
+        if (newKey) {
+          localStorage.setItem('pybot_api_key', newKey);
+          res = await fetch(url, { headers: { 'Authorization': `Bearer ${newKey}` } });
+        }
+      }
+      return res.json();
+    }
+
     async function loadAll() {
       loading.value = true;
       const results = await Promise.allSettled([
-        fetch('/api/debug/cost').then(r => r.json()),
-        fetch('/api/debug/tasks').then(r => r.json()),
-        fetch('/api/debug/mcp').then(r => r.json()),
-        fetch('/api/debug/memory').then(r => r.json()),
-        fetch('/api/debug/rag').then(r => r.json()),
-        fetch('/api/debug/providers').then(r => r.json()),
+        fetchWithAuth('/api/debug/cost'),
+        fetchWithAuth('/api/debug/tasks'),
+        fetchWithAuth('/api/debug/mcp'),
+        fetchWithAuth('/api/debug/memory'),
+        fetchWithAuth('/api/debug/rag'),
+        fetchWithAuth('/api/debug/providers'),
       ]);
       if (results[0].status === 'fulfilled') cost.value = results[0].value.cost_summary || {};
       if (results[1].status === 'fulfilled') tasks.value = results[1].value;

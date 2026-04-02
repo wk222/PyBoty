@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.agent_control import AgentControlPolicy, ToolRiskLevel
+from core.systems.governance import AgentControlPolicy, ToolRiskLevel
 
 
 def test_strict_policy_blocks_mutation_and_delegation():

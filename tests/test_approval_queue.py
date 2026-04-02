@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.approval_queue import ApprovalQueue
+from core.systems.governance import ApprovalQueue
 
 
 def test_approval_queue_persists_resolved_history(tmp_path):

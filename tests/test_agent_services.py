@@ -5,21 +5,22 @@ import json
 import pytest
 
 from agent import PyBot
-from core.agent_capability_profile import AgentCapabilityProfile
-from core.agent_control import AgentControlPolicy
-from core.agent_services import (
+from core.assets.agents import (
+    AgentCapabilityProfile,
+    AgentDefinition,
+    AgentStorage,
+    AgentToolSyncError,
+    build_agent_tool_inventory,
     create_agent_record,
+    create_sub_agent_instance,
     delegate_agent_task,
     invoke_persisted_agent,
     resume_persisted_agent_approval,
+    sync_agent_tool,
 )
-from core.agent_storage import AgentDefinition, AgentStorage
-from core.agent_tool_inventory import build_agent_tool_inventory
-from core.agent_tool_sync import AgentToolSyncError, sync_agent_tool
-from core.approval_queue import ApprovalQueue
-from core.project_paths import ProjectPaths
-from core.subagent_runtime import create_sub_agent_instance
-from core.tool_storage import ToolStorage
+from core.assets.tools import ToolStorage
+from core.systems.governance import AgentControlPolicy, ApprovalQueue
+from core.systems.runtime import ProjectPaths
 
 
 def test_create_agent_record_parses_capabilities(tmp_path):
@@ -68,7 +69,7 @@ def test_delegate_agent_task_returns_structured_payload(tmp_path, monkeypatch):
                 "thread_id": kwargs["thread_id"],
             }
 
-    monkeypatch.setattr("core.agent_services.create_sub_agent_instance", lambda **kwargs: FakeRuntime())
+    monkeypatch.setattr("core.assets.agents.agent_services.create_sub_agent_instance", lambda **kwargs: FakeRuntime())
 
     result = delegate_agent_task(
         agent_storage=storage,
@@ -439,7 +440,7 @@ def test_delegate_agent_task_preserves_waiting_approval_payload(tmp_path, monkey
                 "sandbox": {"mode": "restricted", "visibility": "isolated"},
             }
 
-    monkeypatch.setattr("core.agent_services.create_sub_agent_instance", lambda **kwargs: FakeRuntime())
+    monkeypatch.setattr("core.assets.agents.agent_services.create_sub_agent_instance", lambda **kwargs: FakeRuntime())
 
     result = delegate_agent_task(
         agent_storage=storage,
@@ -504,7 +505,7 @@ def test_invoke_persisted_agent_includes_structured_tool_inventory(tmp_path, mon
                 "sandbox": {"mode": "isolated"},
             }
 
-    monkeypatch.setattr("core.agent_services.create_sub_agent_instance", lambda **kwargs: FakeRuntime())
+    monkeypatch.setattr("core.assets.agents.agent_services.create_sub_agent_instance", lambda **kwargs: FakeRuntime())
 
     result = invoke_persisted_agent(
         agent_storage=storage,
@@ -815,7 +816,7 @@ def test_resume_persisted_agent_approval_updates_queue_result(tmp_path, monkeypa
         def resume_approval(self, **kwargs):
             return {"status": "completed", "response": "helper resumed", "thread_id": kwargs["thread_id"]}
 
-    monkeypatch.setattr("core.agent_services.create_sub_agent_instance", lambda **kwargs: FakeRuntime())
+    monkeypatch.setattr("core.assets.agents.agent_services.create_sub_agent_instance", lambda **kwargs: FakeRuntime())
 
     result = resume_persisted_agent_approval(
         agent_storage=storage,

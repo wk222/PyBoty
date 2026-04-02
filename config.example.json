@@ -16,6 +16,71 @@
         "enable_memory": true,
         "enable_middleware": true
     },
+    "channels": {
+        "wechat": {
+            "enabled": false,
+            "kind": "wechat",
+            "token": "wechat-token",
+            "app_id": "wx-app-id",
+            "app_secret": "wx-app-secret",
+            "reply_mode": "passive"
+        },
+        "wecom": {
+            "enabled": false,
+            "kind": "wecom",
+            "token": "wecom-token",
+            "corp_id": "ww-corp-id",
+            "agent_id": "1000002",
+            "secret": "wecom-secret",
+            "encoding_aes_key": "base64-aes-key"
+        }
+    },
+    "channel_routes": [
+        {
+            "name": "wechat-app-brain",
+            "channel": "wechat",
+            "target": "agent",
+            "mode": "app_brain",
+            "thread_template": "wechat:{user_id}"
+        },
+        {
+            "name": "ops-workflow",
+            "channel": "wecom",
+            "starts_with": "/run",
+            "target": "workflow",
+            "workflow_name": "ops_dispatch",
+            "thread_template": "wecom:{user_id}"
+        }
+    ],
+    "gateway": {
+        "auth": {
+            "mode": "none",
+            "token": null,
+            "password": null
+        },
+        "ws": {
+            "enabled": true,
+            "protocol_version": 3,
+            "tick_interval_ms": 15000,
+            "require_device_id": true,
+            "require_paired_device_token": false
+        },
+        "pairing": {
+            "enabled": true,
+            "auto_approve_local": true
+        },
+        "http": {
+            "endpoints": {
+                "responses": {
+                    "enabled": true,
+                    "stream_enabled": true
+                },
+                "models": {
+                    "enabled": true
+                }
+            }
+        }
+    },
     "debug": {
         "verbose": true,
         "log_tool_calls": true,

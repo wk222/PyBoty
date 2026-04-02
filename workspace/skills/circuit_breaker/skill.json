@@ -1,0 +1,13 @@
+{
+  "name": "circuit_breaker",
+  "description": "Circuit Breaker for reliable service calls. Prevents cascading failures by opening when a resource fails repeatedly.",
+  "version": "1.0.0",
+  "author": "PyBot Admin",
+  "tags": [
+    "resiliency",
+    "reliability",
+    "infrastructure"
+  ],
+  "requires": {},
+  "created_at": 1774753032.503922
+}

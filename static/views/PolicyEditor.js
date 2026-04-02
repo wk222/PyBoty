@@ -5,6 +5,12 @@ import { t } from '/static/i18n.js';
 
 export default {
   name: 'PolicyEditor',
+  props: {
+    embedded: {
+      type: Boolean,
+      default: false,
+    },
+  },
   setup() {
     const policy = ref(null);
     const presets = ref({});
@@ -109,6 +115,7 @@ export default {
           toast(result.message || '策略已保存', 'success');
           policy.value = result.policy;
           dirty.value = false;
+          window.dispatchEvent(new CustomEvent('pybot:governance-changed'));
         } else {
           toast(result.error || '保存失败', 'error');
         }
@@ -142,10 +149,10 @@ export default {
     };
   },
   template: `
-    <div class="policy-editor">
-      <header class="pe-header">
+    <div class="policy-editor" :style="embedded ? 'padding: 0; max-width: none;' : ''">
+      <header class="pe-header" :style="embedded ? 'margin-bottom: 18px;' : ''">
         <div class="pe-title-row">
-          <h1 class="pe-title">
+          <h1 class="pe-title" :style="embedded ? 'font-size:1.15rem;color:var(--text-primary);' : ''">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="24" height="24">
               <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
               <circle cx="12" cy="12" r="3"/>

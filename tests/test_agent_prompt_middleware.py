@@ -7,17 +7,17 @@ from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, SystemMessage
 from langgraph.runtime import Runtime
 
-from core.agent_capability_profile import AgentCapabilityProfile
-from core.agent_control import AgentControlPolicy
 from core.agent_middleware_factory import (
     build_root_langchain_middleware,
     build_subagent_langchain_middleware,
     build_subagent_runtime_prompt_sections,
 )
-from core.agent_middleware_profile import AgentMiddlewareProfile
 from core.agent_prompt_middleware import PromptSectionMiddleware
+from core.assets.agents import AgentCapabilityProfile, AgentMiddlewareProfile
+from core.prompts import build_static_system_prompt, get_root_mode_label, normalize_root_mode
 from core.subagent_governance import build_subagent_governance_snapshot
 from core.subagent_sandbox import SubagentSandbox
+from core.systems.governance import AgentControlPolicy
 
 
 def _make_request(system_message: SystemMessage | None = None) -> ModelRequest:
@@ -63,6 +63,51 @@ def test_prompt_section_middleware_skips_empty_sections():
     assert captured["request"].system_message.text == "基础提示"
 
 
+def test_static_root_prompt_describes_persistent_admin_identity():
+    prompt = build_static_system_prompt(root_mode="admin")
+
+    assert "PyBoty" not in prompt
+    assert "PyBot 的长期运行总控智能体" in prompt
+    assert "长期运行总控智能体" in prompt
+    assert "模式能力开关" in prompt
+    assert "长期任务循环: 启用" in prompt
+    assert "优先把重复劳动转成工具、技能或工作流" in prompt
+    assert "可审计、可暂停、可恢复" in prompt
+    assert "五个产品概念" in prompt
+    assert "不要再把支撑系统讲成新的平台层" in prompt
+
+
+def test_static_root_prompt_keeps_assistant_identity_by_default():
+    prompt = build_static_system_prompt()
+
+    assert "PyBot 的通用协作助手" in prompt
+    assert "通用协作助手" in prompt
+    assert "APP 编排运行时: 禁用" in prompt
+    assert "你不是一次性聊天助手" not in prompt
+    assert "不要默认把自己当成 应用矩阵或长期自治执行体" in prompt
+
+
+def test_static_root_prompt_supports_app_matrix_identity():
+    prompt = build_static_system_prompt(root_mode="app_matrix")
+
+    assert "PyBot 的 应用矩阵" in prompt
+    assert "应用矩阵" in prompt
+    assert "中央调度智能体" in prompt
+    assert "中央调度脑" in prompt
+    assert "APP 拓扑规划: 启用" in prompt
+    assert "你主要负责应用级协作编排" in prompt
+
+
+def test_root_mode_aliases_and_labels_support_admin_mode():
+    assert normalize_root_mode("admin") == "admin"
+    assert normalize_root_mode("全局管理员模式") == "admin"
+    assert normalize_root_mode("app_matrix") == "app_matrix"
+    assert normalize_root_mode("应用矩阵模式") == "app_matrix"
+    assert get_root_mode_label("admin") == "全局管理员智能体"
+    assert get_root_mode_label("app_matrix") == "应用矩阵智能体"
+    assert get_root_mode_label("assistant") == "人类助手模式"
+
+
 def test_root_middleware_factory_injects_runtime_context():
     class DummyWorkspace:
         def build_system_context(self) -> str:
@@ -96,13 +141,9 @@ def test_root_middleware_factory_injects_runtime_context():
         captured["request"] = request
         return ModelResponse(result=[AIMessage(content="ok")])
 
-    from core.lc_bus_middleware import LCBusMiddleware
-    from core.lc_memory_middleware import LCMemoryMiddleware
-    from core.patch_tool_calls import PatchToolCallsMiddleware
-    from core.summarization_middleware import SummarizationMiddleware
-    from core.todo_middleware import TodoListMiddleware
-
     from core.loop_guard_middleware import LoopGuardMiddleware
+    from core.patch_tool_calls import PatchToolCallsMiddleware
+    from core.todo_middleware import TodoListMiddleware
 
     assert isinstance(middlewares[0], LoopGuardMiddleware)
     assert isinstance(middlewares[1], TodoListMiddleware)

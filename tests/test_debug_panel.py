@@ -15,7 +15,7 @@ def client(tmp_path):
     paths = ProjectPaths.from_root(tmp_path)
     paths.ensure_runtime_dirs()
     app = create_app(paths=paths)
-    return TestClient(app)
+    return TestClient(app, headers={"Authorization": "Bearer dev-key"})
 
 
 class TestDebugCostEndpoint:

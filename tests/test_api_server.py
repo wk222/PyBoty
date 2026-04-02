@@ -28,6 +28,35 @@ def test_api_lists_agents(temp_paths, monkeypatch):
         assert response.json() == {"success": True, "count": 0, "agents": {}}
 
 
+def test_api_root_landing_page(temp_paths, monkeypatch):
+    _, client = create_api_client(temp_paths, monkeypatch)
+    with client:
+        response = client.get("/")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["name"] == "PyBot API"
+        assert payload["status"] == "ok"
+        assert payload["docs_url"] == "/docs"
+        assert payload["agents_url"] == "/api/v1/agents"
+
+
+def test_api_health_endpoint(temp_paths, monkeypatch):
+    _, client = create_api_client(temp_paths, monkeypatch)
+    with client:
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
+        assert response.json()["service"] == "api"
+
+
+def test_api_favicon_returns_empty_response(temp_paths, monkeypatch):
+    _, client = create_api_client(temp_paths, monkeypatch)
+    with client:
+        response = client.get("/favicon.ico")
+        assert response.status_code == 204
+        assert response.content == b""
+
+
 def test_api_returns_404_for_unknown_agent(temp_paths, monkeypatch):
     _, client = create_api_client(temp_paths, monkeypatch, stub_invoke=False)
     with client:

@@ -22,7 +22,7 @@ def _noop(*a, **kw):
 def _make_runtime(exec_node=None):
     """Build a minimal WorkflowExecutionRuntime with mocked callbacks."""
 
-    def default_exec(node, workflow):
+    def default_exec(node, workflow, run_id):
         node.status = NodeStatus.COMPLETED
         node.started_at = time.time()
         node.completed_at = time.time()

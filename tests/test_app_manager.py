@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from core.app_manager import AppManager
+from core.assets.apps.manager import AppManager
 
 
 def test_app_manager_persists_api_enablement_and_toggle(temp_paths):

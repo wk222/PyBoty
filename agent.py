@@ -2,25 +2,42 @@
 
 from __future__ import annotations
 
-import re
 import traceback
 from typing import Any
 
-from core.agent_capability_profile import AgentCapabilityProfile
-from core.agent_middleware_profile import AgentMiddlewareProfile
-from core.agent_services import resume_persisted_agent_approval
-from core.agent_tool_inventory import build_agent_tool_inventory
-from core.approval_queue import ApprovalQueue
-from core.project_paths import ProjectPaths
-from core.pybot_bootstrap import (
+from core.assets.agents import (
+    AgentCapabilityProfile,
+    AgentMiddlewareProfile,
+    build_agent_tool_inventory,
+    build_subagent_governance_snapshot,
+    resume_persisted_agent_approval,
+)
+from core.assets.tools import ToolStorage
+from core.modes import (
+    attach_mode_surface_methods,
+    build_mode_subclasses,
+    create_mode_agent,
+    get_mode_api_capability,
+    get_mode_capability_label,
+    initialize_mode_services,
+    print_startup_summary,
+    resolve_mode_profile,
+    resolve_mode_surface_method,
+    should_attach_admin_runtime,
+)
+from core.plugin_sdk import MessageHookContext
+from core.system_model import build_system_model
+from core.systems.governance import ApprovalQueue
+from core.systems.integration import get_plugin_registry
+from core.systems.runtime import (
+    ProjectPaths,
     assemble_primary_tools,
     build_runtime,
     create_llm_client,
     create_root_agent,
     invoke_sub_agent,
+    stream_chat_events,
 )
-from core.pybot_streaming import stream_chat_events
-from core.subagent_governance import build_subagent_governance_snapshot
 from core.tool_approval_runtime import (
     approval_interrupt_from_metadata,
     build_delegated_approval_resume_command,
@@ -29,11 +46,10 @@ from core.tool_approval_runtime import (
     extract_delegated_approval_interrupts,
     extract_tool_approval_interrupts,
 )
-from core.tool_storage import ToolStorage
 
 
 class PyBot:
-    """PyBot v4 runtime composed from smaller bootstrap modules."""
+    """Primary PyBot assistant runtime composed from smaller bootstrap modules."""
 
     def __init__(
         self,
@@ -49,6 +65,13 @@ class PyBot:
         approval_queue: ApprovalQueue | None = None,
         provider: str | None = None,
         fallback_configs: list[dict[str, Any]] | None = None,
+        root_mode: str = "assistant",
+        attach_admin_runtime: bool = False,
+        admin_storage_dir: str | None = None,
+        admin_poll_interval: float = 2.0,
+        admin_workers: int = 2,
+        admin_step_executor: Any | None = None,
+        session_runtime: Any | None = None,
     ):
         self.paths = paths or ProjectPaths.from_root(workspace_dir=workspace_dir)
         self.paths.ensure_runtime_dirs()
@@ -63,6 +86,19 @@ class PyBot:
         self._fallback_configs = fallback_configs or []
         self._control_config = control_config
         self._approval_queue = approval_queue
+        self.mode_profile = resolve_mode_profile(root_mode)
+        self.root_mode = self.mode_profile.name
+        self.admin = None
+        self.orchestration_registry = None
+        self.app_matrix = None
+        self._attach_admin_runtime = should_attach_admin_runtime(
+            mode_profile=self.mode_profile,
+            attach_requested=attach_admin_runtime,
+        )
+        self._admin_storage_dir = admin_storage_dir
+        self._admin_poll_interval = admin_poll_interval
+        self._admin_workers = admin_workers
+        self._admin_step_executor = admin_step_executor
 
         self.runtime = build_runtime(
             paths=self.paths,
@@ -79,10 +115,13 @@ class PyBot:
             tool_callback=self._pyflow_tool_callback,
             agent_callback=self._pyflow_agent_callback,
             delegate_callback=self._pyflow_delegate_callback,
+            root_mode=self.root_mode,
+            session_runtime=session_runtime,
         )
         self._bind_runtime()
+        initialize_mode_services(self)
         self._initialize_agent()
-        self._print_startup_summary()
+        print_startup_summary(self)
 
     def _bind_runtime(self) -> None:
         """Expose runtime services on the public instance for backward compatibility."""
@@ -101,28 +140,16 @@ class PyBot:
         self.tool_chain = self.runtime.tool_chain
         self.eval_framework = self.runtime.eval_framework
         self.context_manager = self.runtime.context_manager
+        self.session_runtime = self.runtime.session_runtime
         self.capability_bus = self.runtime.capability_bus
+        self.capability_registry = self.runtime.capability_registry
         self.mw_stack = self.runtime.middleware_stack  # legacy; new pipeline in LangChain middleware
         self.llm = self.runtime.llm
         self.checkpointer = self.runtime.checkpointer
         self.middleware = self.runtime.middleware
         self.control_policy = self.runtime.control_policy
         self.approval_queue = self.runtime.approval_queue
-
-    def _print_startup_summary(self) -> None:
-        skills_count = len(self.skill_registry.skills)
-        tasks_count = len(self.scheduler.tasks)
-        print("✅ PyBot v4.0 已初始化")
-        print(f"   模型: {self.model_name}")
-        print(f"   会话ID: {self.thread_id}")
-        print(f"   工作空间: {self.workspace_dir}/")
-        print(f"   后端: {type(self.backend).__name__}")
-        print(f"   技能: {skills_count} 个已加载（渐进式披露）")
-        print(f"   定时任务: {tasks_count} 个已配置")
-        lc_mw_names = []
-        for mw in self._lc_middleware_names():
-            lc_mw_names.append(mw)
-        print(f"   中间件: {' → '.join(lc_mw_names)}")
+        self.subagent_registry = self.runtime.subagent_registry
 
     def _lc_middleware_names(self) -> list[str]:
         """Return display names for the active LangChain middleware stack."""
@@ -150,6 +177,7 @@ class PyBot:
             runtime=self.runtime,
             paths=self.paths,
             enable_agent_creation=self.enable_agent_creation,
+            root_mode=self.root_mode,
             llm_factory=self._create_llm,
             chat_callback=self.chat,
         )
@@ -353,6 +381,7 @@ class PyBot:
             control_policy=self.control_policy,
             global_tool_storage=self.storage,
             project_paths=self.paths,
+            subagent_registry=self.subagent_registry,
         )
 
     def _rebuild_runtime_result_if_needed(
@@ -422,10 +451,32 @@ class PyBot:
         self._initialize_agent()
         print("[INFO] Agent 已更新，新工具可用")
 
+    @staticmethod
+    def _apply_message_plugin_hooks(message: str, *, thread_id: str) -> tuple[str, str | None]:
+        hook_context = get_plugin_registry().run_message_hooks(
+            MessageHookContext(
+                content=message,
+                channel="chat",
+                sender_id="user",
+                thread_id=thread_id,
+            )
+        )
+        if hook_context.cancel:
+            reason = hook_context.cancel_reason.strip() or "消息被插件策略阻止"
+            return message, reason
+        return hook_context.content, None
+
     def chat(self, message: str) -> str:
         """Chat with the root agent and reload it when tools change."""
         try:
             tools_before = len(self.storage.tools)
+            message, blocked_reason = self._apply_message_plugin_hooks(
+                message,
+                thread_id=self.thread_id,
+            )
+            if blocked_reason is not None:
+                self.capability_bus.record_invocation("chat", False)
+                return f"⛔ {blocked_reason}"
 
             try:
                 result = self._do_invoke(message, tools_before=tools_before)
@@ -445,6 +496,18 @@ class PyBot:
             error_trace = traceback.format_exc()
             print(f"[ERROR] 对话出错:\n{error_trace}")
             self.capability_bus.record_invocation("chat", False)
+
+            # Emit error to global event bus for Admin telemetry
+            from core.systems.runtime.event_bus import Event, EventType, event_bus
+
+            event_bus.emit(
+                Event(
+                    type=EventType.ERROR,
+                    source=f"Agent:{self.thread_id}",
+                    payload={"error": str(exc), "traceback": error_trace},
+                )
+            )
+
             return f"❌ 错误: {exc!s}"
 
     def _lazy_agent_callback(self, prompt: str) -> str:
@@ -471,6 +534,7 @@ class PyBot:
             control_policy=self.control_policy,
             approval_queue=self.approval_queue,
             project_paths=self.paths,
+            subagent_registry=self.subagent_registry,
             agent_name=agent_name,
             task=task,
             context=context,
@@ -555,6 +619,97 @@ class PyBot:
     def export_agents(self, filepath: str) -> None:
         self.agent_storage.export_to_json(filepath)
 
+    # ── Mode-pack dispatch ──────────────────────────────────────────
+
+    def _dispatch_mode_method(self, method_name: str, *args: Any, **kwargs: Any) -> Any:
+        """Dispatch a mode-specific call to the active ModePack.
+
+        The pack's ``get_api_methods()`` returns a dict of callables.
+        Each callable receives ``(host, *args, **kwargs)``.
+        """
+        pack = getattr(self, "_mode_pack", None)
+        if pack is None:
+            from core.modes import ensure_builtin_packs, get_mode_pack
+
+            ensure_builtin_packs()
+            try:
+                pack = get_mode_pack(
+                    getattr(
+                        self,
+                        "mode_profile",
+                        resolve_mode_profile(getattr(self, "root_mode", "assistant")),
+                    ).name
+                )
+            except Exception:
+                pack = None
+            else:
+                self._mode_pack = pack
+        if pack is None:
+            raise RuntimeError(f"No mode pack attached; cannot dispatch {method_name!r}")
+        api = pack.get_api_methods()
+        if method_name not in api:
+            capability_name = get_mode_api_capability(method_name)
+            if capability_name is not None:
+                self.require_mode_capability(capability_name, surface=method_name)
+            raise RuntimeError(
+                f"当前模式 {pack.name!r} 不支持方法 {method_name!r}。可用方法: {', '.join(sorted(api)) or '(无)'}."
+            )
+        return api[method_name](self, *args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        surface = resolve_mode_surface_method(self, name)
+        if surface is not None:
+            return surface
+        raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
+
+    # ── System model & capability introspection ───────────────────
+
+    def get_system_model(self) -> dict[str, Any]:
+        """Return the canonical system model used to explain PyBot's boundaries."""
+        return build_system_model()
+
+    def get_effective_mode_capabilities(self) -> dict[str, bool]:
+        """Return the effective capability switches after runtime overrides."""
+        profile = getattr(self, "mode_profile", resolve_mode_profile(getattr(self, "root_mode", "assistant")))
+        capabilities = dict(profile.capability_flags())
+        capabilities["durable_goal_loop"] = (
+            capabilities["durable_goal_loop"]
+            or getattr(self, "_attach_admin_runtime", False)
+            or (getattr(self, "admin", None) is not None)
+        )
+        capabilities["app_orchestration"] = capabilities["app_orchestration"] or (
+            getattr(self, "app_matrix", None) is not None
+        )
+        capabilities["app_topology_planning"] = (
+            capabilities["app_topology_planning"] or capabilities["app_orchestration"]
+        )
+        return capabilities
+
+    def supports_mode_capability(self, capability_name: str) -> bool:
+        """Return whether a root-mode capability is currently enabled."""
+        return self.get_effective_mode_capabilities().get(capability_name, False)
+
+    def require_mode_capability(self, capability_name: str, *, surface: str) -> None:
+        """Guard a mode-specific surface behind its capability flag."""
+        if self.supports_mode_capability(capability_name):
+            return
+        capability_label = get_mode_capability_label(capability_name)
+        profile = getattr(self, "mode_profile", resolve_mode_profile(getattr(self, "root_mode", "assistant")))
+        raise RuntimeError(
+            f"{profile.label} 未启用能力 `{capability_label}`，无法调用 `{surface}`。"
+            "如需开放该能力，请切换根模式或显式启用对应 runtime/profile。"
+        )
+
+    def get_mode_profile(self) -> dict[str, Any]:
+        """Return the resolved modular capability profile for the current root mode."""
+        profile = getattr(self, "mode_profile", resolve_mode_profile(getattr(self, "root_mode", "assistant"))).to_dict()
+        effective_capabilities = self.get_effective_mode_capabilities()
+        profile["effective_capabilities"] = effective_capabilities
+        profile["effective_enabled_capabilities"] = [
+            name for name, enabled in effective_capabilities.items() if enabled
+        ]
+        return profile
+
 
 def _deduplicate_response(text: str, min_block_len: int = 60) -> str:
     """Remove repeated text blocks from an LLM response.
@@ -612,6 +767,9 @@ def _deduplicate_response(text: str, min_block_len: int = 60) -> str:
     return "\n".join(result_lines).rstrip()
 
 
+attach_mode_surface_methods(PyBot)
+
+
 def create_tool_creator_agent(
     model: str = "gpt-4",
     thread_id: str = "default",
@@ -620,8 +778,76 @@ def create_tool_creator_agent(
     approval_queue: ApprovalQueue | None = None,
     **kwargs,
 ) -> PyBot:
-    """Factory for the root PyBot instance."""
+    """Factory for the default assistant-oriented PyBot instance."""
     return PyBot(
+        model=model,
+        thread_id=thread_id,
+        paths=paths,
+        control_config=control_config,
+        approval_queue=approval_queue,
+        root_mode="assistant",
+        **kwargs,
+    )
+
+
+AdminPyBot, UltimatePyBot, AppMatrixPyBot = build_mode_subclasses(PyBot)
+
+
+def create_admin_agent(
+    model: str = "gpt-4",
+    thread_id: str = "admin-default",
+    paths: ProjectPaths | None = None,
+    control_config: dict[str, Any] | None = None,
+    approval_queue: ApprovalQueue | None = None,
+    **kwargs,
+) -> AdminPyBot:
+    """Factory for the separate admin-oriented root runtime."""
+    return create_mode_agent(
+        AdminPyBot,
+        model=model,
+        thread_id=thread_id,
+        paths=paths,
+        control_config=control_config,
+        approval_queue=approval_queue,
+        **kwargs,
+    )
+
+
+def create_ultimate_agent(
+    model: str = "gpt-4",
+    thread_id: str = "ultimate-default",
+    paths: ProjectPaths | None = None,
+    control_config: dict[str, Any] | None = None,
+    approval_queue: ApprovalQueue | None = None,
+    **kwargs,
+) -> UltimatePyBot:
+    """Factory for the user-facing ultimate-agent mode."""
+    kwargs.setdefault("root_mode", "ultimate")
+    kwargs.setdefault("attach_admin_runtime", True)
+    return create_mode_agent(
+        UltimatePyBot,
+        model=model,
+        thread_id=thread_id,
+        paths=paths,
+        control_config=control_config,
+        approval_queue=approval_queue,
+        **kwargs,
+    )
+
+
+def create_app_matrix_agent(
+    model: str = "gpt-4",
+    thread_id: str = "app-matrix-default",
+    paths: ProjectPaths | None = None,
+    control_config: dict[str, Any] | None = None,
+    approval_queue: ApprovalQueue | None = None,
+    **kwargs,
+) -> AppMatrixPyBot:
+    """Factory for the application-orchestration root runtime."""
+    kwargs.setdefault("root_mode", "app_matrix")
+    kwargs.setdefault("attach_admin_runtime", True)
+    return create_mode_agent(
+        AppMatrixPyBot,
         model=model,
         thread_id=thread_id,
         paths=paths,
@@ -632,7 +858,7 @@ def create_tool_creator_agent(
 
 
 if __name__ == "__main__":
-    from core.config import get_llm_config, get_llm_fallback_config
+    from core.systems.runtime import get_llm_config, get_llm_fallback_config
 
     llm_config = get_llm_config()
     agent = create_tool_creator_agent(

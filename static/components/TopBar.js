@@ -1,4 +1,4 @@
-import { ref, watch } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import { API } from '/static/api/index.js';
 import { locale, toggleLocale, t } from '/static/i18n.js';
 
@@ -24,6 +24,7 @@ export default {
     const query = ref('');
     const results = ref([]);
     const showResults = ref(false);
+    const currentMode = ref(null);
     let debounce = null;
 
     watch(query, (val) => {
@@ -50,15 +51,44 @@ export default {
     function delayClose() { setTimeout(() => closeResults(), 200); }
 
     function searchPlaceholder() { return t('common.search'); }
+    function currentModeLabel() {
+      const name = currentMode.value?.name;
+      if (!name) return t('topbar.modeLoading');
+      return t(`modes.${name}`);
+    }
+    async function loadCurrentMode() {
+      try {
+        const payload = await API.getSystemModes();
+        currentMode.value = payload.current || null;
+      } catch (_) {
+        currentMode.value = null;
+      }
+    }
 
-    return { query, results, showResults, route, color, closeResults, delayClose, locale, toggleLocale, searchPlaceholder };
+    onMounted(loadCurrentMode);
+
+    return {
+      query,
+      results,
+      showResults,
+      route,
+      color,
+      closeResults,
+      delayClose,
+      locale,
+      toggleLocale,
+      t,
+      searchPlaceholder,
+      currentMode,
+      currentModeLabel,
+    };
   },
   template: `
     <header class="mx-topbar">
       <div class="mx-topbar-left">
         <router-link to="/" class="mx-topbar-brand">
           <span class="mx-topbar-logo">P</span>
-          <span class="mx-topbar-title">PyBot <small>Matrix</small></span>
+          <span class="mx-topbar-title">PyBot <small>{{ t('topbar.spine') }}</small></span>
         </router-link>
       </div>
       <div class="mx-topbar-center">
@@ -80,17 +110,18 @@ export default {
         </div>
       </div>
       <div class="mx-topbar-right">
+        <router-link to="/chat" class="mx-topbar-action" :title="t('topbar.chat')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        </router-link>
+        <span class="mx-topbar-version" :title="t('topbar.currentMode')">{{ currentModeLabel() }}</span>
         <button @click="toggleLocale" :title="locale === 'en' ? '切换中文' : 'Switch to English'"
           style="font-size:11px;font-weight:700;letter-spacing:0.03em;padding:4px 10px;border-radius:100px;border:1px solid var(--border);background:var(--bg-secondary);cursor:pointer;color:var(--text-primary);transition:all 0.15s;white-space:nowrap;"
           @mouseenter="$event.target.style.borderColor='var(--accent)';$event.target.style.color='var(--accent)'"
           @mouseleave="$event.target.style.borderColor='var(--border)';$event.target.style.color='var(--text-primary)'">
           {{ locale === 'en' ? '中文' : 'EN' }}
         </button>
-        <router-link to="/chat" class="mx-topbar-action" title="Chat">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-          </svg>
-        </router-link>
         <span class="mx-topbar-version">v5.0</span>
       </div>
     </header>

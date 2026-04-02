@@ -12,6 +12,12 @@ function ensureDraft(drafts, approvalId) {
 
 export default {
   name: 'ApprovalCenter',
+  props: {
+    embedded: {
+      type: Boolean,
+      default: false,
+    },
+  },
   setup() {
     const approvals = ref([]);
     const recentApprovals = ref([]);
@@ -47,6 +53,7 @@ export default {
         }
         toast(`Approval ${approved ? 'Granted' : 'Rejected'}`, 'success');
         await load();
+        window.dispatchEvent(new CustomEvent('pybot:governance-changed'));
       } catch (e) {
         toast('Failed to resolve approval: ' + e.message, 'error');
       } finally {
@@ -89,8 +96,8 @@ export default {
     };
   },
   template: `
-    <div class="mx-page">
-      <div class="mx-page-header">
+    <div :class="embedded ? '' : 'mx-page'">
+      <div v-if="!embedded" class="mx-page-header">
         <div>
           <h1 class="mx-page-title">{{ t('governance.title') }}</h1>
           <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">

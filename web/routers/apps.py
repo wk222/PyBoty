@@ -9,8 +9,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from core.app_packager import AppPackager
-from core.path_utils import safe_resolve
+from core.assets.apps.packaging import AppPackager
+from core.assets.tools.tool_result_normalize import normalize_for_app_tool_proxy
+from core.systems.runtime import safe_resolve
 from web.dependencies import get_services
 from web.state import WebServices
 
@@ -113,6 +114,83 @@ async def call_app_api(
     if app_def and not app_def.enabled:
         raise HTTPException(status_code=403, detail="App is disabled")
     return services.app_manager.execute_app_api(app_name, req.action, req.payload)
+
+
+@router.post("/api/apps/{app_name}/tool/{tool_name}/run")
+async def call_app_tool(
+    app_name: str,
+    tool_name: str,
+    payload: dict[str, Any],
+    services: WebServices = Depends(get_services),
+) -> Any:
+    app_def = services.app_manager.get_app(app_name)
+    if not app_def:
+        raise HTTPException(status_code=404, detail="App not found")
+    if not app_def.enabled:
+        raise HTTPException(status_code=403, detail="App is disabled")
+    
+    # Check if tool is allowed for this app (if allowed_tools is specified)
+    if app_def.allowed_tools and tool_name not in app_def.allowed_tools:
+        raise HTTPException(status_code=403, detail=f"Tool '{tool_name}' not allowed for this app")
+        
+    # Get tool from the global tool storage via the runtime
+    try:
+        # Get the default agent to access the global storage
+        agent = services.agents.get_or_create_mode("assistant", "default")
+        
+        tool = None
+        
+        # Try middleware
+        if not tool and hasattr(agent, "middleware") and hasattr(agent.middleware, "get_all_tools"):
+            tools = agent.middleware.get_all_tools()
+            tool = next((t for t in tools if t.name == tool_name), None)
+            
+        # Fallback to storage
+        if not tool and hasattr(agent, "storage"):
+            tool = agent.storage.get_tool(tool_name)
+            
+        # Fallback to skill registry
+        if not tool and hasattr(agent, "skill_registry"):
+            skill_tools = agent.skill_registry.get_active_tools()
+            tool = next((t for t in skill_tools if t.name == tool_name), None)
+            
+        # Fallback to capability bus
+        if not tool and hasattr(agent, "capability_bus"):
+            # capability_bus returns registered tools via its internal storage or dynamically
+            if hasattr(agent.capability_bus, "get_tools"):
+                bus_tools = agent.capability_bus.get_tools()
+                tool = next((t for t in bus_tools if t.name == tool_name), None)
+            
+        # Fallback to direct tool instances if any
+        if not tool and hasattr(agent, "tools"):
+            tool = next((t for t in agent.tools if t.name == tool_name), None)
+            
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Failed to get tool {tool_name} from storage: {e}")
+        tool = None
+        
+    if not tool:
+        import logging
+        logging.getLogger(__name__).error(f"Tool {tool_name} not found.")
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found")
+        
+    try:
+        # Handle different tool invocation signatures
+        if hasattr(tool, "invoke"):
+            result = tool.invoke(payload)
+        elif hasattr(tool, "_run"):
+            result = tool._run(**payload)
+        elif hasattr(tool, "run"):
+            result = tool.run(**payload)
+        else:
+            result = tool(**payload)
+            
+        return normalize_for_app_tool_proxy(result)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).error(f"Error executing tool {tool_name}: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.post("/api/apps/~db/query")
@@ -255,7 +333,10 @@ async def publish_app_to_hub(
     packager = _get_packager(services)
     hub_client = _get_hub_client(req.hub_url, req.hub_token)
     result = packager.publish_to_hub(
-        app_name, hub_client, version=req.version, changelog=req.changelog,
+        app_name,
+        hub_client,
+        version=req.version,
+        changelog=req.changelog,
     )
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error"))
@@ -270,7 +351,10 @@ async def install_app_from_hub(
     packager = _get_packager(services)
     hub_client = _get_hub_client(req.hub_url, req.hub_token)
     result = packager.install_from_hub(
-        req.slug, hub_client, version=req.version, overwrite=req.overwrite,
+        req.slug,
+        hub_client,
+        version=req.version,
+        overwrite=req.overwrite,
     )
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error"))
@@ -285,7 +369,9 @@ async def import_app_bundle(
 ) -> dict[str, object]:
     packager = _get_packager(services)
     result = packager.import_bundle(
-        req.bundle, overwrite=req.overwrite, target_name=req.target_name or None,
+        req.bundle,
+        overwrite=req.overwrite,
+        target_name=req.target_name or None,
     )
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error"))

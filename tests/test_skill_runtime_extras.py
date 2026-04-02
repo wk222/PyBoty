@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from core.skill_models import SkillDefinition
 from core.skill_prompts import render_active_skill_extensions
-from core.skill_runtime import TYPE_MAP, build_tool_from_definition
+from core.skill_runtime import TRUSTED_SKILLS_ENV, TYPE_MAP, build_tool_from_definition, load_python_module_tools
 
 
 def test_build_tool_returns_none_when_name_missing():
@@ -58,6 +60,49 @@ def test_build_tool_with_default_values():
     assert tool is not None
     schema = tool.args_schema.model_json_schema()
     assert schema["properties"]["x"]["default"] == "hi"
+
+
+def test_build_tool_passes_env_overrides_into_runtime(monkeypatch):
+    monkeypatch.delenv("WEATHER_TOKEN", raising=False)
+    tool = build_tool_from_definition(
+        {
+            "name": "show_env",
+            "description": "d",
+            "code": "import os\nresult = os.environ.get('WEATHER_TOKEN')",
+            "parameters": [],
+        },
+        "weather",
+        env_overrides={"WEATHER_TOKEN": "bridge-token"},
+    )
+
+    assert tool is not None
+    result = tool._run()
+    assert "bridge-token" in result
+
+
+def test_load_python_module_tools_uses_env_overrides(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv(TRUSTED_SKILLS_ENV, "*")
+    monkeypatch.delenv("BRIDGED_TOKEN", raising=False)
+    (tmp_path / "tools.py").write_text(
+        """from langchain.tools import tool
+import os
+
+@tool
+def read_bridged_env() -> str:
+    \"\"\"Read an injected env var.\"\"\"
+    return os.environ.get("BRIDGED_TOKEN", "")
+""",
+        encoding="utf-8",
+    )
+
+    tools = load_python_module_tools(
+        tmp_path,
+        "openclaw_skill",
+        env_overrides={"BRIDGED_TOKEN": "from-openclaw"},
+    )
+
+    assert len(tools) == 1
+    assert tools[0].invoke({}) == "from-openclaw"
 
 
 def test_type_map_covers_all_common_types():

@@ -26,7 +26,7 @@ global_tools/
 workspace/data/
 workspace/uploads/
 workspace/conversation_history/
-
+docs/
 # IDE
 .vscode/
 .idea/

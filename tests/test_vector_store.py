@@ -103,6 +103,14 @@ class TestCreateVectorStore:
         store = create_vector_store(backend="memory")
         assert isinstance(store, InMemoryVectorStore)
 
+    def test_sqlite_vec_backend(self, tmp_path):
+        store = create_vector_store(backend="sqlite-vec", persist_dir=str(tmp_path / "sqlite-vec"))
+        assert store.count() == 0
+
+    def test_faiss_backend(self, tmp_path):
+        store = create_vector_store(backend="faiss", persist_dir=str(tmp_path / "faiss"))
+        assert store.count() == 0
+
     def test_unknown_backend_raises(self):
         with pytest.raises(ValueError, match="Unknown vector store"):
             create_vector_store(backend="nonexistent")

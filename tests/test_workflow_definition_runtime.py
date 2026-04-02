@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 
-from core.workflow_definition_runtime import WorkflowDefinitionRuntime
-from core.workflow_models import NodeType
+from core.assets.workflows.execution import WorkflowDefinitionRuntime
+from core.assets.workflows.models import NodeType
 
 
 def test_workflow_definition_runtime_builds_linear_workflow_without_mutating_input():

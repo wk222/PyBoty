@@ -1,9 +1,17 @@
 from __future__ import annotations
 
 from core.approval_queue import ApprovalQueue
-from core.workflow_execution_runtime import WorkflowExecutionRuntime
-from core.workflow_models import FlowEdge, FlowNode, NodeStatus, NodeType, WorkflowDef, WorkflowStatus
-from core.workflow_node_runtime import WorkflowApprovalPause
+from core.assets.workflows.execution import WorkflowExecutionRuntime
+from core.assets.workflows.models import (
+    FlowEdge,
+    FlowNode,
+    NodeStatus,
+    NodeType,
+    WorkflowApprovalPause,
+    WorkflowDef,
+    WorkflowStatus,
+)
+from core.systems.runtime import SessionRuntime
 
 
 def test_workflow_execution_runtime_returns_waiting_approval_payload():
@@ -16,7 +24,7 @@ def test_workflow_execution_runtime_returns_waiting_approval_payload():
     runtime = _build_runtime(
         approval_queue=queue,
         workflows={"wf_pause": workflow},
-        exec_node=lambda node, workflow: _raise_pause(node, workflow),
+        exec_node=lambda node, workflow, run_id: _raise_pause(node, workflow),
     )
 
     result = runtime.run_workflow(workflow)
@@ -45,7 +53,7 @@ def test_workflow_execution_runtime_resumes_approved_node_and_finalizes_queue():
     runtime = _build_runtime(
         approval_queue=queue,
         workflows={"wf_resume": workflow},
-        exec_node=lambda node, workflow: {"ok": True},
+        exec_node=lambda node, workflow, run_id: {"ok": True},
     )
 
     result = runtime.resume_workflow("wf_resume", "resume-123", True)
@@ -59,6 +67,33 @@ def test_workflow_execution_runtime_resumes_approved_node_and_finalizes_queue():
     )
     assert request is not None
     assert request.status == "approved"
+
+
+def test_workflow_execution_runtime_projects_runs_into_session_timeline(tmp_path):
+    queue = ApprovalQueue()
+    session_runtime = SessionRuntime(tmp_path / "sessions.json")
+    workflow = WorkflowDef(
+        id="wf_timeline",
+        name="timeline-demo",
+        variables={"thread_id": "thread-workflow", "session_key": "session-workflow", "root_mode": "admin"},
+        nodes={"exec": FlowNode(id="exec", type=NodeType.EXEC, label="Exec")},
+    )
+    runtime = _build_runtime(
+        approval_queue=queue,
+        workflows={"wf_timeline": workflow},
+        exec_node=lambda node, workflow, run_id: _complete_node(node, {"ok": True, "run_id": run_id}),
+        session_runtime=session_runtime,
+    )
+
+    result = runtime.run_workflow(workflow)
+
+    assert result["status"] == "completed"
+    assert result["run_id"]
+    session = session_runtime.get_session("session-workflow")
+    assert session is not None
+    assert session["timeline"][-1]["kind"] == "workflow_run"
+    assert session["timeline"][-1]["status"] == "completed"
+    assert session["timeline"][-1]["run_id"] == result["run_id"]
 
 
 def test_workflow_execution_runtime_skips_unselected_condition_branch():
@@ -76,7 +111,7 @@ def test_workflow_execution_runtime_skips_unselected_condition_branch():
         ],
     )
 
-    def exec_node(node: FlowNode, workflow: WorkflowDef):
+    def exec_node(node: FlowNode, workflow: WorkflowDef, run_id: str):
         node.status = NodeStatus.COMPLETED
         node.output = node.id
         if node.id == "route":
@@ -146,7 +181,7 @@ def test_workflow_execution_runtime_resumes_waiting_delegated_agent_node():
     runtime = _build_runtime(
         approval_queue=queue,
         workflows={"wf_delegate": workflow},
-        exec_node=lambda node, workflow: _complete_node(node, {"final": True}),
+        exec_node=lambda node, workflow, run_id: _complete_node(node, {"final": True}),
     )
 
     result = runtime.resume_workflow("wf_delegate", "resume-delegate", True, note="ok", resolved_by="lead")
@@ -206,7 +241,7 @@ def test_workflow_execution_runtime_requeues_delegated_agent_when_followup_appro
     runtime = _build_runtime(
         approval_queue=queue,
         workflows={"wf_delegate_retry": workflow},
-        exec_node=lambda node, workflow: {"final": True},
+        exec_node=lambda node, workflow, run_id: {"final": True},
     )
 
     result = runtime.resume_workflow("wf_delegate_retry", "resume-delegate", True)
@@ -251,7 +286,7 @@ def test_workflow_execution_runtime_resumes_waiting_debate_node_via_collaboratio
     runtime = _build_runtime(
         approval_queue=queue,
         workflows={"wf_debate": workflow},
-        exec_node=lambda node, workflow: _complete_node(node, {"final": True}),
+        exec_node=lambda node, workflow, run_id: _complete_node(node, {"final": True}),
         resume_collaboration_node=lambda node, workflow, waiting_payload, resolved_payload: {
             "topic": "是否上线",
             "transcript": [{"agent": "pro", "content": "pro-response"}],
@@ -307,7 +342,7 @@ def test_workflow_execution_runtime_requeues_waiting_consensus_node_with_updated
     runtime = _build_runtime(
         approval_queue=queue,
         workflows={"wf_consensus": workflow},
-        exec_node=lambda node, workflow: _complete_node(node, {"final": True}),
+        exec_node=lambda node, workflow, run_id: _complete_node(node, {"final": True}),
         resume_collaboration_node=lambda node, workflow, waiting_payload, resolved_payload: {
             "status": "waiting_approval",
             "approval_id": next_request.approval_id,
@@ -405,7 +440,7 @@ def test_workflow_execution_runtime_resumes_specific_pending_consensus_approval_
     runtime = _build_runtime(
         approval_queue=queue,
         workflows={"wf_consensus_multi": workflow},
-        exec_node=lambda node, workflow: _complete_node(node, {"final": True}),
+        exec_node=lambda node, workflow, run_id: _complete_node(node, {"final": True}),
         resume_collaboration_node=lambda node, workflow, waiting_payload, resolved_payload, resolved_approval_id: {
             "status": "waiting_approval",
             "approval_id": security_request.approval_id,
@@ -462,6 +497,7 @@ def _build_runtime(
     workflows: dict[str, WorkflowDef],
     exec_node,
     resume_collaboration_node=None,
+    session_runtime=None,
 ):
     saved: list[tuple[str, str]] = []
 
@@ -518,6 +554,7 @@ def _build_runtime(
             f"{kwargs['workflow_id']}:{kwargs['node_id']}:{kwargs['resume_token']}"
         ),
         log_event=lambda workflow, node_id, event, detail="": None,
+        session_runtime=session_runtime,
         resume_collaboration_node=wrapped_resume_collaboration,
     )
 

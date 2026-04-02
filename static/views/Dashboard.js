@@ -30,6 +30,9 @@ export default {
     const llmLoaded = ref(false);
     const providers = ref({});
     const showApiKey = ref(false);
+    const systemModel = ref(null);
+    const systemModes = ref(null);
+    const governanceCenter = ref(null);
 
     async function loadLlmConfig() {
       if (llmLoaded.value) return;
@@ -140,11 +143,20 @@ export default {
             total: list.length,
           };
         }
+        if (health.status === 'fulfilled') {
+          stats.value.system = {
+            version: health.value.version || '-',
+            uptime: health.value.status || '-',
+          };
+        }
 
-        const [capRes, evtRes, memRes] = await Promise.allSettled([
+        const [capRes, evtRes, memRes, systemRes, modesRes, governanceRes] = await Promise.allSettled([
           API.getCapabilities(),
           API.getCapabilityEvents(),
           API.getMemory(),
+          API.getSystemModel(),
+          API.getSystemModes(),
+          API.getGovernanceCenter(),
         ]);
         if (capRes.status === 'fulfilled' && capRes.value) {
           const c = capRes.value;
@@ -157,6 +169,15 @@ export default {
           const content = memRes.value.content || '';
           stats.value.memory = { lines: content.split('\n').filter(l => l.trim()).length };
         }
+        if (systemRes.status === 'fulfilled') {
+          systemModel.value = systemRes.value;
+        }
+        if (modesRes.status === 'fulfilled') {
+          systemModes.value = modesRes.value;
+        }
+        if (governanceRes.status === 'fulfilled') {
+          governanceCenter.value = governanceRes.value;
+        }
       } catch (e) {
         toast('Failed to load dashboard: ' + e.message, 'error');
       } finally {
@@ -167,13 +188,14 @@ export default {
     onMounted(loadAll);
 
     function d(key) { return t('dashboard.' + key); }
+    function modeLabel(name) { return t('modes.' + name); }
 
     return {
       stats, events, loading, loadAll,
       llmExpanded, llmConfig, llmFallback, llmSaving, llmTesting, llmTestResult,
       llmLoaded, providers, showApiKey,
       toggleLlm, saveLlmConfig, saveFull, testConnection,
-      addFallback, removeFallback, maskKey, d, locale,
+      addFallback, removeFallback, maskKey, d, locale, systemModel, systemModes, governanceCenter, modeLabel,
     };
   },
   template: `
@@ -186,8 +208,61 @@ export default {
         </button>
       </div>
 
-      <div class="mx-stats-grid" v-if="!loading">
-        <router-link to="/agents" class="mx-stat-card">
+      <div class="mx-section" v-if="!loading">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
+          <div>
+            <h2 class="mx-section-title" style="margin:0;">{{ d('operatingSurfaces') }}</h2>
+            <p style="margin:8px 0 0;color:var(--text-secondary);line-height:1.7;max-width:860px;">
+              {{ d('operatingSurfacesHint') }}
+            </p>
+          </div>
+          <router-link to="/ecosystem" class="mx-btn mx-btn--ghost">{{ d('openEcosystem') }}</router-link>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:16px;">
+          <router-link to="/chat" class="mx-stat-card">
+            <div class="mx-stat-icon" style="color:var(--info);background:rgba(96,165,250,0.1)">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </div>
+            <div class="mx-stat-body">
+              <div class="mx-stat-value" style="font-size:18px;">{{ systemModes?.current?.name ? modeLabel(systemModes.current.name) : d('modeLoading') }}</div>
+              <div class="mx-stat-title">{{ d('chatSurface') }}</div>
+              <div class="mx-stat-sub">{{ d('chatSurfaceHint') }}</div>
+            </div>
+          </router-link>
+          <router-link to="/governance" class="mx-stat-card">
+            <div class="mx-stat-icon" style="color:var(--warning);background:rgba(251,191,36,0.1)">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <div class="mx-stat-body">
+              <div class="mx-stat-value">{{ governanceCenter?.approvals?.counts?.pending || 0 }}</div>
+              <div class="mx-stat-title">{{ d('governanceSurface') }}</div>
+              <div class="mx-stat-sub">{{ governanceCenter?.gateway?.status?.pending_pairings || 0 }} {{ d('pendingPairings') }}</div>
+            </div>
+          </router-link>
+          <router-link to="/ecosystem" class="mx-stat-card">
+            <div class="mx-stat-icon" style="color:var(--accent);background:rgba(129,140,248,0.1)">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            </div>
+            <div class="mx-stat-body">
+              <div class="mx-stat-value">{{ stats.apps.total + stats.workflows.total + stats.skills.total + stats.tools.total + stats.agents.total }}</div>
+              <div class="mx-stat-title">{{ d('ecosystemSurface') }}</div>
+              <div class="mx-stat-sub">{{ stats.capabilities.providers }} {{ d('providers') }}</div>
+            </div>
+          </router-link>
+        </div>
+      </div>
+
+      <div class="mx-section" v-if="!loading" style="margin-top:20px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
+          <div>
+            <h2 class="mx-section-title" style="margin:0;">{{ d('ecosystemSnapshot') }}</h2>
+            <p style="margin:8px 0 0;color:var(--text-secondary);line-height:1.7;max-width:860px;">
+              {{ d('ecosystemSnapshotHint') }}
+            </p>
+          </div>
+        </div>
+        <div class="mx-stats-grid" style="margin-top:16px;">
+          <router-link to="/agents" class="mx-stat-card">
           <div class="mx-stat-icon" style="color:var(--info);background:rgba(96,165,250,0.1)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="11" width="18" height="11" rx="2"/><circle cx="12" cy="5" r="4"/></svg>
           </div>
@@ -242,7 +317,7 @@ export default {
           </div>
         </router-link>
 
-        <div class="mx-stat-card mx-stat-card--static">
+          <div class="mx-stat-card mx-stat-card--static">
           <div class="mx-stat-icon" style="color:#fb923c;background:rgba(251,146,60,0.1)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
           </div>
@@ -251,9 +326,9 @@ export default {
             <div class="mx-stat-title">{{ d('capabilityBus') }}</div>
             <div class="mx-stat-sub">{{ stats.capabilities.providers }} {{ d('providers') }}</div>
           </div>
-        </div>
+          </div>
 
-        <div class="mx-stat-card mx-stat-card--static">
+          <div class="mx-stat-card mx-stat-card--static">
           <div class="mx-stat-icon" style="color:#a78bfa;background:rgba(167,139,250,0.1)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
           </div>
@@ -262,16 +337,17 @@ export default {
             <div class="mx-stat-title">{{ d('memory') }}</div>
             <div class="mx-stat-sub">{{ d('entriesMemory') }}</div>
           </div>
-        </div>
+          </div>
 
-        <div class="mx-stat-card mx-stat-card--static">
+          <div class="mx-stat-card mx-stat-card--static">
           <div class="mx-stat-icon" style="color:var(--success);background:rgba(52,211,153,0.1)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
           </div>
           <div class="mx-stat-body">
             <div class="mx-stat-value">{{ stats.system.version }}</div>
             <div class="mx-stat-title">{{ d('system') }}</div>
-            <div class="mx-stat-sub">LangChain + PyFlow</div>
+            <div class="mx-stat-sub">{{ systemModel ? systemModel.root_modes.length + ' root modes / ' + systemModel.product_concepts.length + ' concepts' : 'LangChain + PyFlow' }}</div>
+          </div>
           </div>
         </div>
       </div>
@@ -279,6 +355,44 @@ export default {
       <div v-if="loading" class="mx-loading">
         <div class="mx-spinner"></div>
         <span>{{ d('loading') }}</span>
+      </div>
+
+      <div class="mx-section" v-if="!loading && systemModel" style="margin-top:20px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
+          <div>
+            <h2 class="mx-section-title" style="margin:0;">{{ d('systemMap') }}</h2>
+            <p style="margin:8px 0 0;color:var(--text-secondary);line-height:1.7;max-width:900px;">
+              {{ systemModel.north_star }}
+            </p>
+          </div>
+          <router-link to="/system" class="mx-btn mx-btn--ghost">{{ d('openSystemMap') }}</router-link>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:16px;">
+          <div style="padding:16px;border:1px solid var(--border);border-radius:16px;background:var(--bg-secondary);">
+            <div style="font-size:12px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">{{ d('rootModes') }}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">
+              <span v-for="mode in systemModel.root_modes" :key="mode.name" style="padding:6px 10px;border-radius:999px;background:rgba(129,140,248,0.10);font-size:12px;">
+                {{ mode.label }}
+              </span>
+            </div>
+          </div>
+          <div style="padding:16px;border:1px solid var(--border);border-radius:16px;background:var(--bg-secondary);">
+            <div style="font-size:12px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">{{ d('productConcepts') }}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">
+              <span v-for="concept in systemModel.product_concepts" :key="concept.name" style="padding:6px 10px;border-radius:999px;background:rgba(52,211,153,0.10);font-size:12px;">
+                {{ concept.label }}
+              </span>
+            </div>
+          </div>
+          <div style="padding:16px;border:1px solid var(--border);border-radius:16px;background:var(--bg-secondary);">
+            <div style="font-size:12px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">{{ d('supportingSystems') }}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">
+              <span v-for="system in systemModel.supporting_systems" :key="system.name" style="padding:6px 10px;border-radius:999px;background:rgba(251,191,36,0.12);font-size:12px;">
+                {{ system.label }}
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- LLM Quick Config -->
@@ -420,9 +534,9 @@ export default {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             {{ d('runWorkflow') }}
           </router-link>
-          <router-link to="/hub" class="mx-action-btn">
+          <router-link to="/ecosystem" class="mx-action-btn">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-            {{ d('browseHub') }}
+            {{ d('openEcosystem') }}
           </router-link>
           <router-link to="/governance" class="mx-action-btn">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>

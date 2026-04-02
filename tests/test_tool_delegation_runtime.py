@@ -4,8 +4,8 @@ import json
 
 from langchain_core.messages import ToolMessage
 
-from core import tool_delegation_runtime
 from core.approval_queue import ApprovalQueue
+from core.assets.tools import tool_delegation_runtime
 from core.tool_delegation_runtime import DelegatedToolApprovalRuntime
 
 

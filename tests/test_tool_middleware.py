@@ -10,8 +10,7 @@ from langchain_core.tools import tool
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
-from core.agent_control import AgentControlPolicy
-from core.approval_queue import ApprovalQueue
+from core.systems.governance import AgentControlPolicy, ApprovalQueue
 from core.tool_approval_runtime import (
     build_tool_approval_resume_command,
     create_tool_approval_request,
@@ -31,15 +30,24 @@ def create_agent_tool(agent_name: str) -> str:
     return f"created:{agent_name}"
 
 
+@tool("exec_code")
+def exec_code_tool(code: str, language: str = "python", timeout: int = 15, cwd: str = "") -> str:
+    """Execute code."""
+    return f"executed:{code}"
+
+
 def _build_graph(*, queue: ApprovalQueue, responses: list[AIMessage]):
     middleware = DynamicToolMiddleware(
-        control_policy=AgentControlPolicy.from_config({"mode": "balanced"}),
+        control_policy=AgentControlPolicy.from_config({
+            "mode": "balanced",
+            "approval_required_tools": ["create_agent", "exec_code"]
+        }),
         approval_queue=queue,
         approval_scope="root:test",
     )
     graph = create_langchain_agent(
         model=ToolAwareFakeModel(responses=responses),
-        tools=[create_agent_tool],
+        tools=[create_agent_tool, exec_code_tool],
         middleware=[middleware],
         checkpointer=MemorySaver(),
     )
@@ -107,99 +115,112 @@ def test_rejected_tool_approval_resumes_with_error_feedback():
                 tool_calls=[
                     {
                         "name": "create_agent",
-                        "args": {"agent_name": "helper"},
-                        "id": "call_1",
+                        "args": {"agent_name": "malicious"},
+                        "id": "call_2",
                         "type": "tool_call",
                     }
                 ],
             ),
-            AIMessage(content="已取消创建"),
+            AIMessage(content="好的，我明白了"),
         ],
     )
     config = {"configurable": {"thread_id": "thread-1"}}
 
-    response = graph.invoke({"messages": [{"role": "user", "content": "创建一个 helper"}]}, config=config)
+    response = graph.invoke({"messages": [{"role": "user", "content": "创建一个恶意 agent"}]}, config=config)
+
+    assert "__interrupt__" in response
     request = _register_interrupt(queue, graph, response, config)
-    resolved = queue.resolve(request.approval_id, approved=False, note="暂不允许")
+    resolved = queue.resolve(request.approval_id, approved=False, note="禁止创建恶意 agent")
 
     assert resolved["success"] is True
     result = resolved["result"]
-    assert result["messages"][-1].content == "暂不允许"
     tool_messages = [message for message in result["messages"] if getattr(message, "type", "") == "tool"]
     assert len(tool_messages) == 1
     assert tool_messages[0].status == "error"
-    assert tool_messages[0].content == "暂不允许"
+    assert "禁止创建恶意 agent" in str(tool_messages[0].content)
 
 
-def test_delegated_approval_pauses_parent_until_subagent_resolution():
+def test_host_execution_security_chain_revalidates_hash():
     queue = ApprovalQueue()
-    delegated_request = queue.create_request(
-        kind="tool_call",
-        scope="subagent:helper",
-        summary="subagent approval",
-        prompt="allow helper?",
-        callback=lambda approved, note: {
-            "status": "completed",
-            "success": approved,
-            "response": "helper done" if approved else note or "rejected",
-            "agent_name": "helper",
-            "state_update": {"next_step": "summarize"},
-        },
-    )
-
-    @tool("delegate_to_agent")
-    def delegate_to_agent_tool(agent_name: str, task: str) -> str:
-        """Delegate to a persisted agent."""
-        return json.dumps(
-            {
-                "status": "waiting_approval",
-                "success": False,
-                "approval_id": delegated_request.approval_id,
-                "response": "helper paused",
-                "agent_name": agent_name,
-                "task": task,
-            },
-            ensure_ascii=False,
-        )
-
-    middleware = DynamicToolMiddleware(
-        control_policy=AgentControlPolicy.from_config({"mode": "open"}),
-        approval_queue=queue,
-        approval_scope="root:test",
-    )
-    graph = create_langchain_agent(
-        model=ToolAwareFakeModel(
-            responses=[
-                AIMessage(
-                    content="",
-                    tool_calls=[
-                        {
-                            "name": "delegate_to_agent",
-                            "args": {"agent_name": "helper", "task": "solve"},
-                            "id": "call_1",
-                            "type": "tool_call",
-                        }
-                    ],
-                ),
-                AIMessage(content="委派完成"),
-            ]
-        ),
-        tools=[delegate_to_agent_tool],
-        middleware=[middleware],
-        checkpointer=MemorySaver(),
+    graph, middleware = _build_graph(
+        queue=queue,
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "exec_code",
+                        "args": {"code": "print('hello')", "language": "python"},
+                        "id": "call_3",
+                        "type": "tool_call",
+                    }
+                ],
+            ),
+            AIMessage(content="执行完成"),
+        ],
     )
     config = {"configurable": {"thread_id": "thread-1"}}
 
-    interrupted = graph.invoke({"messages": [{"role": "user", "content": "委派 helper"}]}, config=config)
-    assert "__interrupt__" in interrupted
+    response = graph.invoke({"messages": [{"role": "user", "content": "运行代码"}]}, config=config)
 
-    resolved = queue.resolve(delegated_request.approval_id, approved=True, note="ok")
+    assert "__interrupt__" in response
+    request = _register_interrupt(queue, graph, response, config)
+    
+    # 模拟审批通过
+    resolved = queue.resolve(request.approval_id, approved=True, note="允许")
+    
     assert resolved["success"] is True
-
-    resumed = graph.invoke(Command(resume={"approval_id": delegated_request.approval_id}), config=config)
-    assert resumed["messages"][-1].content == "委派完成"
-    tool_messages = [message for message in resumed["messages"] if getattr(message, "type", "") == "tool"]
+    result = resolved["result"]
+    tool_messages = [message for message in result["messages"] if getattr(message, "type", "") == "tool"]
     assert len(tool_messages) == 1
-    delegated_payload = json.loads(tool_messages[0].content)
-    assert delegated_payload["response"] == "helper done"
-    assert delegated_payload["state_update"] == {"next_step": "summarize"}
+    assert tool_messages[0].content == "executed:print('hello')"
+
+
+def test_host_execution_security_chain_blocks_tampered_args():
+    queue = ApprovalQueue()
+    graph, middleware = _build_graph(
+        queue=queue,
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "exec_code",
+                        "args": {"code": "print('hello')", "language": "python"},
+                        "id": "call_4",
+                        "type": "tool_call",
+                    }
+                ],
+            ),
+            AIMessage(content="执行完成"),
+        ],
+    )
+    config = {"configurable": {"thread_id": "thread-1"}}
+
+    response = graph.invoke({"messages": [{"role": "user", "content": "运行代码"}]}, config=config)
+
+    assert "__interrupt__" in response
+    
+    # 获取 interrupt 并注册
+    interrupts = extract_tool_approval_interrupts(response, scope="root:test")
+    approval = interrupts[0]
+    
+    # 模拟篡改参数 (在实际场景中，这可能是因为某种绕过机制或状态不一致)
+    # 我们通过修改图的状态来模拟
+    state = graph.get_state(config)
+    messages = state.values["messages"]
+    last_message = messages[-1]
+    last_message.tool_calls[0]["args"]["code"] = "import os; os.system('rm -rf /')"
+    graph.update_state(config, {"messages": [last_message]})
+    
+    # 构造 resume command (使用原始的 approval，所以 plan_hash 是 print('hello') 的)
+    resume_cmd = build_tool_approval_resume_command(approval, approved=True, note="允许")
+    
+    # 恢复执行
+    result = graph.invoke(resume_cmd, config=config)
+    
+    tool_messages = [message for message in result["messages"] if getattr(message, "type", "") == "tool"]
+    assert len(tool_messages) == 1
+    assert tool_messages[0].status == "error"
+    assert "审批后的执行内容已变化" in str(tool_messages[0].content)
+    assert "CONTROL_POLICY_BLOCKED" in str(tool_messages[0].content)

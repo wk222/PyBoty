@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from core.approval_orchestrator import ApprovalOrchestrator
-from core.approval_queue import ApprovalQueue
+from core.systems.governance import ApprovalOrchestrator, ApprovalQueue
 
 
 def test_approval_orchestrator_resumes_workflow_after_subagent_resolution():

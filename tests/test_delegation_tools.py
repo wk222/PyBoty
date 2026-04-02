@@ -155,6 +155,28 @@ class TestDelegateEmitsEvents:
         assert events[0].payload["mode"] == "delegate"
         assert events[1].payload["mode"] == "delegate"
 
+    def test_delegate_passes_parent_runtime_context(self):
+        storage = _make_storage_with_agent()
+        tool = DelegateToAgentTool(
+            agent_storage=storage,
+            runtime_context={
+                "current_agent_name": "planner",
+                "depth": 2,
+                "run_id": "run-1",
+                "thread_id": "thread-1",
+            },
+        )
+
+        with patch("core.assets.agents.agent_creator.delegate_agent_task") as mock_delegate:
+            mock_delegate.return_value = {"success": True, "result": "done"}
+            tool._run(agent_name="test_agent", task="do something")
+
+        kwargs = mock_delegate.call_args.kwargs
+        assert kwargs["parent_agent_name"] == "planner"
+        assert kwargs["parent_depth"] == 2
+        assert kwargs["parent_run_id"] == "run-1"
+        assert kwargs["parent_thread_id"] == "thread-1"
+
 
 class TestGetAgentCreatorToolsIncludeAsk:
     def test_default_includes_ask(self):

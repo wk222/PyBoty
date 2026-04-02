@@ -160,6 +160,21 @@ class TestSummarization:
         assert count == 3
         assert "Topics discussed" in mw._summary_message.content
 
+    def test_compaction_callback_receives_summary_payload(self):
+        payloads = []
+        config = SummarizationConfig(keep_recent_messages=2, thread_id="thread-callback")
+        mw = SummarizationMiddleware(
+            summarize_fn=lambda prompt: "callback summary result",
+            config=config,
+            compaction_callback=payloads.append,
+        )
+        messages = [_human(f"topic {i}") for i in range(6)]
+        count = mw._do_summarize(messages)
+        assert count == 4
+        assert payloads
+        assert payloads[-1]["thread_id"] == "thread-callback"
+        assert payloads[-1]["summary"] == "callback summary result"
+
 
 class TestOffload:
     def test_offload_creates_file(self, tmp_path):

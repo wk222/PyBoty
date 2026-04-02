@@ -1,0 +1,30 @@
+{
+  "name": "weather_provider",
+  "display_name": "Weather Provider API",
+  "description": "Provides global weather data to other apps.",
+  "version": "1.0.0",
+  "author": "agent",
+  "created_at": 1774711413.1530917,
+  "updated_at": 1774711413.1530917,
+  "enabled": true,
+  "entry_point": "index.html",
+  "api_enabled": false,
+  "tags": [],
+  "mode": "static",
+  "agent_binding": "",
+  "workflow_binding": "",
+  "knowledge_collections": [],
+  "allowed_tools": [],
+  "shared_datastores": [],
+  "shared_schemas": [],
+  "data_contracts": [],
+  "system_prompt_override": "",
+  "isolated_knowledge": false,
+  "isolated_storage": false,
+  "require_auth": false,
+  "api_keys": [],
+  "exports": [
+    "get_weather_workflow",
+    "forecast_agent"
+  ]
+}

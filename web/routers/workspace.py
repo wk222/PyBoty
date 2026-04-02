@@ -7,7 +7,16 @@ import uuid
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from core.task_scheduler import ScheduledTask
+from core.assets.skills.openclaw_compat import (
+    build_openclaw_compat_report,
+    build_openclaw_source_specs,
+    detect_openclaw_source,
+    import_openclaw_channels_for_pybot,
+    try_load_openclaw_config,
+)
+from core.assets.skills.skill_diagnostics import build_skill_diagnostics
+from core.assets.workflows.scheduling import ScheduledTask
+from core.systems.runtime import get_config, get_openclaw_compat_config, save_config
 from core.tool_templates import get_templates_by_category, list_templates
 from web.dependencies import get_services
 from web.state import WebServices
@@ -40,6 +49,23 @@ class SkillImportRequest(BaseModel):
     name: str
     files: dict[str, str]
     overwrite: bool = False
+
+
+class OpenClawSourceRegisterRequest(BaseModel):
+    path: str
+    name: str = "openclaw"
+    persist: bool = True
+    overwrite: bool = False
+
+
+class OpenClawImportRequest(BaseModel):
+    repo_path: str
+    config_path: str | None = None
+    source_name: str = "openclaw"
+    persist: bool = True
+    overwrite: bool = False
+    import_extra_dirs: bool = True
+    import_channels: bool = True
 
 
 class ScheduleToggleRequest(BaseModel):
@@ -178,6 +204,158 @@ async def get_skill_source(
     return {"source": source}
 
 
+@router.get("/api/openclaw/report")
+async def get_openclaw_report(services: WebServices = Depends(get_services)) -> dict[str, object]:
+    compat = get_openclaw_compat_config()
+    report = build_openclaw_compat_report(
+        services.skill_registry,
+        repo_path=compat.get("repo_path"),
+        config_path=compat.get("config_path"),
+    )
+    return {"compat": compat, "report": report}
+
+
+@router.post("/api/openclaw/import")
+async def import_openclaw_into_pybot(
+    req: OpenClawImportRequest,
+    services: WebServices = Depends(get_services),
+) -> dict[str, object]:
+    bridge = build_openclaw_source_specs(
+        req.repo_path,
+        config_path=req.config_path,
+        source_name=req.source_name,
+        include_extra_dirs=req.import_extra_dirs,
+    )
+    source_specs = bridge["source_specs"]
+    source_names = {spec["name"] for spec in source_specs}
+    existing_runtime_sources = list(services.skill_registry.storage.sources)
+    conflicting_names = [source.name for source in existing_runtime_sources if source.name in source_names]
+    if conflicting_names and not req.overwrite:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Skill source already exists: {', '.join(sorted(conflicting_names))}",
+        )
+
+    if req.persist:
+        current = get_config()
+        raw_sources = [
+            item
+            for item in current.get("extra_skill_sources", [])
+            if isinstance(item, dict) and item.get("name") not in source_names
+        ]
+        raw_sources.extend(source_specs)
+        current["extra_skill_sources"] = raw_sources
+        channel_import = import_openclaw_channels_for_pybot(
+            try_load_openclaw_config(req.config_path)[1],
+            current.get("channels", {}),
+        )
+        if req.import_channels:
+            current["channels"] = channel_import["channels"]
+        current["openclaw_compat"] = {
+            "repo_path": bridge["repo"]["repo_root"],
+            "config_path": bridge["config_path"] or None,
+            "source_name": req.source_name,
+            "imported_sources": [spec["name"] for spec in source_specs],
+            "imported_extra_dirs": [spec["path"] for spec in bridge["extra_sources"]],
+            "channels": bridge["config_summary"]["channels"],
+            "skill_entries": bridge["config_summary"]["skill_entries"],
+            "channel_import": {
+                "imported": sorted(channel_import["imported"].keys()),
+                "skipped": channel_import["skipped"],
+            },
+        }
+        save_config(current)
+        services.skill_registry = WebServices._build_skill_registry(services.paths)
+    else:
+        from core.assets.skills import SkillRegistry
+        from core.skill_sources import SkillSource
+
+        filtered_sources = [source for source in existing_runtime_sources if source.name not in source_names]
+        filtered_sources.extend(
+            SkillSource(
+                name=spec["name"],
+                path=spec["path"],
+                writable=False,
+                flavor=spec.get("flavor", "openclaw"),
+            )
+            for spec in source_specs
+        )
+        services.skill_registry = SkillRegistry(None, skill_sources=filtered_sources)
+
+    report = build_openclaw_compat_report(
+        services.skill_registry,
+        repo_path=bridge["repo"]["repo_root"],
+        config_path=bridge["config_path"] or None,
+    )
+    return {
+        "success": True,
+        "persisted": req.persist,
+        "sources": [services.skill_registry.get_source(spec["name"]) for spec in source_specs],
+        "bridge": bridge,
+        "channel_import": (
+            import_openclaw_channels_for_pybot(
+                try_load_openclaw_config(req.config_path)[1],
+                get_config().get("channels", {}),
+            )
+            if req.persist
+            else import_openclaw_channels_for_pybot(try_load_openclaw_config(req.config_path)[1], {})
+        ),
+        "report": report,
+        "skills": services.skill_registry.list_skills(),
+    }
+
+
+@router.post("/api/skill-sources/openclaw/register")
+async def register_openclaw_skill_source(
+    req: OpenClawSourceRegisterRequest,
+    services: WebServices = Depends(get_services),
+) -> dict[str, object]:
+    try:
+        detected = detect_openclaw_source(req.path)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    repo_root = detected["repo_root"]
+    existing_runtime_sources = list(services.skill_registry.storage.sources)
+    has_conflicting_name = any(source.name == req.name for source in existing_runtime_sources)
+    if has_conflicting_name and not req.overwrite:
+        raise HTTPException(status_code=409, detail=f"Skill source already exists: {req.name}")
+
+    if req.persist:
+        current = get_config()
+        raw_sources = [
+            item
+            for item in current.get("extra_skill_sources", [])
+            if isinstance(item, dict) and item.get("name") != req.name
+        ]
+        raw_sources.append({"name": req.name, "path": repo_root, "flavor": "openclaw"})
+        current["extra_skill_sources"] = raw_sources
+        save_config(current)
+        services.skill_registry = WebServices._build_skill_registry(services.paths)
+    else:
+        from core.assets.skills import SkillRegistry
+        from core.skill_sources import SkillSource
+
+        filtered_sources = [source for source in existing_runtime_sources if source.name != req.name]
+        filtered_sources.append(
+            SkillSource(
+                name=req.name,
+                path=repo_root,
+                writable=False,
+                flavor="openclaw",
+            )
+        )
+        services.skill_registry = SkillRegistry(None, skill_sources=filtered_sources)
+
+    return {
+        "success": True,
+        "source": services.skill_registry.get_source(req.name),
+        "detected": detected,
+        "skills": services.skill_registry.list_skills(),
+        "persisted": req.persist,
+    }
+
+
 @router.post("/api/skill-sources/{source_name}/skills")
 async def import_skill_to_source(
     source_name: str,
@@ -216,6 +394,20 @@ async def get_skill(
     except Exception:
         data["registered_tools"] = []
     return data
+
+
+@router.get("/api/skills/{skill_name}/diagnostics")
+async def get_skill_diagnostics(
+    skill_name: str,
+    services: WebServices = Depends(get_services),
+) -> dict[str, object]:
+    skill = services.skill_registry.get_skill(skill_name)
+    if not skill:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    compat = get_openclaw_compat_config()
+    _, openclaw_config, _ = try_load_openclaw_config(compat.get("config_path"))
+    diagnostics = build_skill_diagnostics(skill, config=get_config(), openclaw_config=openclaw_config)
+    return {"skill": skill_name, "diagnostics": diagnostics}
 
 
 @router.get("/api/skills/{skill_name}/bundle")

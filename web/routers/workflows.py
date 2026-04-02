@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
 
+from core.systems.integration.channel_runtime import ChannelWebhookRequest
 from web.dependencies import get_services
 from web.state import WebServices
 
@@ -34,9 +37,71 @@ def _require_agent(services: WebServices) -> Any:
         raise HTTPException(status_code=500, detail=msg) from exc
 
 
+def _stringify_channel_result(result: Any) -> str:
+    if isinstance(result, str):
+        return result
+    if isinstance(result, dict):
+        for key in ("response", "output_text", "result", "message"):
+            value = result.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+        return json.dumps(result, ensure_ascii=False)
+    return str(result)
+
+
+def _build_channel_route_callback(services: WebServices):
+    def callback(channel_name: str, channel_message: Any, decision: Any) -> str:
+        target = str(getattr(decision, "target", "agent")).strip() or "agent"
+        thread_id = str(getattr(decision, "thread_id", "")).strip() or channel_message.thread_id
+        if target == "workflow":
+            workflow_name = str(getattr(decision, "workflow_name", "")).strip()
+            workflow_mode = str(getattr(decision, "mode", "assistant")).strip() or "assistant"
+            engine = _require_agent(services).pyflow_engine
+            workflow = engine.load_workflow(workflow_name)
+            if workflow is None:
+                raise RuntimeError(f"工作流 '{workflow_name}' 不存在")
+            payload = {
+                "channel": channel_name,
+                "user_id": channel_message.user_id,
+                "message": channel_message.message,
+                "thread_id": thread_id,
+                "metadata": channel_message.metadata,
+                "route": decision.to_dict() if hasattr(decision, "to_dict") else {},
+            }
+            workflow.variables.update(payload)
+            workflow.variables["input"] = payload
+            workflow.variables["channel_message"] = payload
+            _bind_workflow_session(
+                services,
+                workflow,
+                source="channel.workflow",
+                thread_id=thread_id,
+                root_mode=workflow_mode,
+                metadata={"channel": channel_name, "workflow_name": workflow_name},
+            )
+            return _stringify_channel_result(engine.run_workflow(workflow))
+        mode = str(getattr(decision, "mode", "assistant")).strip() or "assistant"
+        agent = services.agents.get_or_create_mode(mode, thread_id)
+        return str(agent.chat(channel_message.message))
+
+    return callback
+
+
+def _ensure_channel_routes(services: WebServices) -> Any:
+    agent = _require_agent(services)
+    manager = agent.channel_manager
+    if hasattr(manager, "set_route_callback") and hasattr(manager, "list_routes") and manager.list_routes():
+        manager.set_route_callback(_build_channel_route_callback(services))
+    return manager
+
+
 class TriggerWorkflowRequest(BaseModel):
     name: str
     input_vars: dict[str, Any] = Field(default_factory=dict)
+    thread_id: str = ""
+    session_key: str = ""
+    root_mode: str = "assistant"
+    async_mode: bool = Field(default=False, description="If true, run in background and return task_id immediately")
 
 
 class WorkflowSaveRequest(BaseModel):
@@ -63,16 +128,157 @@ class ApprovalResolveRequest(BaseModel):
     resume_token: str = ""
 
 
-@router.post("/api/webhook/{channel_name}")
+class CapabilityDiscoveryRequest(BaseModel):
+    query: str = ""
+    layer: str = ""
+    tag: str = ""
+    provides: str = ""
+    include_marketplace: bool = True
+    include_hub: bool = False
+    hub_url: str = ""
+    hub_token: str = ""
+    hub_type: str = "skill"
+    page: int = 1
+
+
+class CapabilityPublishSkillRequest(BaseModel):
+    version: str = "0.1.0"
+    changelog: str = ""
+    publish_to_hub: bool = False
+    hub_url: str = ""
+    hub_token: str = ""
+
+
+class CapabilityInstallSkillRequest(BaseModel):
+    package_path: str = ""
+    url: str = ""
+    github_repo: str = ""
+    github_subpath: str = ""
+    hub_slug: str = ""
+    version: str = "latest"
+    hub_url: str = ""
+    hub_token: str = ""
+
+
+async def _build_channel_webhook_request(request: Request) -> ChannelWebhookRequest:
+    raw_body = await request.body()
+    content_type = request.headers.get("content-type", "")
+    json_payload: dict[str, Any] | None = None
+    if raw_body and "json" in content_type.lower():
+        try:
+            parsed = json.loads(raw_body.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            parsed = None
+        if isinstance(parsed, dict):
+            json_payload = parsed
+    return ChannelWebhookRequest(
+        method=request.method,
+        query_params={key: value for key, value in request.query_params.items()},
+        headers={key.lower(): value for key, value in request.headers.items()},
+        raw_body=raw_body,
+        json_payload=json_payload,
+        content_type=content_type,
+    )
+
+
+def _get_capability_registry(services: WebServices) -> Any:
+    if getattr(services, "capability_registry", None) is not None:
+        return services.capability_registry
+    try:
+        agent = services.system_agent()
+    except Exception:
+        return None
+    return getattr(agent, "capability_registry", None)
+
+
+def _bind_workflow_session(
+    services: WebServices,
+    workflow: Any,
+    *,
+    source: str,
+    thread_id: str = "",
+    session_key: str = "",
+    root_mode: str = "assistant",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return services.ensure_workflow_session(
+        workflow=workflow,
+        source=source,
+        thread_id=thread_id,
+        session_key=session_key,
+        root_mode=root_mode,
+        title=str(getattr(workflow, "name", "")).strip(),
+        metadata=metadata,
+    )
+
+
+@router.api_route("/api/webhook/{channel_name}", methods=["GET", "POST"], response_model=None)
 async def api_channel_webhook(
     channel_name: str,
+    request: Request,
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> dict[str, object] | Response:
+    webhook_request = await _build_channel_webhook_request(request)
+    result = await _ensure_channel_routes(services).handle_webhook(channel_name, webhook_request)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    http_response = result.get("http_response")
+    if isinstance(http_response, dict):
+        return Response(
+            content=str(http_response.get("body", "")),
+            media_type=str(http_response.get("content_type", "text/plain")),
+        )
+    return result
+
+
+@router.post("/api/workflows/webhook/{workflow_name}")
+async def api_webhook_trigger_workflow(
+    workflow_name: str,
     payload: dict[str, Any],
     services: WebServices = SERVICES_DEPENDENCY,
 ) -> dict[str, object]:
-    result = _require_agent(services).channel_manager.handle_incoming(channel_name, payload)
-    if not result.get("success"):
-        raise HTTPException(status_code=400, detail=result.get("error"))
-    return result
+    """Webhook endpoint that triggers a workflow directly (N8N-style).
+
+    The entire request body becomes the workflow's ``input`` variable
+    and is also available as ``webhook_payload``.  Always runs async.
+    """
+    try:
+        engine = _require_agent(services).pyflow_engine
+        workflow = engine.load_workflow(workflow_name)
+        if not workflow:
+            raise HTTPException(
+                status_code=404,
+                detail=f"工作流 '{workflow_name}' 不存在",
+            )
+        workflow.variables.update(payload)
+        workflow.variables["input"] = payload
+        workflow.variables["webhook_payload"] = payload
+        session = _bind_workflow_session(
+            services,
+            workflow,
+            source="workflow.webhook",
+            metadata={"trigger": "webhook", "workflow_name": workflow_name},
+        )
+
+        handle = services.task_queue.submit(
+            engine.run_workflow,
+            workflow,
+            name=f"webhook:{workflow_name}",
+            metadata={"workflow_id": workflow.id, "workflow_name": workflow_name, "trigger": "webhook"},
+        )
+        return {
+            "success": True,
+            "async": True,
+            "task_id": handle.task_id,
+            "status": "pending",
+            "poll_url": f"/api/tasks/{handle.task_id}",
+            "session_key": session["session_key"],
+            "thread_id": session["thread_id"],
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
 
 
 @router.post("/api/workflows/trigger")
@@ -91,9 +297,87 @@ async def api_trigger_workflow(
             }
         workflow.variables.update(req.input_vars)
         workflow.variables["input"] = req.input_vars
-        return {"success": True, "result": engine.run_workflow(workflow)}
+        session = _bind_workflow_session(
+            services,
+            workflow,
+            source="workflow.trigger",
+            thread_id=req.thread_id,
+            session_key=req.session_key,
+            root_mode=req.root_mode,
+            metadata={"workflow_name": req.name, "trigger": "api"},
+        )
+
+        if req.async_mode:
+            handle = services.task_queue.submit(
+                engine.run_workflow,
+                workflow,
+                name=f"workflow:{req.name}",
+                metadata={"workflow_id": workflow.id, "workflow_name": req.name},
+            )
+            return {
+                "success": True,
+                "async": True,
+                "task_id": handle.task_id,
+                "status": "pending",
+                "poll_url": f"/api/tasks/{handle.task_id}",
+                "session_key": session["session_key"],
+                "thread_id": session["thread_id"],
+            }
+
+        return {
+            "success": True,
+            "session_key": session["session_key"],
+            "thread_id": session["thread_id"],
+            "result": engine.run_workflow(workflow),
+        }
     except Exception as exc:
         return {"success": False, "error": str(exc)}
+
+
+@router.post("/api/workflows/{workflow_id}/pause")
+async def api_pause_workflow(
+    workflow_id: str,
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> dict[str, object]:
+    """Manually pause a running workflow."""
+    result = _require_agent(services).pyflow_engine.pause_workflow(workflow_id)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    return result
+
+
+class WorkflowSignalRequest(BaseModel):
+    signal_name: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+@router.post("/api/workflows/{workflow_id}/signal")
+async def api_send_signal(
+    workflow_id: str,
+    req: WorkflowSignalRequest,
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> dict[str, object]:
+    """Send a named signal to a paused workflow (Temporal-style)."""
+    result = _require_agent(services).pyflow_engine.send_signal(
+        workflow_id,
+        req.signal_name,
+        req.payload,
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    return result
+
+
+@router.post("/api/workflows/{workflow_id}/cancel")
+async def api_cancel_workflow(
+    workflow_id: str,
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> dict[str, object]:
+    """Cancel a running or paused workflow."""
+    result = _require_agent(services).pyflow_engine.cancel_workflow(workflow_id)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    return result
 
 
 @router.get("/api/workflows")
@@ -108,12 +392,21 @@ async def api_list_workflows(services: WebServices = SERVICES_DEPENDENCY) -> dic
 @router.get("/api/workflows/node-types")
 async def api_list_node_types() -> dict[str, object]:
     """List all supported workflow node types (Dify-style discovery)."""
-    from core.workflow_models import BRANCH_NODE_TYPES, NodeType
+    from core.assets.workflows.models import BRANCH_NODE_TYPES, NodeType
 
     categories = {
         "control": ["start", "end", "condition", "router", "parallel", "merge", "delay"],
         "action": ["exec", "tool", "llm", "code", "http_request", "agent"],
-        "data": ["transform", "variable_assigner", "list_operator", "parameter_extractor", "question_classifier"],
+        "data": [
+            "transform",
+            "variable_assigner",
+            "list_operator",
+            "parameter_extractor",
+            "question_classifier",
+            "database_query",
+            "file_read",
+            "file_write",
+        ],
         "iteration": ["foreach", "iteration"],
         "collaboration": ["debate", "consensus", "supervisor"],
         "flow": ["approve", "subflow"],
@@ -148,7 +441,7 @@ async def api_run_single_node(
     """Run a single workflow node in isolation (Dify-style node testing)."""
     try:
         engine = _require_agent(services).pyflow_engine
-        from core.workflow_models import FlowNode, NodeType, WorkflowDef
+        from core.assets.workflows.models import FlowNode, NodeType, WorkflowDef
 
         node_type_str = req.node_config.get("type", "llm")
         try:
@@ -265,26 +558,101 @@ async def api_workflow_graph(
 
 @router.get("/api/capabilities")
 async def api_capabilities(services: WebServices = SERVICES_DEPENDENCY) -> dict[str, object]:
-    try:
-        return _require_agent(services).capability_bus.get_stats()
-    except Exception as exc:
-        return {"error": str(exc)}
+    return _get_capability_registry(services).get_registry_snapshot()["stats"]
+
+
+@router.get("/api/capabilities/registry")
+async def api_capability_registry(services: WebServices = SERVICES_DEPENDENCY) -> dict[str, object]:
+    return _get_capability_registry(services).get_registry_snapshot()
 
 
 @router.get("/api/capabilities/graph")
 async def api_capability_graph(services: WebServices = SERVICES_DEPENDENCY) -> dict[str, object]:
-    try:
-        return _require_agent(services).capability_bus.get_layer_graph()
-    except Exception as exc:
-        return {"error": str(exc)}
+    return _get_capability_registry(services).get_registry_snapshot()["graph"]
 
 
 @router.get("/api/capabilities/events")
 async def api_capability_events(services: WebServices = SERVICES_DEPENDENCY) -> dict[str, object]:
-    try:
-        return {"events": _require_agent(services).capability_bus.get_recent_events()}
-    except Exception as exc:
-        return {"error": str(exc)}
+    registry = _get_capability_registry(services)
+    return {"events": registry.capability_bus.get_recent_events()}
+
+
+@router.post("/api/capabilities/discover")
+async def api_capability_discover(
+    req: CapabilityDiscoveryRequest,
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> dict[str, object]:
+    return _get_capability_registry(services).discover(
+        query=req.query,
+        layer=req.layer,
+        tag=req.tag,
+        provides=req.provides,
+        include_marketplace=req.include_marketplace,
+        include_hub=req.include_hub,
+        hub_url=req.hub_url,
+        hub_token=req.hub_token,
+        hub_type=req.hub_type,
+        page=req.page,
+    )
+
+
+@router.get("/api/capabilities/providers/{provides}")
+async def api_capability_providers(
+    provides: str,
+    layer: str = "",
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> dict[str, object]:
+    return _get_capability_registry(services).find_providers(provides, layer=layer)
+
+
+@router.get("/api/capabilities/{capability_name}/contract")
+async def api_capability_contract(
+    capability_name: str,
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> dict[str, object]:
+    contract = _get_capability_registry(services).get_capability_contract(capability_name)
+    if contract is None:
+        raise HTTPException(status_code=404, detail="Capability not found")
+    return contract
+
+
+@router.post("/api/capabilities/skills/{skill_name}/publish")
+async def api_publish_capability_skill(
+    skill_name: str,
+    req: CapabilityPublishSkillRequest,
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> dict[str, object]:
+    result = _get_capability_registry(services).publish_skill(
+        skill_name,
+        version=req.version,
+        changelog=req.changelog,
+        publish_to_hub=req.publish_to_hub,
+        hub_url=req.hub_url,
+        hub_token=req.hub_token,
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Publish failed"))
+    return result
+
+
+@router.post("/api/capabilities/skills/install")
+async def api_install_capability_skill(
+    req: CapabilityInstallSkillRequest,
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> dict[str, object]:
+    result = _get_capability_registry(services).install_skill(
+        package_path=req.package_path,
+        url=req.url,
+        github_repo=req.github_repo,
+        github_subpath=req.github_subpath,
+        hub_slug=req.hub_slug,
+        version=req.version,
+        hub_url=req.hub_url,
+        hub_token=req.hub_token,
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Install failed"))
+    return result
 
 
 @router.post("/api/workflows")
@@ -333,7 +701,7 @@ async def api_get_workflow_definition(
     workflow_id: str,
     services: WebServices = SERVICES_DEPENDENCY,
 ) -> dict[str, object]:
-    from core.workflow_spec import export_workflow_spec, strip_workflow_runtime
+    from core.assets.workflows.spec import export_workflow_spec, strip_workflow_runtime
 
     try:
         definition = _require_agent(services).pyflow_engine.get_workflow_definition(workflow_id)
@@ -354,7 +722,7 @@ async def api_create_workflow_from_spec(
     req: WorkflowSpecSaveRequest,
     services: WebServices = SERVICES_DEPENDENCY,
 ) -> dict[str, object]:
-    from core.workflow_spec import parse_workflow_spec
+    from core.assets.workflows.spec import parse_workflow_spec
 
     try:
         definition = parse_workflow_spec(req.spec_content)
@@ -372,7 +740,7 @@ async def api_update_workflow_from_spec(
     req: WorkflowSpecSaveRequest,
     services: WebServices = SERVICES_DEPENDENCY,
 ) -> dict[str, object]:
-    from core.workflow_spec import parse_workflow_spec
+    from core.assets.workflows.spec import parse_workflow_spec
 
     try:
         definition = parse_workflow_spec(req.spec_content)
@@ -452,7 +820,7 @@ async def api_resolve_approval(
         raise
     except Exception as exc:
         logger.exception("Approval resolve failed for %s", approval_id)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 # --- Workflow Version Control ---

@@ -577,6 +577,69 @@ enabled: true
         assert sources[0]["capabilities"]["supports_request_backpressure"] is True
 
 
+def test_skill_registry_supports_openclaw_repo_roots_and_metadata(tmp_path: Path):
+    repo_root = tmp_path / "openclaw-main"
+    skill_dir = repo_root / "skills" / "weather"
+    (skill_dir / "scripts").mkdir(parents=True, exist_ok=True)
+    (skill_dir / "scripts" / "query_weather.py").write_text("print('ok')\n", encoding="utf-8")
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: weather
+description: "Get weather information"
+version: 1.2.3
+author: openclaw
+homepage: https://wttr.in/:help
+user-invocable: true
+metadata:
+  openclaw:
+    emoji: "🌤️"
+    requires:
+      bins: ["curl"]
+      config: ["channels.weather"]
+    primaryEnv: "WEATHER_TOKEN"
+---
+
+# Weather Skill
+
+Run:
+
+python {baseDir}/scripts/query_weather.py --city "Shanghai"
+""",
+        encoding="utf-8",
+    )
+
+    registry = SkillRegistry(
+        skill_sources=[SkillSource(name="openclaw", path=repo_root, writable=False, flavor="openclaw")]
+    )
+
+    skill = registry.get_skill("weather")
+    assert skill is not None
+    assert skill.skill_format == "openclaw"
+    assert skill.homepage == "https://wttr.in/:help"
+    assert skill.user_invocable is True
+    assert skill.requires_bins == ["curl"]
+    assert skill.requires_config == ["channels.weather"]
+    assert skill.primary_env == "WEATHER_TOKEN"
+    assert skill.source_name == "openclaw"
+
+    listed = registry.list_skills()["weather"]
+    assert listed["skill_format"] == "openclaw"
+    assert listed["openclaw_metadata"]["emoji"] == "🌤️"
+
+    source = registry.list_sources()[0]
+    assert source["flavor"] == "openclaw"
+    assert str(source["path"]).endswith("skills")
+
+    rendered = registry.read_skill_file("weather", "SKILL.md")
+    assert rendered is not None
+    assert "{baseDir}" not in rendered
+    assert "/skills/weather/scripts/query_weather.py" in rendered.replace("\\", "/")
+
+    prompt = registry.get_active_prompt_extensions(progressive=True)
+    assert "format=openclaw" in prompt
+    assert "WEATHER_TOKEN" in prompt
+
+
 def test_skill_registry_supports_cursor_paginated_http_registry_metadata():
     request_log: list[dict[str, object]] = []
     with serve_skill_http(

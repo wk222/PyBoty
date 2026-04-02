@@ -4,14 +4,16 @@ import json
 
 import pytest
 
-from core.agent_storage import AgentDefinition, AgentStorage
-from core.tool_creation_support import (
+from core.assets.agents import AgentDefinition, AgentStorage
+from core.assets.tools import (
+    TemplateToolCreator,
     ToolCreationError,
+    ToolCreatorTool,
+    ToolStorage,
     build_tool_definition,
+    create_dynamic_tool,
     persist_validated_tool_definition,
 )
-from core.tool_creator import TemplateToolCreator, ToolCreatorTool, create_dynamic_tool
-from core.tool_storage import ToolStorage
 
 
 def test_tool_creator_persists_and_executes_tool(temp_paths):

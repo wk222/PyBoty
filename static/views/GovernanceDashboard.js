@@ -1,131 +1,181 @@
-import { ref, computed, onMounted } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+
 import { API } from '/static/api/index.js';
 import { toast } from '/static/stores/global.js';
 import { t } from '/static/i18n.js';
+import ApprovalCenter from '/static/views/ApprovalCenter.js';
+import PolicyEditor from '/static/views/PolicyEditor.js';
+
+function formatTimestamp(value) {
+  if (!value) return '—';
+  if (typeof value === 'number') {
+    return new Date(value * 1000).toLocaleString();
+  }
+  return new Date(value).toLocaleString();
+}
+
+function routeTargetSummary(route) {
+  if (!route || typeof route !== 'object') return '—';
+  if (route.target === 'workflow') {
+    return `workflow:${route.workflow_name || 'unnamed'}`;
+  }
+  return `agent:${route.mode || 'assistant'}`;
+}
+
+function routeConditionSummary(route) {
+  if (!route || typeof route !== 'object') return '—';
+  const parts = [];
+  if (route.channel) parts.push(`#${route.channel}`);
+  if (route.starts_with) parts.push(`starts:${route.starts_with}`);
+  if (route.contains) parts.push(`contains:${route.contains}`);
+  if (route.user_pattern) parts.push(`user:${route.user_pattern}`);
+  return parts.join(' · ') || 'default';
+}
+
+function pairingLabel(pairing) {
+  if (!pairing || typeof pairing !== 'object') return 'unknown-device';
+  return pairing.device_label || pairing.device_name || pairing.device_id || pairing.request_id || 'unknown-device';
+}
 
 export default {
   name: 'GovernanceDashboard',
+  components: {
+    ApprovalCenter,
+    PolicyEditor,
+  },
   setup() {
-    const approvals = ref([]);
-    const loading = ref(false);
-    const activeTab = ref('pending');
-    const selectedApproval = ref(null);
-    const resolveNote = ref('');
-    const resolveApprover = ref('admin');
-    const resolving = ref(false);
+    const route = useRoute();
+    const router = useRouter();
+
+    const loading = ref(true);
+    const refreshing = ref(false);
+    const viewTab = ref('approvals');
+    const pairingBusy = ref({});
+    const center = ref({
+      approvals: { pending: [], recent: [], counts: { pending: 0, approved: 0, rejected: 0 } },
+      policy: { policy: { mode: 'balanced' }, presets: {} },
+      options: {},
+      gateway: {
+        status: {
+          ws_enabled: false,
+          auth_mode: 'none',
+          supported_channels: [],
+          presence_count: 0,
+          pending_pairings: 0,
+          approved_pairings: 0,
+          session_count: 0,
+          route_count: 0,
+        },
+        pairings: { pending: [], approved: [] },
+        routes: [],
+      },
+    });
 
     const tabs = [
-      { key: 'pending', label: 'Pending', icon: '⏳' },
-      { key: 'approved', label: 'Approved', icon: '✓' },
-      { key: 'denied', label: 'Denied', icon: '✗' },
-      { key: 'all', label: 'All', icon: '◉' },
+      { key: 'approvals', label: () => t('governance.tabApprovals') },
+      { key: 'policy', label: () => t('governance.tabPolicy') },
+      { key: 'gateway', label: () => t('governance.tabGateway') },
     ];
 
-    const filteredApprovals = computed(() => {
-      if (activeTab.value === 'all') return approvals.value;
-      return approvals.value.filter(a => a.status === activeTab.value);
-    });
+    const approvalCounts = computed(() => center.value.approvals?.counts || {});
+    const policyMode = computed(() => center.value.policy?.policy?.mode || 'balanced');
+    const gatewayStatus = computed(() => center.value.gateway?.status || {});
+    const pendingPairings = computed(() => center.value.gateway?.pairings?.pending || []);
+    const approvedPairings = computed(() => center.value.gateway?.pairings?.approved || []);
+    const routes = computed(() => center.value.gateway?.routes || []);
 
-    const stats = computed(() => {
-      const all = approvals.value;
-      return {
-        total: all.length,
-        pending: all.filter(a => a.status === 'pending').length,
-        approved: all.filter(a => a.status === 'approved').length,
-        denied: all.filter(a => a.status === 'denied').length,
-        avgWait: calculateAvgWait(all.filter(a => a.status !== 'pending')),
-      };
-    });
-
-    function calculateAvgWait(resolved) {
-      if (!resolved.length) return '—';
-      const waits = resolved.map(a => {
-        const created = new Date(a.created_at || a.timestamp || 0).getTime();
-        const resolvedAt = new Date(a.resolved_at || Date.now()).getTime();
-        return (resolvedAt - created) / 1000;
-      }).filter(w => w > 0 && w < 86400 * 30);
-      if (!waits.length) return '—';
-      const avg = waits.reduce((s, w) => s + w, 0) / waits.length;
-      if (avg < 60) return `${Math.round(avg)}s`;
-      if (avg < 3600) return `${Math.round(avg / 60)}m`;
-      return `${Math.round(avg / 3600)}h`;
+    function syncTabFromRoute() {
+      const panel = typeof route.query.panel === 'string' ? route.query.panel : '';
+      if (route.path === '/governance/policy') {
+        viewTab.value = 'policy';
+        return;
+      }
+      if (route.path === '/approvals') {
+        viewTab.value = 'approvals';
+        return;
+      }
+      if (panel === 'policy' || panel === 'gateway' || panel === 'approvals') {
+        viewTab.value = panel;
+        return;
+      }
+      viewTab.value = 'approvals';
     }
 
-    async function loadApprovals() {
-      loading.value = true;
+    async function loadCenter() {
+      if (!loading.value) {
+        refreshing.value = true;
+      }
       try {
-        const data = await API.listApprovals();
-        const pending = (data.pending || data.approvals || []).map(a => {
-          const obj = typeof a === 'object' ? a : {};
-          if (!obj.status) obj.status = 'pending';
-          return obj;
-        });
-        const recent = (data.recent || []).map(a => {
-          const obj = typeof a === 'object' ? a : {};
-          return obj;
-        });
-        const seen = new Set(pending.map(a => a.approval_id || a.id));
-        const merged = [...pending];
-        for (const r of recent) {
-          const rid = r.approval_id || r.id;
-          if (rid && !seen.has(rid)) { merged.push(r); seen.add(rid); }
-        }
-        approvals.value = merged;
-      } catch (e) {
-        toast('Failed to load approvals: ' + e.message, 'error');
+        center.value = await API.getGovernanceCenter();
+      } catch (error) {
+        toast('Failed to load governance center: ' + error.message, 'error');
       } finally {
         loading.value = false;
+        refreshing.value = false;
       }
     }
 
-    async function resolve(id, approved) {
-      if (resolving.value) return;
-      resolving.value = true;
+    async function openTab(tab) {
+      viewTab.value = tab;
+      const path = tab === 'policy' ? '/governance/policy' : '/governance';
+      const query = tab === 'gateway' ? { panel: 'gateway' } : {};
+      await router.replace({ path, query });
+    }
+
+    async function resolvePairing(deviceId, approved) {
+      if (pairingBusy.value[deviceId]) return;
+      pairingBusy.value[deviceId] = true;
       try {
-        const result = await API.resolveApproval(id, approved, resolveNote.value, resolveApprover.value);
-        if (result && result.success === false) {
-          toast(result.error || 'Resolve failed', 'error');
-          return;
+        if (approved) {
+          await API.approveGatewayPairing(deviceId);
+        } else {
+          await API.rejectGatewayPairing(deviceId);
         }
-        toast(approved ? 'Approved' : 'Denied', 'success');
-        selectedApproval.value = null;
-        resolveNote.value = '';
-        await loadApprovals();
-      } catch (e) {
-        toast('Failed: ' + e.message, 'error');
+        toast(approved ? 'Device pairing approved' : 'Device pairing rejected', 'success');
+        await loadCenter();
+      } catch (error) {
+        toast('Failed to update pairing: ' + error.message, 'error');
       } finally {
-        resolving.value = false;
+        pairingBusy.value[deviceId] = false;
       }
     }
 
-    function selectApproval(a) { selectedApproval.value = a; }
-    function closeDetail() { selectedApproval.value = null; resolveNote.value = ''; }
+    const onGovernanceChanged = () => {
+      loadCenter();
+    };
 
-    function formatTime(ts) {
-      if (!ts) return '';
-      const d = new Date(ts);
-      return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-    }
-    function timeSince(ts) {
-      if (!ts) return '';
-      const sec = (Date.now() - new Date(ts).getTime()) / 1000;
-      if (sec < 60) return `${Math.round(sec)}s ago`;
-      if (sec < 3600) return `${Math.round(sec / 60)}m ago`;
-      if (sec < 86400) return `${Math.round(sec / 3600)}h ago`;
-      return `${Math.round(sec / 86400)}d ago`;
-    }
-    function riskColor(level) {
-      const m = { low: '#34d399', medium: '#fbbf24', high: '#f87171', critical: '#ef4444' };
-      return m[level] || '#94a3b8';
-    }
+    watch(() => [route.path, route.query.panel], syncTabFromRoute, { immediate: true });
 
-    onMounted(loadApprovals);
+    onMounted(async () => {
+      window.addEventListener('pybot:governance-changed', onGovernanceChanged);
+      await loadCenter();
+    });
+
+    onUnmounted(() => {
+      window.removeEventListener('pybot:governance-changed', onGovernanceChanged);
+    });
 
     return {
-      approvals, loading, activeTab, tabs, filteredApprovals, stats,
-      selectedApproval, resolveNote, resolveApprover, resolving,
-      loadApprovals, resolve, selectApproval, closeDetail,
-      formatTime, timeSince, riskColor, t,
+      tabs,
+      t,
+      loading,
+      refreshing,
+      viewTab,
+      approvalCounts,
+      policyMode,
+      gatewayStatus,
+      pendingPairings,
+      approvedPairings,
+      routes,
+      openTab,
+      loadCenter,
+      resolvePairing,
+      pairingBusy,
+      formatTimestamp,
+      routeTargetSummary,
+      routeConditionSummary,
+      pairingLabel,
     };
   },
   template: `
@@ -138,137 +188,179 @@ export default {
             </svg>
             {{ t('governance.title') }}
           </h1>
-          <router-link to="/governance/policy" class="mx-btn mx-btn-ghost" style="text-decoration:none">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16" style="vertical-align:-2px;margin-right:4px">
-              <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-              <circle cx="12" cy="12" r="3"/>
-            </svg>
-            策略配置
-          </router-link>
-          <button class="mx-btn mx-btn-ghost" @click="loadApprovals" :title="t('governance.refresh')">↻ {{ t('governance.refresh') }}</button>
+          <button class="mx-btn mx-btn-ghost" @click="loadCenter" :disabled="refreshing">
+            {{ refreshing ? t('common.loading') : t('governance.refresh') }}
+          </button>
         </div>
 
         <div class="gov-stats-row">
-          <div class="gov-stat-card">
-            <span class="gov-stat-num">{{ stats.total }}</span>
-            <span class="gov-stat-lbl">{{ t('governance.total') }}</span>
-          </div>
           <div class="gov-stat-card gov-stat-pending">
-            <span class="gov-stat-num">{{ stats.pending }}</span>
+            <span class="gov-stat-num">{{ approvalCounts.pending || 0 }}</span>
             <span class="gov-stat-lbl">{{ t('governance.pending') }}</span>
           </div>
           <div class="gov-stat-card gov-stat-approved">
-            <span class="gov-stat-num">{{ stats.approved }}</span>
+            <span class="gov-stat-num">{{ approvalCounts.approved || 0 }}</span>
             <span class="gov-stat-lbl">{{ t('governance.approved') }}</span>
           </div>
           <div class="gov-stat-card gov-stat-denied">
-            <span class="gov-stat-num">{{ stats.denied }}</span>
-            <span class="gov-stat-lbl">{{ t('governance.denied') }}</span>
+            <span class="gov-stat-num">{{ approvalCounts.rejected || 0 }}</span>
+            <span class="gov-stat-lbl">{{ t('governance.rejected') }}</span>
           </div>
           <div class="gov-stat-card">
-            <span class="gov-stat-num">{{ stats.avgWait }}</span>
-            <span class="gov-stat-lbl">{{ t('governance.avgWait') }}</span>
+            <span class="gov-stat-num">{{ policyMode }}</span>
+            <span class="gov-stat-lbl">{{ t('governance.currentMode') }}</span>
+          </div>
+          <div class="gov-stat-card">
+            <span class="gov-stat-num">{{ gatewayStatus.pending_pairings || 0 }}</span>
+            <span class="gov-stat-lbl">{{ t('governance.pendingPairings') }}</span>
+          </div>
+          <div class="gov-stat-card">
+            <span class="gov-stat-num">{{ gatewayStatus.route_count || 0 }}</span>
+            <span class="gov-stat-lbl">{{ t('governance.channelRoutes') }}</span>
           </div>
         </div>
 
-        <div class="gov-tabs">
-          <button v-for="tab in tabs" :key="tab.key"
-                  class="gov-tab" :class="{ active: activeTab === tab.key }"
-                  @click="activeTab = tab.key">
-            <span class="gov-tab-icon">{{ tab.icon }}</span> {{ tab.label }}
-            <span v-if="tab.key === 'pending' && stats.pending > 0" class="gov-tab-badge">{{ stats.pending }}</span>
+        <div class="gcenter-tabs">
+          <button
+            v-for="tab in tabs"
+            :key="tab.key"
+            class="gcenter-tab"
+            :class="{ active: viewTab === tab.key }"
+            @click="openTab(tab.key)"
+          >
+            {{ tab.label() }}
           </button>
         </div>
       </header>
 
-      <div v-if="loading" class="hub-loading"><div class="mx-spinner"></div></div>
+      <div v-if="loading" class="mx-loading"><div class="mx-spinner"></div><span>{{ t('common.loading') }}</span></div>
 
-      <div v-else-if="filteredApprovals.length === 0" class="hub-empty">
-        <p>{{ t('governance.noApprovals') }}</p>
-      </div>
+      <div v-else style="display:flex;flex-direction:column;gap:24px;">
+        <ApprovalCenter v-if="viewTab === 'approvals'" embedded />
 
-      <div v-else class="gov-list">
-        <div v-for="a in filteredApprovals" :key="a.approval_id || a.id"
-             class="gov-item" :class="'gov-item-' + a.status"
-             @click="selectApproval(a)">
-          <div class="gov-item-left">
-            <div class="gov-item-status" :class="'gov-status-' + a.status">
-              {{ a.status === 'pending' ? '⏳' : a.status === 'approved' ? '✓' : '✗' }}
-            </div>
-            <div class="gov-item-info">
-              <span class="gov-item-action">{{ a.action || a.tool_name || 'Unknown Action' }}</span>
-              <span class="gov-item-agent" v-if="a.agent_name">by {{ a.agent_name }}</span>
-              <span class="gov-item-reason" v-if="a.reason">{{ a.reason }}</span>
+        <div v-else-if="viewTab === 'policy'" class="gcenter-stack">
+          <div class="gcenter-panel">
+            <div class="gcenter-panel-title">{{ t('governance.title') }}</div>
+            <div class="gcenter-metrics">
+              <div class="gcenter-metric">
+                <span class="gcenter-metric-label">{{ t('governance.currentMode') }}</span>
+                <span class="gcenter-metric-value">{{ policyMode }}</span>
+              </div>
+              <div class="gcenter-metric">
+                <span class="gcenter-metric-label">{{ t('governance.pendingPairings') }}</span>
+                <span class="gcenter-metric-value">{{ gatewayStatus.pending_pairings || 0 }}</span>
+              </div>
+              <div class="gcenter-metric">
+                <span class="gcenter-metric-label">{{ t('governance.channelRoutes') }}</span>
+                <span class="gcenter-metric-value">{{ gatewayStatus.route_count || 0 }}</span>
+              </div>
             </div>
           </div>
-          <div class="gov-item-right">
-            <span class="gov-item-risk" v-if="a.risk_level" :style="{ color: riskColor(a.risk_level) }">
-              {{ a.risk_level }}
-            </span>
-            <span class="gov-item-time">{{ timeSince(a.created_at || a.timestamp) }}</span>
-          </div>
+          <PolicyEditor embedded />
         </div>
-      </div>
 
-      <!-- Detail / Resolve modal -->
-      <div v-if="selectedApproval" class="hub-modal-overlay" @click.self="closeDetail">
-        <div class="hub-modal gov-modal">
-          <button class="hub-modal-close" @click="closeDetail">×</button>
-          <h3 class="gov-detail-title">{{ t('governance.approvalRequest') }}</h3>
-          <div class="gov-detail-grid">
-            <div class="gov-detail-field">
-              <label>{{ t('governance.action') }}</label>
-              <span>{{ selectedApproval.action || selectedApproval.tool_name || '—' }}</span>
+        <div v-else class="gcenter-stack">
+          <div class="gcenter-grid">
+            <div class="gcenter-panel">
+              <div class="gcenter-panel-title">{{ t('governance.gatewayStatus') }}</div>
+              <div class="gcenter-metrics">
+                <div class="gcenter-metric">
+                  <span class="gcenter-metric-label">{{ t('governance.wsEnabled') }}</span>
+                  <span class="gcenter-metric-value">{{ gatewayStatus.ws_enabled ? 'on' : 'off' }}</span>
+                </div>
+                <div class="gcenter-metric">
+                  <span class="gcenter-metric-label">{{ t('governance.authMode') }}</span>
+                  <span class="gcenter-metric-value">{{ gatewayStatus.auth_mode || 'none' }}</span>
+                </div>
+                <div class="gcenter-metric">
+                  <span class="gcenter-metric-label">{{ t('governance.supportedChannels') }}</span>
+                  <span class="gcenter-metric-value">{{ (gatewayStatus.supported_channels || []).length }}</span>
+                </div>
+                <div class="gcenter-metric">
+                  <span class="gcenter-metric-label">{{ t('governance.sessionCount') }}</span>
+                  <span class="gcenter-metric-value">{{ gatewayStatus.session_count || 0 }}</span>
+                </div>
+                <div class="gcenter-metric">
+                  <span class="gcenter-metric-label">{{ t('governance.approvedDevices') }}</span>
+                  <span class="gcenter-metric-value">{{ gatewayStatus.approved_pairings || 0 }}</span>
+                </div>
+              </div>
+              <div class="gcenter-chip-row" v-if="(gatewayStatus.supported_channels || []).length">
+                <span v-for="channel in gatewayStatus.supported_channels" :key="channel" class="gcenter-chip">
+                  {{ channel }}
+                </span>
+              </div>
             </div>
-            <div class="gov-detail-field">
-              <label>{{ t('governance.agent') }}</label>
-              <span>{{ selectedApproval.agent_name || '—' }}</span>
-            </div>
-            <div class="gov-detail-field">
-              <label>{{ t('governance.status') }}</label>
-              <span class="gov-detail-status" :class="'gov-status-' + selectedApproval.status">
-                {{ selectedApproval.status }}
-              </span>
-            </div>
-            <div class="gov-detail-field">
-              <label>{{ t('governance.risk') }}</label>
-              <span :style="{ color: riskColor(selectedApproval.risk_level) }">
-                {{ selectedApproval.risk_level || 'unset' }}
-              </span>
-            </div>
-            <div class="gov-detail-field gov-detail-wide" v-if="selectedApproval.reason">
-              <label>{{ t('governance.reason') }}</label>
-              <span>{{ selectedApproval.reason }}</span>
-            </div>
-            <div class="gov-detail-field gov-detail-wide" v-if="selectedApproval.context">
-              <label>{{ t('governance.context') }}</label>
-              <pre class="gov-detail-pre">{{ JSON.stringify(selectedApproval.context, null, 2) }}</pre>
+
+            <div class="gcenter-panel">
+              <div class="gcenter-panel-title">{{ t('governance.pairings') }}</div>
+              <div v-if="pendingPairings.length === 0" class="mx-empty">
+                <p>{{ t('governance.noPairings') }}</p>
+              </div>
+              <div v-else class="gcenter-list">
+                <div v-for="pairing in pendingPairings" :key="pairing.request_id || pairing.device_id" class="gcenter-list-item">
+                  <div class="gcenter-list-main">
+                    <div class="gcenter-list-title">{{ pairingLabel(pairing) }}</div>
+                    <div class="gcenter-list-meta">
+                      <span>{{ pairing.device_id || pairing.request_id }}</span>
+                      <span>{{ formatTimestamp(pairing.created_at || pairing.requested_at) }}</span>
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:8px;">
+                    <button
+                      class="mx-btn mx-btn-ghost"
+                      :disabled="pairingBusy[pairing.device_id || pairing.request_id]"
+                      @click="resolvePairing(pairing.device_id || pairing.request_id, false)"
+                    >
+                      {{ t('governance.rejectDevice') }}
+                    </button>
+                    <button
+                      class="mx-btn mx-btn--primary"
+                      :disabled="pairingBusy[pairing.device_id || pairing.request_id]"
+                      @click="resolvePairing(pairing.device_id || pairing.request_id, true)"
+                    >
+                      {{ t('governance.approveDevice') }}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div v-if="selectedApproval.status === 'pending'" class="gov-resolve-section">
-            <div class="gov-resolve-input">
-              <label>{{ t('governance.note') }}</label>
-              <textarea v-model="resolveNote" rows="2" class="hub-input" :placeholder="t('governance.notePlaceholder')"></textarea>
+          <div class="gcenter-panel">
+            <div class="gcenter-panel-title">{{ t('governance.channelRoutes') }}</div>
+            <div v-if="routes.length === 0" class="mx-empty">
+              <p>{{ t('governance.noRoutes') }}</p>
             </div>
-            <div class="gov-resolve-actions">
-              <button class="mx-btn gov-btn-deny"
-                :disabled="resolving"
-                @click="resolve(selectedApproval.approval_id || selectedApproval.id, false)">
-                {{ resolving ? '...' : '✗' }} {{ t('governance.deny') }}
-              </button>
-              <button class="mx-btn mx-btn-primary gov-btn-approve"
-                :disabled="resolving"
-                @click="resolve(selectedApproval.approval_id || selectedApproval.id, true)">
-                {{ resolving ? '...' : '✓' }} {{ t('governance.approve') }}
-              </button>
+            <div v-else class="gcenter-list">
+              <div v-for="routeDef in routes" :key="routeDef.name || routeDef.thread_template" class="gcenter-list-item">
+                <div class="gcenter-list-main">
+                  <div class="gcenter-list-title">{{ routeDef.name || 'unnamed-route' }}</div>
+                  <div class="gcenter-list-meta">
+                    <span>{{ t('governance.routeTarget') }}: {{ routeTargetSummary(routeDef) }}</span>
+                    <span>{{ t('governance.routeWhen') }}: {{ routeConditionSummary(routeDef) }}</span>
+                  </div>
+                </div>
+                <span class="gcenter-chip" :style="{ opacity: routeDef.enabled === false ? 0.65 : 1 }">
+                  {{ routeDef.enabled === false ? 'disabled' : 'active' }}
+                </span>
+              </div>
             </div>
           </div>
 
-          <div v-else class="gov-resolved-info">
-            <span v-if="selectedApproval.resolved_by">{{ t('governance.resolvedBy') }}: {{ selectedApproval.resolved_by }}</span>
-            <span v-if="selectedApproval.resolved_at">{{ formatTime(selectedApproval.resolved_at) }}</span>
-            <span v-if="selectedApproval.note">{{ t('governance.note') }}: {{ selectedApproval.note }}</span>
+          <div v-if="approvedPairings.length" class="gcenter-panel">
+            <div class="gcenter-panel-title">{{ t('governance.approvedDevices') }}</div>
+            <div class="gcenter-list">
+              <div v-for="pairing in approvedPairings.slice(0, 8)" :key="pairing.request_id || pairing.device_id" class="gcenter-list-item">
+                <div class="gcenter-list-main">
+                  <div class="gcenter-list-title">{{ pairingLabel(pairing) }}</div>
+                  <div class="gcenter-list-meta">
+                    <span>{{ pairing.device_id || pairing.request_id }}</span>
+                    <span>{{ formatTimestamp(pairing.approved_at || pairing.resolved_at || pairing.created_at) }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -1,10 +1,33 @@
 const BASE = '';
 
+function getApiKey() {
+  return localStorage.getItem('pybot_api_key') || 'dev-key';
+}
+
+function promptForApiKey(currentKey = getApiKey()) {
+  return prompt("API Key required. Please enter your PyBot API key:", currentKey);
+}
+
 async function request(path, options = {}) {
+  const headers = { 
+    'Content-Type': 'application/json', 
+    'Authorization': `Bearer ${getApiKey()}`,
+    ...options.headers 
+  };
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
+    headers,
   });
+  
+  if (res.status === 401) {
+    const newKey = promptForApiKey();
+    if (newKey) {
+      localStorage.setItem('pybot_api_key', newKey);
+      // Retry the request with the new key
+      return request(path, options);
+    }
+  }
+  
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || err.error || `HTTP ${res.status}`);
@@ -19,17 +42,39 @@ async function request(path, options = {}) {
 
 export const API = {
   health: () => request('/api/health'),
+  getSystemModel: () => request('/api/system/model'),
+  getSystemModes: () => request('/api/system/modes'),
 
   listConversations: () => request('/api/conversations'),
   createConversation: () => request('/api/conversations', { method: 'POST', body: '{}' }),
   deleteConversation: (id) => request(`/api/conversations/${id}`, { method: 'DELETE' }),
   getHistory: (id) => request(`/api/conversations/${id}/history`),
 
-  chatStream: (threadId, message) => fetch(`${BASE}/api/chat/stream`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ thread_id: threadId, message }),
-  }),
+  chatStream: async (threadId, message) => {
+    let res = await fetch(`${BASE}/api/chat/stream`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getApiKey()}`
+      },
+      body: JSON.stringify({ thread_id: threadId, message }),
+    });
+    if (res.status === 401) {
+      const newKey = promptForApiKey();
+      if (newKey) {
+        localStorage.setItem('pybot_api_key', newKey);
+        res = await fetch(`${BASE}/api/chat/stream`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${newKey}`
+          },
+          body: JSON.stringify({ thread_id: threadId, message }),
+        });
+      }
+    }
+    return res;
+  },
 
   listAgents: () => request('/api/agents'),
   getAgentControl: () => request('/api/agent-control'),
@@ -117,13 +162,16 @@ export const API = {
   getMemory: () => request('/api/memory'),
   addMemory: (content) => request('/api/memory', { method: 'POST', body: JSON.stringify({ content }) }),
 
-  listScheduleTasks: () => request('/api/schedule/tasks'),
-  createScheduleTask: (data) => request('/api/schedule/tasks', { method: 'POST', body: JSON.stringify(data) }),
-  toggleScheduleTask: (name, enabled) => request(`/api/schedule/tasks/${encodeURIComponent(name)}/toggle`, {
+  listScheduleTasks: () => request('/api/schedules'),
+  createScheduleTask: (data) => request('/api/schedules', { method: 'POST', body: JSON.stringify(data) }),
+  updateScheduleTask: (name, data) => request(`/api/schedules/${encodeURIComponent(name)}`, {
+    method: 'PUT', body: JSON.stringify(data)
+  }),
+  toggleScheduleTask: (name, enabled) => request(`/api/schedules/${encodeURIComponent(name)}/toggle`, {
     method: 'PATCH', body: JSON.stringify({ enabled })
   }),
-  deleteScheduleTask: (name) => request(`/api/schedule/tasks/${encodeURIComponent(name)}`, { method: 'DELETE' }),
-  getScheduleHistory: (limit = 50) => request(`/api/schedule/history?limit=${limit}`),
+  deleteScheduleTask: (name) => request(`/api/schedules/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  runScheduleTaskNow: (name) => request(`/api/schedules/${encodeURIComponent(name)}/run`, { method: 'POST' }),
 
   getBackgroundTasks: () => request('/api/debug/tasks'),
   getBackgroundTask: (id) => request(`/api/debug/tasks/${encodeURIComponent(id)}`),
@@ -145,10 +193,26 @@ export const API = {
 
   listTemplates: () => request('/api/templates'),
 
-  upload: (file) => {
+  upload: async (file) => {
     const fd = new FormData();
     fd.append('file', file);
-    return fetch(`${BASE}/api/upload`, { method: 'POST', body: fd }).then(r => r.json());
+    let res = await fetch(`${BASE}/api/upload`, { 
+      method: 'POST', 
+      headers: { 'Authorization': `Bearer ${getApiKey()}` },
+      body: fd 
+    });
+    if (res.status === 401) {
+      const newKey = promptForApiKey();
+      if (newKey) {
+        localStorage.setItem('pybot_api_key', newKey);
+        res = await fetch(`${BASE}/api/upload`, { 
+          method: 'POST', 
+          headers: { 'Authorization': `Bearer ${newKey}` },
+          body: fd 
+        });
+      }
+    }
+    return res.json();
   },
   listUploads: () => request('/api/uploads'),
 
@@ -190,5 +254,15 @@ export const API = {
   updateGovernancePolicy: (policy) => request('/api/governance/policy', {
     method: 'PUT', body: JSON.stringify({ policy })
   }),
+  getGovernanceCenter: () => request('/api/governance/center'),
   getGovernanceOptions: () => request('/api/agents/governance/options'),
+  getGatewayStatus: () => request('/api/gateway/status'),
+  listGatewayPairings: () => request('/api/gateway/pairings'),
+  approveGatewayPairing: (deviceId) => request(`/api/gateway/pairings/${encodeURIComponent(deviceId)}/approve`, {
+    method: 'POST'
+  }),
+  rejectGatewayPairing: (deviceId) => request(`/api/gateway/pairings/${encodeURIComponent(deviceId)}/reject`, {
+    method: 'POST'
+  }),
+  listGatewayChannelRoutes: () => request('/api/gateway/channel-routes'),
 };
