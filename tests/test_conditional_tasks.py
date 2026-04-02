@@ -5,8 +5,8 @@ from __future__ import annotations
 import time
 from unittest.mock import MagicMock
 
-from core.workflow_execution_runtime import WorkflowExecutionRuntime
-from core.workflow_models import (
+from core.assets.workflows.workflow_execution_runtime import WorkflowExecutionRuntime
+from core.assets.workflows.workflow_models import (
     FlowEdge,
     FlowNode,
     NodeStatus,

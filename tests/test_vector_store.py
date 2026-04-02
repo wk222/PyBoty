@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from core.vector_store import Document, InMemoryVectorStore, create_vector_store
+from core.systems.knowledge.vector_store import Document, InMemoryVectorStore, create_vector_store
 
 
 @pytest.fixture

@@ -11,7 +11,7 @@ try:
 except ImportError:
     _HAS_LC = False
 
-from core.summarization_middleware import (
+from core.systems.middleware.summarization_middleware import (
     SummarizationConfig,
     SummarizationMiddleware,
     _count_message_tokens,

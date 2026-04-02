@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from core.document_pipeline import DocumentPipeline
-from core.knowledge_tools import get_knowledge_tools
-from core.vector_store import InMemoryVectorStore
+from core.systems.knowledge.document_pipeline import DocumentPipeline
+from core.systems.knowledge.knowledge_tools import get_knowledge_tools
+from core.systems.knowledge.vector_store import InMemoryVectorStore
 
 
 @pytest.fixture
@@ -26,7 +26,7 @@ class TestKnowledgeSearch:
         assert "未" in result or "找到" in result
 
     def test_search_returns_results(self, store, tools):
-        from core.vector_store import Document
+        from core.systems.knowledge.vector_store import Document
 
         store.add_documents(
             [
@@ -38,7 +38,7 @@ class TestKnowledgeSearch:
         assert "Python" in result
 
     def test_search_custom_collection(self, store, tools):
-        from core.vector_store import Document
+        from core.systems.knowledge.vector_store import Document
 
         store.add_documents([Document(page_content="Private data")], collection="private")
         result = tools["knowledge_search"].invoke({"query": "data", "collection": "private"})
@@ -62,7 +62,7 @@ class TestKnowledgeList:
         assert "空" in result
 
     def test_list_with_collections(self, store, tools):
-        from core.vector_store import Document
+        from core.systems.knowledge.vector_store import Document
 
         store.add_documents([Document(page_content="a")], collection="docs")
         store.add_documents([Document(page_content="b")], collection="notes")
@@ -73,7 +73,7 @@ class TestKnowledgeList:
 
 class TestKnowledgeDelete:
     def test_delete_collection(self, store, tools):
-        from core.vector_store import Document
+        from core.systems.knowledge.vector_store import Document
 
         store.add_documents([Document(page_content="x")], collection="temp")
         result = tools["knowledge_delete"].invoke({"collection": "temp"})
@@ -81,7 +81,7 @@ class TestKnowledgeDelete:
         assert store.count("temp") == 0
 
     def test_delete_by_ids(self, store, tools):
-        from core.vector_store import Document
+        from core.systems.knowledge.vector_store import Document
 
         store.add_documents(
             [

@@ -14,7 +14,7 @@ try:
 except ImportError:
     _HAS_LC = False
 
-from core.lc_bus_middleware import LCBusMiddleware
+from core.systems.bus.lc_bus_middleware import LCBusMiddleware
 
 pytestmark = pytest.mark.skipif(not _HAS_LC, reason="langchain not installed")
 

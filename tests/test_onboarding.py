@@ -5,7 +5,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from core.onboarding import OnboardingWizard, build_initial_config, launch_selected_mode
+from core.systems.runtime.onboarding import OnboardingWizard, build_initial_config, launch_selected_mode
 
 
 def make_console() -> Console:

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.patch_tool_calls import PatchToolCallsMiddleware
+from core.systems.runtime.patch_tool_calls import PatchToolCallsMiddleware
 
 try:
     from langchain_core.messages import AIMessage, HumanMessage, ToolMessage

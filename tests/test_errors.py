@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core.errors import (
+from core.systems.runtime.errors import (
     ToolAuthorizationError,
     ToolError,
     ToolInputError,

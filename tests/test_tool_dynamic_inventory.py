@@ -5,7 +5,7 @@ import json
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import tool
 
-from core.tool_dynamic_inventory import DynamicToolInventory
+from core.assets.tools.tool_dynamic_inventory import DynamicToolInventory
 
 
 @tool("alpha_tool")

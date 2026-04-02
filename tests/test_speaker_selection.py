@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.speaker_selection import (
+from core.assets.agents.speaker_selection import (
     ChatMessage,
     LLMSelector,
     Participant,

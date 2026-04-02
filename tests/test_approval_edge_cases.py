@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core.approval_queue import ApprovalQueue
+from core.systems.governance.approval_queue import ApprovalQueue
 
 
 def test_approval_queue_double_resolve_returns_error():

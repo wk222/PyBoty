@@ -4,12 +4,12 @@ import asyncio
 import json
 from pathlib import Path
 
-from core.skill_backends import CompositeSkillBackend, InMemorySkillBackend
-from core.skill_http_backend import HttpSkillBackend
-from core.skill_models import SkillDefinition
-from core.skill_registry import SkillRegistry
-from core.skill_runtime import TRUSTED_SKILLS_ENV
-from core.skill_sources import SkillSource
+from core.assets.skills.skill_backends import CompositeSkillBackend, InMemorySkillBackend
+from core.assets.skills.skill_http_backend import HttpSkillBackend
+from core.assets.skills.skill_models import SkillDefinition
+from core.assets.skills.skill_registry import SkillRegistry
+from core.assets.skills.skill_runtime import TRUSTED_SKILLS_ENV
+from core.assets.skills.skill_sources import SkillSource
 from tests.support.skill_http_server import HttpRouteResponse, serve_skill_http
 
 

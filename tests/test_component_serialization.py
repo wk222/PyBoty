@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from core.component_serialization import (
+from core.systems.runtime.component_serialization import (
     AgentSpec,
     TeamSpec,
     ToolSpec,

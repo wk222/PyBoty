@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core.knowledge_retrieval import (
+from core.systems.knowledge.knowledge_retrieval import (
     RetrievalConfig,
     deduplicate_results,
     extract_knowledge_context,
@@ -10,7 +10,7 @@ from core.knowledge_retrieval import (
     format_result,
     retrieve_and_format,
 )
-from core.vector_store import Document, InMemoryVectorStore, SearchResult
+from core.systems.knowledge.vector_store import Document, InMemoryVectorStore, SearchResult
 
 
 def _make_result(content, score, source="file.txt", chunk_index=0, collection="default"):

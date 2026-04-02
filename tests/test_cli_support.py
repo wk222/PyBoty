@@ -5,7 +5,7 @@ import io
 import pytest
 from rich.console import Console
 
-from core.cli_support import CliConfigError, InteractiveCliApp, load_required_config
+from core.systems.runtime.cli_support import CliConfigError, InteractiveCliApp, load_required_config
 
 
 class FakeStorage:

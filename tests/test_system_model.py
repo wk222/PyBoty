@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.system_model import build_system_model, get_root_mode_label, normalize_root_mode
+from core.modes.system_model import build_system_model, get_root_mode_label, normalize_root_mode
 
 
 def test_system_model_exposes_canonical_layers():

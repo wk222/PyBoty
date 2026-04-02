@@ -7,8 +7,8 @@ import tempfile
 
 import pytest
 
-from core.document_pipeline import ChunkConfig, DocumentPipeline, chunk_text
-from core.vector_store import InMemoryVectorStore
+from core.systems.knowledge.document_pipeline import ChunkConfig, DocumentPipeline, chunk_text
+from core.systems.knowledge.vector_store import InMemoryVectorStore
 
 
 @pytest.fixture

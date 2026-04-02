@@ -8,7 +8,7 @@ from core.assets.agents import (
     SubagentDepthLimitError,
     SubagentRegistry,
 )
-from core.event_bus import EventBus, EventType
+from core.systems.runtime.event_bus import EventBus, EventType
 
 
 def test_subagent_registry_spawn_records_depth_and_emits_event(monkeypatch):

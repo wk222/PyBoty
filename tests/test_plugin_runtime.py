@@ -7,13 +7,13 @@ from types import SimpleNamespace
 from langchain_core.messages import ToolMessage
 
 from agent import PyBot
-from core.approval_queue import ApprovalQueue
+from core.systems.governance.approval_queue import ApprovalQueue
 from core.assets.tools.tool_call_runtime import ToolCallRuntime
 from core.assets.tools.tool_delegation_runtime import DelegatedToolApprovalRuntime
 from core.assets.tools.tool_dynamic_inventory import DynamicToolInventory
-from core.plugin_manifest import PluginRegistry, discover_plugins, get_plugin_registry, reset_plugin_registry
+from core.systems.integration import PluginRegistry, discover_plugins, get_plugin_registry, reset_plugin_registry
 from core.systems.governance import AgentControlPolicy
-from core.tool_control_runtime import ToolControlRuntime
+from core.systems.governance.tool_control_runtime import ToolControlRuntime
 
 
 def _write_plugin(tmp_path: Path, *, plugin_id: str = "demo_plugin") -> Path:

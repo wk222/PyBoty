@@ -13,8 +13,8 @@ import time
 
 import pytest
 
-from core.workflow_models import FlowNode, NodeStatus, NodeType, WorkflowDef
-from core.workflow_node_runtime import (
+from core.assets.workflows.workflow_models import FlowNode, NodeStatus, NodeType, WorkflowDef
+from core.assets.workflows.workflow_node_runtime import (
     WorkflowSignalPause,
     WorkflowTimerPause,
 )
@@ -65,7 +65,7 @@ class TestDurableDelay:
     def _make_runtime(self):
         from unittest.mock import MagicMock
 
-        from core.workflow_node_runtime import WorkflowNodeRuntime
+        from core.assets.workflows.workflow_node_runtime import WorkflowNodeRuntime
 
         return WorkflowNodeRuntime(
             workspace_dir="/tmp/test",
@@ -114,7 +114,7 @@ class TestWaitSignal:
     def _make_runtime(self):
         from unittest.mock import MagicMock
 
-        from core.workflow_node_runtime import WorkflowNodeRuntime
+        from core.assets.workflows.workflow_node_runtime import WorkflowNodeRuntime
 
         return WorkflowNodeRuntime(
             workspace_dir="/tmp/test",
@@ -155,7 +155,7 @@ class TestIdempotencyInExecNode:
     def _make_runtime(self):
         from unittest.mock import MagicMock
 
-        from core.workflow_node_runtime import WorkflowNodeRuntime
+        from core.assets.workflows.workflow_node_runtime import WorkflowNodeRuntime
 
         return WorkflowNodeRuntime(
             workspace_dir="/tmp/test",

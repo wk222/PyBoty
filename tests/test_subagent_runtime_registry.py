@@ -4,12 +4,12 @@ from dataclasses import dataclass
 
 from langchain_core.messages import AIMessage
 
-from core.agent_control import AgentControlPolicy
-from core.agent_storage import AgentDefinition
-from core.approval_queue import ApprovalQueue
+from core.systems.governance.agent_control import AgentControlPolicy
+from core.assets.agents.agent_storage import AgentDefinition
+from core.systems.governance.approval_queue import ApprovalQueue
 from core.assets.agents.subagent_registry import SubagentRegistry
 from core.assets.agents.subagent_runtime import SubAgentRuntime
-from core.subagent_sandbox import SubagentSandbox
+from core.systems.governance.subagent_sandbox import SubagentSandbox
 
 
 @dataclass

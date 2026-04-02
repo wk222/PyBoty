@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 
-from core.execution_analysis import analyze_python_error
-from core.execution_loop import ExecCodeTool, ScanProjectTool
-from core.execution_workspace import resolve_workspace_path
+from core.systems.execution.execution_analysis import analyze_python_error
+from core.systems.execution.execution_loop import ExecCodeTool, ScanProjectTool
+from core.systems.execution.execution_workspace import resolve_workspace_path
 
 
 def test_resolve_workspace_path_blocks_escape(temp_paths):

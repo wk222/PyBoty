@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from core.retry_policy import RetryAttemptInfo, RetryConfig, RetryPolicy, create_default_retry_policy
+from core.systems.runtime.retry_policy import RetryAttemptInfo, RetryConfig, RetryPolicy, create_default_retry_policy
 
 
 class TestRetryPolicy:

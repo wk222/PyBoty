@@ -14,7 +14,7 @@ import os
 import tempfile
 from datetime import datetime
 
-from core.task_scheduler import ScheduledTask, _cron_field_matches, cron_matches
+from core.assets.workflows.task_scheduler import ScheduledTask, _cron_field_matches, cron_matches
 
 # ── cron_matches tests ────────────────────────────────────────────
 
@@ -109,7 +109,7 @@ class TestScheduledTaskRunOnce:
 
 class TestPyFlowEnginePauseCancel:
     def _make_engine(self, tmpdir: str):
-        from core.pyflow_engine import PyFlowEngine
+        from core.assets.workflows.pyflow_engine import PyFlowEngine
         return PyFlowEngine(workspace_dir=tmpdir)
 
     def test_pause_nonexistent(self):
@@ -131,14 +131,14 @@ class TestPyFlowEnginePauseCancel:
 class TestRecoverPausedWorkflows:
     def test_recover_empty_dir(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            from core.pyflow_engine import PyFlowEngine
+            from core.assets.workflows.pyflow_engine import PyFlowEngine
             engine = PyFlowEngine(workspace_dir=tmpdir)
             recovered = engine.recover_paused_workflows()
             assert recovered == []
 
     def test_recover_skips_completed(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            from core.pyflow_engine import PyFlowEngine
+            from core.assets.workflows.pyflow_engine import PyFlowEngine
             engine = PyFlowEngine(workspace_dir=tmpdir)
             runs_dir = os.path.join(engine.workflows_dir, ".runs")
             os.makedirs(runs_dir, exist_ok=True)

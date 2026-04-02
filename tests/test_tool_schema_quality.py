@@ -13,29 +13,29 @@ from __future__ import annotations
 import pytest
 from langchain.tools import BaseTool
 
-from core.agent_creator import (
+from core.assets.agents.agent_creator import (
     AgentCreatorTool,
     AskAgentTool,
     DelegateToAgentTool,
     ListAgentsTool,
     RemoveAgentTool,
 )
-from core.app_creator import get_app_creator_tools
-from core.app_verifier import get_app_verifier_tools
-from core.capability_bus import CapBusTool
-from core.clarification_tool import AnalyzeRequirementTool, AskClarificationTool
-from core.eval_framework import EvalResponseTool, RunTestsTool
-from core.execution_loop import ExecCodeTool, IterativeFixTool, ScanProjectTool
-from core.skill_marketplace import (
+from core.assets.apps.app_creator import get_app_creator_tools
+from core.assets.apps.app_verifier import get_app_verifier_tools
+from core.systems.bus.capability_bus import CapBusTool
+from core.assets.tools.clarification_tool import AnalyzeRequirementTool, AskClarificationTool
+from core.systems.eval.eval_framework import EvalResponseTool, RunTestsTool
+from core.systems.execution.execution_loop import ExecCodeTool, IterativeFixTool, ScanProjectTool
+from core.assets.skills.skill_marketplace import (
     CreateSkillTool,
     InstallSkillTool,
     PackageSkillTool,
     SearchSkillsTool,
     UninstallSkillTool,
 )
-from core.tool_chain import RunChainTool, ToolStatsTool
-from core.tool_creator import ListTemplatesTool, RemoveToolTool, ToolCreatorTool
-from core.workflow_tools import (
+from core.assets.tools.tool_chain import RunChainTool, ToolStatsTool
+from core.assets.tools.tool_creator import ListTemplatesTool, RemoveToolTool, ToolCreatorTool
+from core.assets.workflows.workflow_tools import (
     GenerateWorkflowTool,
     ListWorkflowsTool,
     ResumeWorkflowTool,

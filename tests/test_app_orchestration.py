@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from core.app_orchestration import (
+from core.assets.apps.app_orchestration import (
     AppOrchestrationRegistry,
     BindingDirection,
     DataBinding,

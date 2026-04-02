@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from core.skill_models import SkillDefinition
-from core.skill_prompts import render_active_skill_extensions
-from core.skill_runtime import TRUSTED_SKILLS_ENV, TYPE_MAP, build_tool_from_definition, load_python_module_tools
+from core.assets.skills.skill_models import SkillDefinition
+from core.assets.skills.skill_prompts import render_active_skill_extensions
+from core.assets.skills.skill_runtime import TRUSTED_SKILLS_ENV, TYPE_MAP, build_tool_from_definition, load_python_module_tools
 
 
 def test_build_tool_returns_none_when_name_missing():

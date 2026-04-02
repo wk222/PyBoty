@@ -5,7 +5,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from core.uv_env_manager import UvEnvManager
+from core.systems.runtime.uv_env_manager import UvEnvManager
 
 
 def test_sync_with_disk_discovers_env_and_persists_metadata(tmp_path: Path):

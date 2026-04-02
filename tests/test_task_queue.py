@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from core.task_queue import (
+from core.assets.workflows.task_queue import (
     CheckpointerFactory,
     TaskHandle,
     TaskQueue,

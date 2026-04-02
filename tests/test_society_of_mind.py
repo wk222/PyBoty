@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from core.event_bus import EventType, event_bus
-from core.society_of_mind import MindAgent, SocietyConfig, SocietyOfMind
-from core.speaker_selection import RoundRobinSelector
+from core.systems.runtime.event_bus import EventType, event_bus
+from core.assets.agents.society_of_mind import MindAgent, SocietyConfig, SocietyOfMind
+from core.assets.agents.speaker_selection import RoundRobinSelector
 
 
 def _mock_llm_factory(response="LLM response"):

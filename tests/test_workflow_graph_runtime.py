@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from core.workflow_graph_runtime import WorkflowGraphRuntime
-from core.workflow_models import FlowEdge, FlowNode, NodeStatus, NodeType, WorkflowDef
+from core.assets.workflows.workflow_graph_runtime import WorkflowGraphRuntime
+from core.assets.workflows.workflow_models import FlowEdge, FlowNode, NodeStatus, NodeType, WorkflowDef
 
 
 def test_workflow_graph_runtime_resolves_config_and_ready_nodes():

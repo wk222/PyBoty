@@ -5,7 +5,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from core.training import FeedbackRecord, FeedbackStore, format_feedback_prompt
+from core.systems.runtime.training import FeedbackRecord, FeedbackStore, format_feedback_prompt
 
 
 class TestFeedbackRecord:

@@ -17,20 +17,20 @@ from unittest.mock import patch
 
 import pytest
 
-from core.workflow_graph_runtime import WorkflowGraphRuntime, _last_completed_output
-from core.workflow_models import (
+from core.assets.workflows.workflow_graph_runtime import WorkflowGraphRuntime, _last_completed_output
+from core.assets.workflows.workflow_models import (
     FlowNode,
     NodeStatus,
     NodeType,
     OnErrorStrategy,
     WorkflowDef,
 )
-from core.workflow_nodes_extended import (
+from core.assets.workflows import (
     run_database_query,
     run_file_read,
     run_file_write,
 )
-from core.workflow_plugin import (
+from core.assets.workflows.workflow_plugin import (
     dispatch_plugin,
     get_plugin,
     list_plugins,

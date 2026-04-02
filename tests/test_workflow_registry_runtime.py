@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from core.workflow_models import FlowEdge, FlowNode, NodeStatus, NodeType, WorkflowDef, WorkflowStatus
-from core.workflow_registry_runtime import WorkflowRegistryRuntime
+from core.assets.workflows.workflow_models import FlowEdge, FlowNode, NodeStatus, NodeType, WorkflowDef, WorkflowStatus
+from core.assets.workflows.workflow_registry_runtime import WorkflowRegistryRuntime
 
 
 def test_workflow_registry_runtime_lists_active_workflows_and_graphs():

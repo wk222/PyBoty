@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from core.workflow_collaboration_runtime import WorkflowCollaborationRuntime
-from core.workflow_models import FlowNode, NodeType, WorkflowDef
+from core.assets.workflows.workflow_collaboration_runtime import WorkflowCollaborationRuntime
+from core.assets.workflows.workflow_models import FlowNode, NodeType, WorkflowDef
 
 
 def test_workflow_collaboration_runtime_runs_debate_and_uses_root_judge():

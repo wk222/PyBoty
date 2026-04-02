@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.execution_validation import IterativeAppValidator
+from core.systems.execution.execution_validation import IterativeAppValidator
 
 
 def test_iterative_app_validator_reports_missing_app(temp_paths):

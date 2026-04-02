@@ -3,8 +3,8 @@ from __future__ import annotations
 from core.assets.apps.manager import AppManager
 from core.assets.skills import SkillRegistry
 from core.assets.skills.skill_marketplace import SkillMarketplace
-from core.capability_bus import CapabilityBus, CapabilityLayer
-from core.capability_registry import CapabilityRegistry
+from core.systems.bus.capability_bus import CapabilityBus, CapabilityLayer
+from core.systems.bus.capability_registry import CapabilityRegistry
 
 
 def _write_skill(root, name: str, description: str) -> None:

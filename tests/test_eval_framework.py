@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from core.eval_framework import EvalFramework
-from core.eval_models import TestCase as EvalTestCase
+from core.systems.eval.eval_framework import EvalFramework
+from core.systems.eval.eval_models import TestCase as EvalTestCase
 
 
 def test_eval_framework_saves_and_loads_suite(temp_paths):

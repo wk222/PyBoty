@@ -6,7 +6,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from core.knowledge_sources import (
+from core.systems.knowledge.knowledge_sources import (
     DirectorySource,
     FileSource,
     GitRepoSource,
@@ -14,7 +14,7 @@ from core.knowledge_sources import (
     TextSource,
     URLSource,
 )
-from core.vector_store import InMemoryVectorStore
+from core.systems.knowledge.vector_store import InMemoryVectorStore
 
 
 class TestFileSource:

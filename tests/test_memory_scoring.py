@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.memory_scoring import MemoryMetadata, composite_score, encode_memory, recency_score
+from core.systems.memory.memory_scoring import MemoryMetadata, composite_score, encode_memory, recency_score
 
 
 class TestEncodeMemory:

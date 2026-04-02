@@ -7,16 +7,16 @@ from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, SystemMessage
 from langgraph.runtime import Runtime
 
-from core.agent_middleware_factory import (
+from core.systems.middleware.agent_middleware_factory import (
     build_root_langchain_middleware,
     build_subagent_langchain_middleware,
     build_subagent_runtime_prompt_sections,
 )
-from core.agent_prompt_middleware import PromptSectionMiddleware
+from core.systems.middleware.agent_prompt_middleware import PromptSectionMiddleware
 from core.assets.agents import AgentCapabilityProfile, AgentMiddlewareProfile
-from core.prompts import build_static_system_prompt, get_root_mode_label, normalize_root_mode
-from core.subagent_governance import build_subagent_governance_snapshot
-from core.subagent_sandbox import SubagentSandbox
+from core.systems.runtime.prompts import build_static_system_prompt, get_root_mode_label, normalize_root_mode
+from core.assets.agents.subagent_governance import build_subagent_governance_snapshot
+from core.systems.governance.subagent_sandbox import SubagentSandbox
 from core.systems.governance import AgentControlPolicy
 
 
@@ -141,9 +141,9 @@ def test_root_middleware_factory_injects_runtime_context():
         captured["request"] = request
         return ModelResponse(result=[AIMessage(content="ok")])
 
-    from core.loop_guard_middleware import LoopGuardMiddleware
-    from core.patch_tool_calls import PatchToolCallsMiddleware
-    from core.todo_middleware import TodoListMiddleware
+    from core.systems.middleware.loop_guard_middleware import LoopGuardMiddleware
+    from core.systems.runtime.patch_tool_calls import PatchToolCallsMiddleware
+    from core.systems.middleware.todo_middleware import TodoListMiddleware
 
     assert isinstance(middlewares[0], LoopGuardMiddleware)
     assert isinstance(middlewares[1], TodoListMiddleware)
@@ -211,7 +211,7 @@ def test_subagent_middleware_factory_respects_profile_sections():
     assert any("SubagentDelegationContextMiddleware:coordinator" == name for name in names)
     assert any("SubagentPolicyContextMiddleware:coordinator" == name for name in names)
     assert tool_middleware in stack
-    from core.patch_tool_calls import PatchToolCallsMiddleware
+    from core.systems.runtime.patch_tool_calls import PatchToolCallsMiddleware
 
     assert isinstance(stack[-1], PatchToolCallsMiddleware)
 

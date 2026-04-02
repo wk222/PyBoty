@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 
-from core.termination import (
+from core.systems.runtime.termination import (
     AllConditions,
     AnyCondition,
     ExternalSignal,

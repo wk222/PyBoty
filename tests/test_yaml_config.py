@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from core.yaml_config import (
+from core.systems.runtime.yaml_config import (
     auto_discover_yaml,
     interpolate_placeholders,
     load_agents_yaml,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import core
-from core.version import get_pybot_version
+from core.systems.runtime.version import get_pybot_version
 
 
 def test_core_version_matches_package_version():

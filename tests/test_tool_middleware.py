@@ -11,12 +11,12 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
 from core.systems.governance import AgentControlPolicy, ApprovalQueue
-from core.tool_approval_runtime import (
+from core.systems.governance.tool_approval_runtime import (
     build_tool_approval_resume_command,
     create_tool_approval_request,
     extract_tool_approval_interrupts,
 )
-from core.tool_middleware import DynamicToolMiddleware
+from core.assets.tools.tool_middleware import DynamicToolMiddleware
 
 
 class ToolAwareFakeModel(FakeMessagesListChatModel):

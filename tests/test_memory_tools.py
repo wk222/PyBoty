@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from unittest.mock import MagicMock
 
-from core.memory_tools import SaveMemoryTool, SearchMemoryTool, get_memory_tools
+from core.systems.memory.memory_tools import SaveMemoryTool, SearchMemoryTool, get_memory_tools
 
 
 @dataclass
@@ -46,7 +46,7 @@ class TestSearchMemoryTool:
         assert "not configured" in result["error"]
 
     def test_schema_has_descriptions(self):
-        from core.memory_tools import SearchMemoryInput
+        from core.systems.memory.memory_tools import SearchMemoryInput
 
         schema = SearchMemoryInput.model_json_schema()
         props = schema["properties"]

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from core.assets.tools import ToolStorage
 from core.systems.governance import AgentControlPolicy, ApprovalQueue
-from core.tool_middleware import DynamicToolMiddleware
-from core.tool_middleware_factory import (
+from core.assets.tools.tool_middleware import DynamicToolMiddleware
+from core.assets.tools.tool_middleware_factory import (
     build_tool_middleware_components,
     create_decorator_middleware,
     create_tool_middleware,

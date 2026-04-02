@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 from pydantic import BaseModel
 
-from core.guardrails import (
+from core.systems.governance.guardrails import (
     CompositeGuardrail,
     GuardrailResult,
     JsonGuardrail,

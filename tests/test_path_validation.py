@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from core.path_utils import sanitize_tool_call_id, validate_path
+from core.systems.runtime.path_utils import sanitize_tool_call_id, validate_path
 
 
 class TestValidatePath:

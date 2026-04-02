@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from core.project_paths import ProjectPaths
+from core.systems.runtime.project_paths import ProjectPaths
 
 
 @pytest.fixture

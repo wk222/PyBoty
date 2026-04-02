@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from core.delegation_payload import delegation_response_text, normalize_delegation_payload
+from core.assets.agents.delegation_payload import delegation_response_text, normalize_delegation_payload
 
 
 def test_normalize_delegation_payload_preserves_structured_state():

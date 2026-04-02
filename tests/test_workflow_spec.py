@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.workflow_spec import export_workflow_spec, parse_workflow_spec, strip_workflow_runtime
+from core.assets.workflows.workflow_spec import export_workflow_spec, parse_workflow_spec, strip_workflow_runtime
 
 SPEC_TEXT = """
 name: demo_workflow

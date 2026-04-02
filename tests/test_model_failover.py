@@ -9,7 +9,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from core.model_failover import (
+from core.systems.runtime.model_failover import (
     ChatModelWithFailover,
     FailoverStats,
     _get_retry_after,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from core.approval_queue import ApprovalQueue
-from core.delegated_approval_runtime import DelegatedApprovalResolutionRuntime
+from core.systems.governance.approval_queue import ApprovalQueue
+from core.systems.governance.delegated_approval_runtime import DelegatedApprovalResolutionRuntime
 
 
 def test_delegated_approval_resolution_runtime_normalizes_pending_and_rejected_payloads():

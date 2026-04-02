@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from core.private_state import (
+from core.systems.runtime.private_state import (
     BUILTIN_PRIVATE_KEYS,
     get_private_keys,
     get_private_keys_by_owner,
     register_private_keys,
 )
-from core.subagent_runtime import EXCLUDED_SUBAGENT_STATE_KEYS, filter_subagent_state
+from core.assets.agents.subagent_runtime import EXCLUDED_SUBAGENT_STATE_KEYS, filter_subagent_state
 
 
 class TestPrivateStateRegistry:

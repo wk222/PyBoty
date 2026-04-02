@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core.intervention import (
+from core.systems.governance.intervention import (
     ContentFilterHandler,
     InterventionChain,
     InterventionResponse,

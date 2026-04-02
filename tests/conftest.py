@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from core.plugin_manifest import reset_plugin_registry
+from core.systems.integration import reset_plugin_registry
 from core.systems.runtime import ProjectPaths
 from web.app import create_app
 

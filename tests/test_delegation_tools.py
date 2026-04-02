@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-from core.agent_creator import AskAgentTool, DelegateToAgentTool, get_agent_creator_tools
-from core.agent_storage import AgentDefinition, AgentModelConfig, AgentStorage
-from core.event_bus import EventType, event_bus
+from core.assets.agents.agent_creator import AskAgentTool, DelegateToAgentTool, get_agent_creator_tools
+from core.assets.agents.agent_storage import AgentDefinition, AgentModelConfig, AgentStorage
+from core.systems.runtime.event_bus import EventType, event_bus
 
 
 def _make_agent_def(name="test_agent"):

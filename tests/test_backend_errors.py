@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from core.backend_protocol import (
+from core.systems.runtime.backend_protocol import (
     CompositeBackend,
     EditResult,
     LocalFilesystemBackend,

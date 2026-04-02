@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core.context_strategies import (
+from core.systems.context.context_strategies import (
     BufferedChatContext,
     CompositeContextStrategy,
     HeadAndTailChatContext,

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from core.approval_queue import ApprovalQueue
-from core.workflow_definition_runtime import WorkflowDefinitionRuntime
-from core.workflow_lifecycle_runtime import WorkflowLifecycleRuntime
-from core.workflow_models import FlowEdge, FlowNode, NodeStatus, NodeType, WorkflowDef, WorkflowStatus
-from core.workflow_registry_runtime import WorkflowRegistryRuntime
-from core.workflow_storage import WorkflowStorage
+from core.systems.governance.approval_queue import ApprovalQueue
+from core.assets.workflows.workflow_definition_runtime import WorkflowDefinitionRuntime
+from core.assets.workflows.workflow_lifecycle_runtime import WorkflowLifecycleRuntime
+from core.assets.workflows.workflow_models import FlowEdge, FlowNode, NodeStatus, NodeType, WorkflowDef, WorkflowStatus
+from core.assets.workflows.workflow_registry_runtime import WorkflowRegistryRuntime
+from core.assets.workflows.workflow_storage import WorkflowStorage
 
 
 def test_workflow_lifecycle_runtime_manages_definitions_and_runtime_snapshots(tmp_path):

@@ -124,8 +124,8 @@ def test_app_matrix_runtime_discovers_services_and_invokes_with_grant(temp_paths
     manager.reload_apps()
 
     from core.assets.skills.skill_marketplace import SkillMarketplace
-    from core.capability_bus import CapabilityBus
-    from core.capability_registry import CapabilityRegistry
+    from core.systems.bus.capability_bus import CapabilityBus
+    from core.systems.bus.capability_registry import CapabilityRegistry
 
     registry = AppOrchestrationRegistry()
     capability_registry = CapabilityRegistry(
@@ -182,8 +182,8 @@ def test_app_matrix_runtime_enforces_provider_policy_limits(temp_paths):
     manager.reload_apps()
 
     from core.assets.skills.skill_marketplace import SkillMarketplace
-    from core.capability_bus import CapabilityBus
-    from core.capability_registry import CapabilityRegistry
+    from core.systems.bus.capability_bus import CapabilityBus
+    from core.systems.bus.capability_registry import CapabilityRegistry
 
     registry = AppOrchestrationRegistry()
     capability_registry = CapabilityRegistry(

@@ -6,8 +6,8 @@ import sys
 
 from rich.console import Console
 
-from core.entrypoints import ensure_utf8_stdio
-from core.onboarding import OnboardingWizard
+from core.systems.runtime.entrypoints import ensure_utf8_stdio
+from core.systems.runtime.onboarding import OnboardingWizard
 
 ensure_utf8_stdio()
 console = Console()

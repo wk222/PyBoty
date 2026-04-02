@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from core.agent_capability_profile import AgentCapabilityProfile
-from core.backend_protocol import LocalSandboxBackend, SandboxBackendProtocol
-from core.subagent_sandbox import (
+from core.assets.agents.agent_capability_profile import AgentCapabilityProfile
+from core.systems.runtime.backend_protocol import LocalSandboxBackend, SandboxBackendProtocol
+from core.systems.governance.subagent_sandbox import (
     SubagentSandbox,
     build_subagent_builtin_tools,
     build_subagent_sandbox,
@@ -53,7 +53,7 @@ def test_build_subagent_sandbox_creates_execution_backend_when_allowed(tmp_path)
         sandbox_adapter="isolated",
         allow_code_execution=True,
     )
-    from core.project_paths import ProjectPaths
+    from core.systems.runtime.project_paths import ProjectPaths
 
     paths = ProjectPaths.from_root(root_dir=tmp_path, workspace_dir=tmp_path / "ws")
     sandbox = build_subagent_sandbox(
@@ -72,7 +72,7 @@ def test_build_subagent_sandbox_no_execution_backend_for_read_only(tmp_path):
         sandbox_adapter="workspace",
         allow_code_execution=True,
     )
-    from core.project_paths import ProjectPaths
+    from core.systems.runtime.project_paths import ProjectPaths
 
     paths = ProjectPaths.from_root(root_dir=tmp_path, workspace_dir=tmp_path / "ws")
     sandbox = build_subagent_sandbox(
@@ -90,7 +90,7 @@ def test_build_subagent_builtin_tools_includes_exec_with_backend(tmp_path):
         sandbox_adapter="isolated",
         allow_code_execution=True,
     )
-    from core.project_paths import ProjectPaths
+    from core.systems.runtime.project_paths import ProjectPaths
 
     paths = ProjectPaths.from_root(root_dir=tmp_path, workspace_dir=tmp_path / "ws")
     sandbox = build_subagent_sandbox(

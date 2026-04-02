@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from core.agent_control import AgentControlPolicy
-from core.tool_control_runtime import ToolControlRuntime
+from core.systems.governance.agent_control import AgentControlPolicy
+from core.systems.governance.tool_control_runtime import ToolControlRuntime
 
 
 def test_tool_control_runtime_blocks_disallowed_dynamic_tools():

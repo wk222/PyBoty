@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.admin_memory import AdminMemoryConfig, AdminMemoryManager
+from core.systems.memory.admin_memory import AdminMemoryConfig, AdminMemoryManager
 
 
 def test_build_prompt_context_compacts_large_state():

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from core.task_definition import TaskDefinition, TaskPipeline, TaskStatus
+from core.assets.workflows.task_definition import TaskDefinition, TaskPipeline, TaskStatus
 
 
 class ResearchResult(BaseModel):

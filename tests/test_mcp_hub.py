@@ -8,7 +8,7 @@ import tempfile
 
 import pytest
 
-from core.mcp_hub import (
+from core.systems.integration.mcp_hub import (
     MCPHub,
     MCPResourceDescriptor,
     MCPServerConfig,

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 
-from core.admin_planner import AdminPlanner, fallback_admin_plan
+from core.modes.admin_planner import AdminPlanner, fallback_admin_plan
 
 
 def test_admin_planner_returns_structured_plan():

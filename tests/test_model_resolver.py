@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from langchain_core.language_models import BaseChatModel
 
-from core.model_resolver import (
+from core.systems.runtime import (
     ModelProviderError,
     ResolvedModel,
     _parse_spec,

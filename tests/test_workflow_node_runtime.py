@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from core.approval_queue import ApprovalQueue
-from core.workflow_models import FlowNode, NodeType, WorkflowDef, WorkflowStatus
-from core.workflow_node_runtime import WorkflowApprovalPause, WorkflowNodeRuntime
+from core.systems.governance.approval_queue import ApprovalQueue
+from core.assets.workflows.workflow_models import FlowNode, NodeType, WorkflowDef, WorkflowStatus
+from core.assets.workflows.workflow_node_runtime import WorkflowApprovalPause, WorkflowNodeRuntime
 
 
 def test_workflow_node_runtime_executes_tool_nodes_and_updates_state():

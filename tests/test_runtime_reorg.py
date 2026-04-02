@@ -9,7 +9,7 @@ from core.systems.runtime import (
     interpolate_placeholders,
     validate_path,
 )
-from core.version import get_pybot_version as legacy_get_pybot_version
+from core.systems.runtime.version import get_pybot_version as legacy_get_pybot_version
 
 
 def test_structured_runtime_exports_work_after_batch0_move():

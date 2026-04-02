@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.execution_scanner import ProjectScanner
+from core.systems.execution.execution_scanner import ProjectScanner
 
 
 def test_project_scanner_returns_stats_for_workspace_files(temp_paths):

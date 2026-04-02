@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from core.approval_queue import ApprovalQueue
-from core.workflow_engine_factory import build_workflow_engine_runtime_bundle
+from core.systems.governance.approval_queue import ApprovalQueue
+from core.assets.workflows.workflow_engine_factory import build_workflow_engine_runtime_bundle
 
 
 def test_workflow_engine_factory_builds_shared_runtime_bundle(tmp_path):

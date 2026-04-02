@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from core.agent_storage import AgentDefinition, AgentStorage
+from core.assets.agents.agent_storage import AgentDefinition, AgentStorage
 
 
 def test_agent_storage_persists_updates(tmp_path: Path):

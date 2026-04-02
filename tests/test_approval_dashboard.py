@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from core.approval_dashboard import ApprovalDashboard, DashboardFilter
-from core.approval_queue import ApprovalQueue
+from core.systems.governance.approval_dashboard import ApprovalDashboard, DashboardFilter
+from core.systems.governance.approval_queue import ApprovalQueue
 
 
 def _make_queue_with_requests() -> ApprovalQueue:

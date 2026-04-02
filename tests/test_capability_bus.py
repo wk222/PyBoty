@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from core.capability_bus import CapabilityBus, CapabilityLayer, get_capability_bus_tools
-from core.capability_bus_models import EventType
+from core.systems.bus.capability_bus import CapabilityBus, CapabilityLayer, get_capability_bus_tools
+from core.systems.bus.capability_bus_models import EventType
 
 
 def test_capability_bus_registers_persists_and_tracks_context(temp_paths):
@@ -69,7 +69,7 @@ def test_capability_bus_auto_register_preserves_loaded_stats(temp_paths):
 
 
 def test_capability_from_dict_roundtrip():
-    from core.capability_bus_models import Capability
+    from core.systems.bus.capability_bus_models import Capability
 
     cap = Capability(
         name="test",

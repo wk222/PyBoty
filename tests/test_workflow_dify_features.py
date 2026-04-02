@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.workflow_graph_runtime import WorkflowGraphRuntime
-from core.workflow_models import (
+from core.assets.workflows.workflow_graph_runtime import WorkflowGraphRuntime
+from core.assets.workflows.workflow_models import (
     BRANCH_NODE_TYPES,
     EdgeState,
     FlowEdge,
@@ -18,7 +18,7 @@ from core.workflow_models import (
     WorkflowDef,
     WorkflowRunRecord,
 )
-from core.workflow_nodes_extended import (
+from core.assets.workflows import (
     run_http_request,
     run_list_operator,
     run_parameter_extractor,

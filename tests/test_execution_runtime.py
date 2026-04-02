@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.execution_runtime import ExecutionRuntime
+from core.systems.execution.execution_runtime import ExecutionRuntime
 
 
 def test_execution_runtime_blocks_workspace_escape(temp_paths):

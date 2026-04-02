@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 
-from core.session_events import SessionEventQueue
+from core.systems.runtime.session_events import SessionEventQueue
 
 
 class TestSessionEventQueue:

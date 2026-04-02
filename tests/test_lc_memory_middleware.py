@@ -13,7 +13,7 @@ try:
 except ImportError:
     _HAS_LC = False
 
-from core.lc_memory_middleware import LCMemoryMiddleware
+from core.systems.middleware.lc_memory_middleware import LCMemoryMiddleware
 
 pytestmark = pytest.mark.skipif(not _HAS_LC, reason="langchain not installed")
 

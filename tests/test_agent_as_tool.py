@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
-from core.agent_as_tool import AgentTool, TeamTool, create_agent_tool, create_team_tool
-from core.event_bus import EventType, event_bus
+from core.assets.agents.agent_as_tool import AgentTool, TeamTool, create_agent_tool, create_team_tool
+from core.systems.runtime.event_bus import EventType, event_bus
 
 
 def _mock_llm_factory(response="LLM response"):

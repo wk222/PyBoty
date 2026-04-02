@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core.todo_middleware import TodoItem, TodoListMiddleware, TodoState
+from core.systems.middleware.todo_middleware import TodoItem, TodoListMiddleware, TodoState
 
 
 class TestTodoState:

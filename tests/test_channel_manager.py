@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from core.channel_manager import BaseChannel, ChannelManager
+from core.systems.integration.channel_manager import BaseChannel, ChannelManager
 from core.systems.integration.channel_runtime import ChannelConfig, ChannelWebhookRequest, ChannelWebhookVerification
 
 

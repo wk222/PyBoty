@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import threading
 
-from core.event_bus import Event, EventBus, EventType, event_bus
+from core.systems.runtime.event_bus import Event, EventBus, EventType, event_bus
 
 
 class TestEventBusBasics:

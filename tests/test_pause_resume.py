@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 import time
 
-from core.pause_resume import (
+from core.systems.runtime.pause_resume import (
     PauseContext,
     PauseManager,
     PauseState,

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from rich.console import Console
 
-from core.cli_support import InteractiveCliApp
-from core.entrypoints import ensure_utf8_stdio
+from core.systems.runtime.cli_support import InteractiveCliApp
+from core.systems.runtime.entrypoints import ensure_utf8_stdio
 
 ensure_utf8_stdio()
 console = Console()

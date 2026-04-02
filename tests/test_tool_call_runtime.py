@@ -4,13 +4,13 @@ from types import SimpleNamespace
 
 from langchain_core.messages import ToolMessage
 
-from core.agent_control import AgentControlPolicy
-from core.approval_queue import ApprovalQueue
-from core.tool_call_runtime import ToolCallRuntime
-from core.tool_control_runtime import ToolControlRuntime
-from core.tool_delegation_runtime import DelegatedToolApprovalRuntime
-from core.tool_dynamic_inventory import DynamicToolInventory
-from core.tool_middleware_observability import ToolMiddlewareObservability
+from core.systems.governance.agent_control import AgentControlPolicy
+from core.systems.governance.approval_queue import ApprovalQueue
+from core.assets.tools.tool_call_runtime import ToolCallRuntime
+from core.systems.governance.tool_control_runtime import ToolControlRuntime
+from core.assets.tools.tool_delegation_runtime import DelegatedToolApprovalRuntime
+from core.assets.tools.tool_dynamic_inventory import DynamicToolInventory
+from core.assets.tools.tool_middleware_observability import ToolMiddlewareObservability
 
 
 def test_tool_call_runtime_executes_low_risk_tool_call():

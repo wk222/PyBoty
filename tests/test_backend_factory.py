@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tempfile
 
-from core.backend_protocol import (
+from core.systems.runtime.backend_protocol import (
     BackendFactory,
     LocalFilesystemBackend,
     resolve_backend,
