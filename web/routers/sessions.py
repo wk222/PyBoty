@@ -41,6 +41,10 @@ class SessionPromptInjectionRequest(BaseModel):
     prompt_injection: str = ""
 
 
+class SessionModeSwitchRequest(BaseModel):
+    mode: str
+
+
 @router.get("/api/sessions")
 async def list_sessions(
     services: WebServices = SERVICES_DEPENDENCY,
@@ -254,3 +258,72 @@ async def rebuild_session_checkpoint(
 ) -> dict[str, Any]:
     services.sync_session_spine()
     return {"checkpoint": services.session_runtime.rebuild_checkpoint()}
+
+
+@router.post("/api/sessions/{session_key}/mode")
+async def switch_session_mode(
+    session_key: str,
+    request: SessionModeSwitchRequest,
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> dict[str, Any]:
+    try:
+        result = services.session_runtime.switch_mode(session_key, new_mode=request.mode)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"session_key": session_key, **result}
+
+
+@router.get("/api/sessions/{session_key}/budget")
+async def get_session_budget(
+    session_key: str,
+    model_name: str = Query(default=""),
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> dict[str, Any]:
+    from core.systems.runtime.context_budget import ContextBudgetManager
+
+    session = services.session_runtime.get_session(session_key)
+    if session is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    budget_mgr = ContextBudgetManager(model_name=model_name)
+    assessment = budget_mgr.assess(session)
+    return {"session_key": session_key, "budget": assessment.to_dict()}
+
+
+@router.get("/api/sessions/{session_key}/status")
+async def get_session_status(
+    session_key: str,
+    model_name: str = Query(default=""),
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> dict[str, Any]:
+    from core.systems.runtime.context_budget import ContextBudgetManager
+
+    services.sync_session_spine()
+    session = services.session_runtime.get_session(session_key)
+    if session is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    budget_mgr = ContextBudgetManager(model_name=model_name)
+    assessment = budget_mgr.assess(session)
+
+    kernel_sidechains: list[str] = []
+    try:
+        raw = services.session_runtime.get_sidechains(session_key)
+        kernel_sidechains = [f"{sc.get('purpose', '')}:{sc.get('status', '')}" for sc in raw]
+    except Exception:
+        pass
+
+    return {
+        "session_key": session_key,
+        "thread_id": session.get("thread_id", ""),
+        "mode": session.get("primary_mode", "assistant"),
+        "mode_history": list(session.get("mode_history", [])),
+        "status": session.get("status", "active"),
+        "message_count": session.get("message_count", 0),
+        "last_message_at": session.get("last_message_at"),
+        "timeline_events": len(session.get("timeline", [])),
+        "sidechains": kernel_sidechains,
+        "budget": assessment.to_dict(),
+    }

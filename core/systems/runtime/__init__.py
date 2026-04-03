@@ -71,6 +71,24 @@ from core.systems.runtime.session_memory_policy import (
     validate_session_memory,
 )
 from core.systems.runtime.session_runtime import SessionRecord, SessionRuntime
+from core.systems.runtime.context_budget import (
+    PRESSURE_CRITICAL,
+    PRESSURE_HIGH,
+    PRESSURE_LOW,
+    PRESSURE_MODERATE,
+    BudgetAssessment,
+    ContextBudgetManager,
+)
+from core.systems.runtime.session_engine import (
+    ModeTransition,
+    PyBotSessionEngine,
+    RunResult,
+    RUN_KIND_BACKGROUND,
+    RUN_KIND_CHAT,
+    RUN_KIND_GATEWAY,
+    RUN_KIND_WORKFLOW,
+    SessionStatus,
+)
 from core.systems.runtime.uv_env_manager import UvEnvDefinition, UvEnvManager
 from core.systems.runtime.version import get_pybot_version
 from core.systems.runtime.workspace_manager import WorkspaceManager
@@ -82,8 +100,22 @@ from core.systems.runtime.yaml_config import (
 )
 
 __all__ = [
+    "BudgetAssessment",
     "BUILTIN_PRIVATE_KEYS",
+    "ContextBudgetManager",
     "CostSummary",
+    "ModeTransition",
+    "PRESSURE_CRITICAL",
+    "PRESSURE_HIGH",
+    "PRESSURE_LOW",
+    "PRESSURE_MODERATE",
+    "PyBotSessionEngine",
+    "RUN_KIND_BACKGROUND",
+    "RUN_KIND_CHAT",
+    "RUN_KIND_GATEWAY",
+    "RUN_KIND_WORKFLOW",
+    "RunResult",
+    "SessionStatus",
     "CostTracker",
     "CostTrackerCallback",
     "DEFAULT_API_PORT",

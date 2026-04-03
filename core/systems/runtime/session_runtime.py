@@ -313,6 +313,52 @@ class SessionRuntime:
                 return None
             return self._kernel_unlocked(record.session_key).snapshot()
 
+    def switch_mode(self, session_key: str, *, new_mode: str) -> dict[str, Any]:
+        """Switch a session's active mode profile and record the transition."""
+        _VALID_MODES = {"assistant", "app_matrix", "admin"}
+        normalized = str(new_mode).strip().lower()
+        if normalized not in _VALID_MODES:
+            raise ValueError(f"Unknown mode: {new_mode!r}. Valid modes: {sorted(_VALID_MODES)}")
+        with self._lock:
+            record = self._sessions.get(str(session_key).strip())
+            if record is None:
+                raise KeyError(session_key)
+            previous = record.primary_mode
+            if normalized != previous:
+                record.primary_mode = normalized
+                if normalized not in record.mode_history:
+                    record.mode_history.append(normalized)
+                record.updated_at = time.time()
+                self._append_event_unlocked(
+                    record,
+                    op="mode_switch",
+                    payload={"from": previous, "to": normalized},
+                )
+            return {"previous_mode": previous, "mode": normalized, "mode_history": list(record.mode_history)}
+
+    def upsert_sidechain(
+        self,
+        session_key: str,
+        *,
+        purpose: str,
+        summary: str = "",
+        status: str = "active",
+        metadata: dict[str, Any] | None = None,
+        sidechain_id: str = "",
+    ) -> dict[str, Any]:
+        with self._lock:
+            normalized = str(session_key).strip()
+            if normalized not in self._sessions:
+                return {}
+            return self._upsert_sidechain_unlocked(
+                normalized,
+                purpose=purpose,
+                summary=summary,
+                status=status,
+                metadata=metadata,
+                sidechain_id=sidechain_id,
+            )
+
     def get_compiled_artifacts(
         self,
         session_key: str,
