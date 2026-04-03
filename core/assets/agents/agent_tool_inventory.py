@@ -6,6 +6,7 @@ from typing import Any
 
 from core.assets.tools.tool_storage import ToolStorage
 
+from .agent_role_policy import apply_role_defaults, get_policy
 from .agent_storage import AgentDefinition
 
 
@@ -64,12 +65,28 @@ def build_agent_tool_inventory(
         "missing_assigned_tools": missing_assigned_tools,
         "assigned_global_tool_names": [tool["name"] for tool in assigned_global_tools],
         "local_tool_names": [tool["name"] for tool in local_tools],
+        "team_role": agent_def.team_role,
+        "role_policy": get_policy(agent_def.team_role).to_dict(),
         "counts": {
             "assigned_global": len(assigned_global_tools),
             "local": len(local_tools),
             "missing_assigned": len(missing_assigned_tools),
         },
     }
+
+
+def build_effective_profiles(agent_def: AgentDefinition) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return (capability_profile, middleware_profile) with role defaults merged in.
+
+    The agent's own stored profiles always override role defaults.
+    Use this when building the actual agent runtime to get the complete
+    effective configuration.
+    """
+    return apply_role_defaults(
+        agent_def.team_role,
+        capability_profile=dict(agent_def.capability_profile),
+        middleware_profile=dict(agent_def.middleware_profile),
+    )
 
 
 def _definition_value(definition: dict[str, Any] | None, key: str) -> str:

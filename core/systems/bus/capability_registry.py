@@ -14,6 +14,7 @@ from langchain.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.assets.skills.skill_marketplace import SkillMarketplace
+from core.assets.tools.unified_tool_inventory import UnifiedAssetInventory
 from core.systems.integration.pyhub_client import PyHubClient
 from core.systems.runtime.event_bus import Event, EventType, event_bus
 
@@ -47,20 +48,60 @@ class CapabilityRegistry:
         self._hub_client_factory = hub_client_factory or (lambda url, token=None: PyHubClient(url, api_key=token))
         self._grants: dict[str, CapabilityGrant] = self._load_grants()
 
-    def refresh_local_index(self, *, tools: list[Any] | None = None, save: bool = True) -> dict[str, Any]:
-        if tools:
-            self.capability_bus.auto_register_tools(tools)
+    def refresh_local_index(
+        self,
+        *,
+        tools: list[Any] | None = None,
+        unified_inventory: UnifiedAssetInventory | None = None,
+        save: bool = True,
+    ) -> dict[str, Any]:
+        if unified_inventory is not None:
+            self._register_from_unified_inventory(unified_inventory)
+        else:
+            if tools:
+                self.capability_bus.auto_register_tools(tools)
+            if self.skill_registry is not None:
+                self.capability_bus.auto_register_skills(self.skill_registry)
         if self.pyflow_engine is not None:
             self.capability_bus.auto_register_workflows(self.pyflow_engine)
         if self.app_manager is not None:
             self.capability_bus.auto_register_apps(self.app_manager)
-        if self.skill_registry is not None:
-            self.capability_bus.auto_register_skills(self.skill_registry)
         if self.agent_storage is not None:
             self.capability_bus.auto_register_agents(self.agent_storage)
         if save:
             self.capability_bus.save_registry()
         return self.get_registry_snapshot()
+
+    def _register_from_unified_inventory(self, inventory: UnifiedAssetInventory) -> None:
+        """Register all tools and skill groups from a UnifiedAssetInventory."""
+        from .capability_bus_models import CapabilityLayer
+
+        all_info = inventory.list_all()
+        skill_groups: dict[str, list[str]] = {}
+
+        for info in all_info:
+            if info.layer == "skill_tool":
+                skill_name = info.skill_name or "unknown"
+                skill_groups.setdefault(skill_name, []).append(info.name)
+            else:
+                self.capability_bus.runtime.register(
+                    info.name,
+                    CapabilityLayer.TOOL,
+                    description=info.description[:200],
+                    tags=info.tags,
+                )
+
+        if self.skill_registry is not None:
+            for skill_name, tool_names in skill_groups.items():
+                skill_def = self.skill_registry.get_skill(skill_name)
+                description = skill_def.description if skill_def else ""
+                self.capability_bus.runtime.register(
+                    skill_name,
+                    CapabilityLayer.SKILL,
+                    description=description[:200],
+                    provides=tool_names,
+                    tags=skill_def.capabilities if skill_def else [],
+                )
 
     def discover(
         self,

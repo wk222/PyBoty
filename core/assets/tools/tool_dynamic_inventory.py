@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langchain.tools import BaseTool
 from langchain_core.messages import ToolMessage
@@ -12,12 +12,26 @@ from langchain_core.messages import ToolMessage
 from .tool_creator import get_dynamic_tools
 from .tool_storage import ToolStorage
 
+if TYPE_CHECKING:
+    from core.assets.skills.skill_registry import SkillRegistry
+
 
 class DynamicToolInventory:
-    """Track base tools, persisted dynamic tools, and mutation notices."""
+    """Track base tools, persisted dynamic tools, and mutation notices.
 
-    def __init__(self, tool_storage: ToolStorage | None = None):
+    When a ``skill_registry`` is provided, enabled skill tools are included
+    alongside storage-backed dynamic tools so the agent sees a unified tool
+    list without requiring a separate skill-injection call.
+    """
+
+    def __init__(
+        self,
+        tool_storage: ToolStorage | None = None,
+        *,
+        skill_registry: "SkillRegistry | None" = None,
+    ):
         self._tool_storage = tool_storage
+        self._skill_registry = skill_registry
         self._base_tools: list[BaseTool] = []
         self._current_tools: list[BaseTool] = []
         self._extra_dynamic_tool_names: set[str] = set()
@@ -33,9 +47,11 @@ class DynamicToolInventory:
         return self._tool_storage
 
     def list_dynamic_tools(self) -> list[BaseTool]:
-        if not self._tool_storage:
-            return []
-        return get_dynamic_tools(self._tool_storage)
+        storage_tools = get_dynamic_tools(self._tool_storage) if self._tool_storage else []
+        if not self._skill_registry:
+            return storage_tools
+        skill_tools = self._skill_registry.get_active_tools()
+        return self.merge_tools(storage_tools, skill_tools)
 
     def set_base_tools(self, tools: Sequence[BaseTool]) -> None:
         self._base_tools = list(tools)
@@ -70,6 +86,9 @@ class DynamicToolInventory:
         dynamic_names = set(self._extra_dynamic_tool_names)
         if self._tool_storage:
             dynamic_names.update(self._tool_storage.list_tools().keys())
+        if self._skill_registry:
+            for tool in self._skill_registry.get_active_tools():
+                dynamic_names.add(tool.name)
         return dynamic_names
 
     def is_dynamic_tool(self, tool_name: str) -> bool:

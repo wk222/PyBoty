@@ -148,6 +148,7 @@ class AgentDefinition:
     memory: AgentMemoryConfig = field(default_factory=AgentMemoryConfig)
     onboarding: AgentOnboardingInfo = field(default_factory=AgentOnboardingInfo)
 
+    team_role: str = "worker"
     capabilities: list[str] = field(default_factory=list)
     capability_profile: dict[str, Any] = field(default_factory=dict)
     middleware_profile: dict[str, Any] = field(default_factory=dict)
@@ -175,6 +176,7 @@ class AgentDefinition:
         return {
             "name": self.name,
             "role": self.role,
+            "team_role": self.team_role,
             "description": self.description,
             "system_prompt": self.system_prompt,
             "goal": self.goal,
@@ -205,6 +207,7 @@ class AgentDefinition:
         return cls(
             name=str(data.get("name", "")),
             role=str(data.get("role", "")),
+            team_role=str(data.get("team_role", "worker")),
             description=str(data.get("description", "")),
             system_prompt=str(data.get("system_prompt", "")),
             goal=str(data.get("goal", "")),

@@ -255,6 +255,21 @@ These are the next concrete slices that should be implemented first:
    - [x] add get_compiled_artifacts(session_key) to SessionRuntime so callers get a thread-safe compiled snapshot
    - [x] wire artifacts_provider closure in create_root_agent() via session_runtime + thread_id — every model call now injects live session spine context into the prompt
 
+6. `Unified Tool Inventory`
+   - [x] create `UnifiedToolInfo` dataclass — flat, source-agnostic view of any tool (direct or skill-backed)
+   - [x] create `UnifiedAssetInventory` — single discovery/build layer wrapping ToolStorage + SkillRegistry
+         - `list_all()` merges both sources; skill tools carry `layer="skill_tool"` + `source="skill:{name}"`
+         - `get(name)` / `find(query, layer, tags)` / `enabled_names()`
+         - `build_langchain_tools(names=None)` delegates to the right runtime (tool_creator vs skill_tool_resolver)
+   - [x] wire into `CapabilityRegistry.refresh_local_index()` so bus accepts `unified_inventory=` param
+   - [x] add `skill_registry` param to `DynamicToolInventory` so `list_dynamic_tools()` includes enabled skill tools
+
+7. `Agent Role Taxonomy`
+   - [x] add `AgentRole` enum (coordinator / worker / verifier / fork_child) to agent_role_policy.py
+   - [x] create `agent_role_policy.py` — per-role defaults for autonomy, tool access, approval thresholds
+   - [x] update `AgentDefinition` with `team_role: str = "worker"` (distinct from persona `role` field)
+   - [x] apply role policy in `build_agent_tool_inventory` (role_policy key) and `build_effective_profiles()`
+
 ## Success Criteria
 
 This Claude Code alignment is working when:

@@ -29,4 +29,10 @@ def __getattr__(name: str):
     if name == "TodoWriteTool":
         from core.assets.tools.todo_write import TodoWriteTool
         return TodoWriteTool
+    if name == "UnifiedToolInfo":
+        from core.assets.tools.unified_tool_info import UnifiedToolInfo
+        return UnifiedToolInfo
+    if name == "UnifiedAssetInventory":
+        from core.assets.tools.unified_tool_inventory import UnifiedAssetInventory
+        return UnifiedAssetInventory
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
