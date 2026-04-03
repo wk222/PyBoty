@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from core.assets.apps.packaging import AppPackager
+from core.assets.apps.app_packager import AppPackager
 from core.assets.tools.tool_result_normalize import normalize_for_app_tool_proxy
 from core.systems.runtime import safe_resolve
 from web.dependencies import get_services

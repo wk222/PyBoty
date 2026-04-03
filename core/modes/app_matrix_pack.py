@@ -91,8 +91,8 @@ def _initialize_app_matrix_runtime(host: Any) -> None:
         host.app_matrix = None
         return
 
-    from core.assets.apps.orchestration import AppOrchestrationRegistry
-    from core.assets.apps.runtime import AppMatrixRuntime
+    from core.assets.apps.app_orchestration import AppOrchestrationRegistry
+    from core.assets.apps.app_matrix_runtime import AppMatrixRuntime
 
     orch_path = host.paths.workspace_data_dir / "app_orchestration.json"
     registry = AppOrchestrationRegistry(storage_path=str(orch_path))
@@ -136,7 +136,7 @@ def _plan_app_matrix_topology_impl(
     goal_description: str,
     context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    from core.assets.apps.planning import AppMatrixPlanner, fallback_app_matrix_plan
+    from core.assets.apps.app_matrix_planner import AppMatrixPlanner, fallback_app_matrix_plan
 
     app_inventory: list[Any] = []
     if host.app_matrix is not None:

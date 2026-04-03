@@ -7,11 +7,11 @@ from typing import Any
 
 from langchain.tools import BaseTool
 
-from core.plugin_manifest import PluginRegistry
+from core.systems.integration.plugin_manifest import PluginRegistry
 from core.systems.governance.agent_control import AgentControlPolicy
 from core.systems.governance.approval_queue import ApprovalQueue
 from core.systems.governance.tool_policy_pipeline import build_default_tool_policy_pipeline
-from core.tool_control_runtime import ToolControlRuntime
+from core.systems.governance.tool_control_runtime import ToolControlRuntime
 
 from .tool_call_runtime import ToolCallRuntime
 from .tool_creator import get_dynamic_tools

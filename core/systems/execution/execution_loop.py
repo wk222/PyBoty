@@ -35,7 +35,7 @@ class ExecCodeTool(BaseTool):
 
     def _run(self, code: str, language: str = "python", timeout: int = 15, cwd: str = "") -> str:
         if self.sandbox_backend is not None and language == "python":
-            from core.backend_protocol import SandboxBackendProtocol
+            from core.systems.runtime.backend_protocol import SandboxBackendProtocol
 
             if isinstance(self.sandbox_backend, SandboxBackendProtocol):
                 result = self.sandbox_backend.run_python(code, timeout=timeout)

@@ -4,7 +4,7 @@ Enables LLMs to produce responses conforming to Pydantic schemas.
 Works with any BaseChatModel that supports .with_structured_output().
 
 Usage:
-    from core.structured_output import invoke_structured, AnalysisResult
+    from core.systems.runtime.structured_output import invoke_structured, AnalysisResult
 
     class AnalysisResult(BaseModel):
         summary: str

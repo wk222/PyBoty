@@ -1,4 +1,4 @@
-"""Tests for core.structured_output — Pydantic schema response parsing."""
+"""Tests for core.systems.runtime.structured_output — Pydantic schema response parsing."""
 
 from __future__ import annotations
 

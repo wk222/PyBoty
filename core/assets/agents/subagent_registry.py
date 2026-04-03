@@ -8,7 +8,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from core.event_bus import Event, EventType, event_bus
+from core.systems.runtime.event_bus import Event, EventType, event_bus
 
 ACTIVE_SUBAGENT_STATUSES = frozenset({"running", "waiting_approval"})
 TERMINAL_SUBAGENT_STATUSES = frozenset({"completed", "failed", "timed_out", "aborted"})

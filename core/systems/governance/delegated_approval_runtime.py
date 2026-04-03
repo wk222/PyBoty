@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from core.delegation_payload import normalize_delegation_payload
+from core.assets.agents.delegation_payload import normalize_delegation_payload
 
 from .approval_queue import ApprovalQueue
 

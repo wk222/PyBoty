@@ -25,7 +25,7 @@ from enum import Enum
 from typing import Any
 
 from core.systems.knowledge.query_expansion import ContextCompactor, QueryExpansionEngine
-from core.vector_store import Document, SearchResult, VectorStoreBackend
+from core.systems.knowledge.vector_store import Document, SearchResult, VectorStoreBackend
 
 from .memory_manager import MemoryManager
 from .memory_scoring import composite_score, encode_memory, recency_score

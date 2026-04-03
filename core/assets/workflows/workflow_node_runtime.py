@@ -13,8 +13,8 @@ from typing import Any
 
 from core.systems.governance import ApprovalQueue
 from core.systems.runtime import ProjectPaths
-from core.workflow_models import FlowNode, NodeStatus, NodeType, WorkflowDef, WorkflowStatus
-from core.workflow_nodes_extended import (
+from core.assets.workflows.workflow_models import FlowNode, NodeStatus, NodeType, WorkflowDef, WorkflowStatus
+from core.assets.workflows.workflow_nodes_extended import (
     run_database_query,
     run_file_read,
     run_file_write,
@@ -25,8 +25,8 @@ from core.workflow_nodes_extended import (
     run_question_classifier,
     run_variable_assigner,
 )
-from core.workflow_pause_state import extract_waiting_approval_ids, primary_waiting_approval_id
-from core.workflow_plugin import get_plugin
+from core.assets.workflows.workflow_pause_state import extract_waiting_approval_ids, primary_waiting_approval_id
+from core.assets.workflows.workflow_plugin import get_plugin
 
 from .node_operator import NodeOperator
 from .workflow_exceptions import WorkflowApprovalPause, WorkflowSignalPause, WorkflowTimerPause

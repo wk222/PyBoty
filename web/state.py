@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Any
 
 from agent import create_admin_agent, create_app_matrix_agent, create_tool_creator_agent
-from core.assets.apps.manager import AppManager
-from core.assets.apps.orchestration import AppOrchestrationRegistry
-from core.assets.apps.runtime import AppMatrixRuntime
+from core.assets.apps.app_manager import AppManager
+from core.assets.apps.app_orchestration import AppOrchestrationRegistry
+from core.assets.apps.app_matrix_runtime import AppMatrixRuntime
 from core.assets.skills import SkillMarketplace, SkillRegistry
 from core.assets.workflows.scheduling import TaskQueue, TaskScheduler
 from core.modes import resolve_mode_profile

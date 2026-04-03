@@ -22,7 +22,7 @@ def _fix_broken_regex_literals(js: str, js_path: Path) -> tuple[str, bool]:
 
     Returns the (possibly fixed) JS content and whether a fix was applied.
     """
-    from core.tool_arg_repair import _repair_js_regex
+    from core.assets.tools.tool_arg_repair import _repair_js_regex
 
     fixed = _repair_js_regex(js)
     if fixed != js:

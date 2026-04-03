@@ -33,7 +33,7 @@ except ImportError:
         return decorator
 
 
-from core.plugin_manifest import PluginRegistry
+from core.systems.integration.plugin_manifest import PluginRegistry
 from core.systems.governance.agent_control import AgentControlPolicy
 from core.systems.governance.approval_queue import ApprovalQueue
 

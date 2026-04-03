@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-from core.path_utils import safe_resolve
+from core.systems.runtime.path_utils import safe_resolve
 
 
 @dataclass(frozen=True)

@@ -5,15 +5,21 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from core.systems.memory.memory_taxonomy import (
+    ALL_MEMORY_TYPES,
+    SESSION_MEMORY_TYPE,
+    _DURABLE_TYPES,
+    default_layer_for_type,
+    validate_layer_for_type,
+)
+
 _ABSOLUTE_DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 _DERIVABLE_FACT_RE = re.compile(
     r"(`[^`]+`|\.py\b|\.md\b|repo\b|repository\b|codebase\b|function\b|class\b|module\b|workflow file\b)",
     re.IGNORECASE,
 )
 
-SESSION_MEMORY_TYPE = "session_note"
-_DURABLE_TYPES = {"user", "feedback", "project", "reference"}
-_ALLOWED_TYPES = {SESSION_MEMORY_TYPE, *_DURABLE_TYPES}
+_ALLOWED_TYPES = ALL_MEMORY_TYPES
 
 
 @dataclass(frozen=True)
@@ -88,17 +94,22 @@ def validate_session_memory(
 def typed_memory_entry_payload(
     decision: SessionMemoryDecision,
     *,
-    layer: str,
+    layer: str = "",
     source: str = "session_runtime",
 ) -> dict[str, object]:
+    resolved_layer = str(layer).strip() or default_layer_for_type(decision.memory_type)
+    layer_error = validate_layer_for_type(decision.memory_type, resolved_layer)
+    warnings = list(decision.warnings)
+    if layer_error:
+        warnings.append(f"layer mismatch: {layer_error}")
     return {
         "memory_type": decision.memory_type,
         "durable": decision.durable,
         "note": decision.note,
         "occurred_on": decision.occurred_on,
         "verified": decision.verified,
-        "warnings": list(decision.warnings),
-        "layer": str(layer).strip() or "session",
+        "warnings": warnings,
+        "layer": resolved_layer,
         "source": str(source).strip() or "session_runtime",
     }
 

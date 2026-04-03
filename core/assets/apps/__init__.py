@@ -1,18 +1,18 @@
 """Public asset entrypoints for app-related capabilities."""
 
-from core.assets.apps.creation import get_app_creator_tools, set_app_manager
-from core.assets.apps.manager import AppDefinition, AppManager
-from core.assets.apps.orchestration import AppOrchestrationRegistry, NodeStatus, NodeType, OrchestrationNode
-from core.assets.apps.packaging import AppPackager
-from core.assets.apps.planning import (
+from core.assets.apps.app_creator import get_app_creator_tools, set_app_manager
+from core.assets.apps.app_manager import AppDefinition, AppManager
+from core.assets.apps.app_orchestration import AppOrchestrationRegistry, NodeStatus, NodeType, OrchestrationNode
+from core.assets.apps.app_packager import AppPackager
+from core.assets.apps.app_matrix_planner import (
     AppMatrixBindingProposal,
     AppMatrixPipelineProposal,
     AppMatrixPlanner,
     AppMatrixTopologyPlan,
     fallback_app_matrix_plan,
 )
-from core.assets.apps.runtime import AppMatrixRuntime
-from core.assets.apps.verification import (
+from core.assets.apps.app_matrix_runtime import AppMatrixRuntime
+from core.assets.apps.app_verifier import (
     ReadAppFileTool,
     VerifyAppTool,
     get_app_verifier_tools,

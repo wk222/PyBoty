@@ -9,7 +9,7 @@ from typing import Any
 from langchain_core.messages import ToolMessage
 from langgraph.types import interrupt
 
-from core.tool_middleware_observability import ToolMiddlewareObservability
+from core.assets.tools.tool_middleware_observability import ToolMiddlewareObservability
 
 from .agent_control import AgentControlPolicy, ToolControlDecision, ToolRiskLevel
 from .tool_policy_pipeline import ToolPolicyContext, ToolPolicyPipeline, build_default_tool_policy_pipeline

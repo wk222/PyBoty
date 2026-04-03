@@ -89,7 +89,7 @@ class LCToolEvictionMiddleware(AgentMiddleware if _HAS_LC else object):  # type:
         content = result.content
         if not isinstance(content, str) or len(content) <= self.max_output_chars:
             return result
-        from core.path_utils import sanitize_tool_call_id
+        from core.systems.runtime.path_utils import sanitize_tool_call_id
 
         tool_call_id = getattr(result, "tool_call_id", "") or ""
         safe_id = sanitize_tool_call_id(tool_call_id) if tool_call_id else ""

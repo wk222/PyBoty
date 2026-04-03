@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from core.delegated_approval_runtime import DelegatedApprovalResolutionRuntime
+from core.systems.governance.delegated_approval_runtime import DelegatedApprovalResolutionRuntime
 from core.systems.governance.approval_queue import ApprovalQueue
 
 from .workflow_exceptions import WorkflowApprovalPause

@@ -8,7 +8,7 @@ from typing import Any
 from langchain_core.messages import ToolMessage
 from langgraph.types import interrupt
 
-from core.delegated_approval_runtime import DelegatedApprovalResolutionRuntime
+from core.systems.governance.delegated_approval_runtime import DelegatedApprovalResolutionRuntime
 from core.systems.governance.approval_queue import ApprovalQueue
 
 

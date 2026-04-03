@@ -14,7 +14,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from core.event_bus import Event, EventType, event_bus
+from core.systems.runtime.event_bus import Event, EventType, event_bus
 
 from .speaker_selection import (
     ChatMessage,

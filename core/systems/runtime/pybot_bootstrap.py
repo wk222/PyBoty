@@ -268,7 +268,7 @@ def build_runtime(
             from core.document_pipeline import ChunkConfig, DocumentPipeline
             from core.embedding_resolver import resolve_embeddings
             from core.knowledge_tools import get_knowledge_tools
-            from core.vector_store import create_vector_store
+            from core.systems.knowledge.vector_store import create_vector_store
 
             persist_dir = rag_cfg.get("persist_dir") or str(paths.workspace_dir / "vector_store")
             embedding_spec = rag_cfg.get("embedding_model")

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.subagent_sandbox import resolve_sandbox_adapter
+from core.systems.governance.subagent_sandbox import resolve_sandbox_adapter
 from core.systems.governance.agent_control import (
     AGENT_DELEGATION_TOOLS,
     AGENT_MUTATION_TOOLS,

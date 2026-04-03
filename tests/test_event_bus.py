@@ -1,4 +1,4 @@
-"""Tests for core.event_bus."""
+"""Tests for core.systems.runtime.event_bus."""
 
 from __future__ import annotations
 

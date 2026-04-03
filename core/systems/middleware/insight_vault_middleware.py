@@ -127,7 +127,7 @@ class InsightVaultMiddleware(AgentMiddleware if _HAS_LC else object):  # type: i
         raw_text = trace.to_document_text()
         stored_text = self._distill_experience(raw_text) or raw_text
 
-        from core.vector_store import Document
+        from core.systems.knowledge.vector_store import Document
 
         doc = Document(
             page_content=stored_text,

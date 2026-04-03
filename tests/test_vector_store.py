@@ -1,4 +1,4 @@
-"""Tests for core.vector_store — InMemoryVectorStore."""
+"""Tests for core.systems.knowledge.vector_store — InMemoryVectorStore."""
 
 from __future__ import annotations
 

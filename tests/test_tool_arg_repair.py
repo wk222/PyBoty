@@ -1,4 +1,4 @@
-"""Unit tests for core.tool_arg_repair — type coercion, JS regex repair, code content repair."""
+"""Unit tests for core.assets.tools.tool_arg_repair — type coercion, JS regex repair, code content repair."""
 
 from __future__ import annotations
 

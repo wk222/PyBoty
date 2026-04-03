@@ -42,8 +42,8 @@ def test_system_model_exposes_canonical_layers():
 
 def test_asset_packages_expose_apps_and_workflows_entrypoints():
     from core.assets.agents import AgentStorage
-    from core.assets.apps.manager import AppManager
-    from core.assets.apps.runtime import AppMatrixRuntime
+    from core.assets.apps.app_manager import AppManager
+    from core.assets.apps.app_matrix_runtime import AppMatrixRuntime
     from core.assets.tools import ToolStorage
     from core.assets.workflows.engine import PyFlowEngine
     from core.assets.workflows.execution import WorkflowExecutionRuntime

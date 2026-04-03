@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from core.assets.apps.manager import AppManager
-from core.assets.apps.orchestration import AppOrchestrationRegistry, NodeType
-from core.assets.apps.runtime import AppMatrixRuntime
+from core.assets.apps.app_manager import AppManager
+from core.assets.apps.app_orchestration import AppOrchestrationRegistry, NodeType
+from core.assets.apps.app_matrix_runtime import AppMatrixRuntime
 
 
 def test_app_matrix_runtime_syncs_apps_into_registry(temp_paths):

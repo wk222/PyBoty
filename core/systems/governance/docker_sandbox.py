@@ -15,7 +15,7 @@ import os
 import tarfile
 from typing import Any
 
-from core.backend_protocol import (
+from core.systems.runtime.backend_protocol import (
     EditResult,
     ExecResult,
     FileInfo,

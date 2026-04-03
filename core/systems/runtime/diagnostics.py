@@ -18,7 +18,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
-from core.event_bus import Event, EventBus, EventType
+from core.systems.runtime.event_bus import Event, EventBus, EventType
 
 logger = logging.getLogger(__name__)
 

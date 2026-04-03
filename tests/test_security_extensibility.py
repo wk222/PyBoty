@@ -500,7 +500,7 @@ class TestPluginRegistry:
 
 class TestPluginDiscovery:
     def test_discover_plugins(self, tmp_path):
-        import core.plugin_manifest as pm
+        import core.systems.integration.plugin_manifest as pm
 
         plugin_dir = tmp_path / "my_plugin"
         plugin_dir.mkdir()
@@ -517,7 +517,7 @@ class TestPluginDiscovery:
             pm._global_registry = old
 
     def test_discover_empty_dir(self, tmp_path):
-        import core.plugin_manifest as pm
+        import core.systems.integration.plugin_manifest as pm
 
         old = pm._global_registry
         pm._global_registry = pm.PluginRegistry()

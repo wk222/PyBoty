@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.assets.apps.manager import AppManager
+from core.assets.apps.app_manager import AppManager
 from core.assets.skills import SkillRegistry
 from core.assets.skills.skill_marketplace import SkillMarketplace
 from core.systems.bus.capability_bus import CapabilityBus, CapabilityLayer

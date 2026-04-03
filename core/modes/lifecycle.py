@@ -10,8 +10,8 @@ from __future__ import annotations
 from typing import Any
 
 from core.modes.profile import ModeProfile, resolve_mode_profile
-from core.prompts import get_root_mode_label
-from core.system_model import build_system_summary
+from core.systems.runtime.prompts import get_root_mode_label
+from core.modes.system_model import build_system_summary
 
 
 def should_attach_admin_runtime(
@@ -87,12 +87,7 @@ def print_startup_summary(host_agent: Any) -> None:
         f"{system_summary['product_concepts']} 产品概念 / "
         f"{system_summary['supporting_systems']} 横切系统"
     )
-    if host_agent.mode_profile.name == "admin":
-        print("   身份: 长期运行的总控智能体")
-    elif host_agent.mode_profile.name == "app_matrix":
-        print("   身份: APP 中央调度智能体")
-    else:
-        print("   身份: 通用协作助手")
+    print(f"   身份: {host_agent.mode_profile.identity_description}")
     if host_agent.admin is not None:
         print("   Admin Loop: 已挂载")
     if host_agent.orchestration_registry is not None:

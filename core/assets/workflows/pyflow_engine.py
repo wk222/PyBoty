@@ -9,8 +9,8 @@ from collections.abc import Callable
 from typing import Any
 
 from core.systems.governance import ApprovalQueue
-from core.workflow_engine_factory import build_workflow_engine_runtime_bundle, default_log_event
-from core.workflow_models import NodeStatus, WorkflowDef, WorkflowStatus
+from core.assets.workflows.workflow_engine_factory import build_workflow_engine_runtime_bundle, default_log_event
+from core.assets.workflows.workflow_models import NodeStatus, WorkflowDef, WorkflowStatus
 
 logger = logging.getLogger(__name__)
 

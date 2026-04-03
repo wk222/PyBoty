@@ -16,7 +16,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
-from core.event_bus import Event, EventType, event_bus
+from core.systems.runtime.event_bus import Event, EventType, event_bus
 
 logger = logging.getLogger(__name__)
 

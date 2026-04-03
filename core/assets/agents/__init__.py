@@ -11,25 +11,25 @@ from importlib import import_module
 from typing import Any
 
 _EXPORTS: dict[str, tuple[str, str]] = {
-    "AgentCapabilityProfile": (".governance", "AgentCapabilityProfile"),
-    "AgentMiddlewareProfile": (".governance", "AgentMiddlewareProfile"),
-    "build_subagent_governance_snapshot": (".governance", "build_subagent_governance_snapshot"),
-    "list_capability_presets": (".governance", "list_capability_presets"),
-    "list_middleware_presets": (".governance", "list_middleware_presets"),
-    "list_sandbox_adapters": (".governance", "list_sandbox_adapters"),
-    "AgentToolSyncError": (".inventory", "AgentToolSyncError"),
-    "build_agent_tool_inventory": (".inventory", "build_agent_tool_inventory"),
-    "sync_agent_tool": (".inventory", "sync_agent_tool"),
-    "create_sub_agent_instance": (".runtime", "create_sub_agent_instance"),
-    "create_agent_record": (".services", "create_agent_record"),
-    "delegate_agent_task": (".services", "delegate_agent_task"),
-    "invoke_persisted_agent": (".services", "invoke_persisted_agent"),
-    "parse_capabilities": (".services", "parse_capabilities"),
-    "resume_persisted_agent_approval": (".services", "resume_persisted_agent_approval"),
-    "validate_agent_name": (".services", "validate_agent_name"),
-    "AgentDefinition": (".storage", "AgentDefinition"),
-    "AgentModelConfig": (".storage", "AgentModelConfig"),
-    "AgentStorage": (".storage", "AgentStorage"),
+    "AgentCapabilityProfile": (".agent_capability_profile", "AgentCapabilityProfile"),
+    "AgentMiddlewareProfile": (".agent_middleware_profile", "AgentMiddlewareProfile"),
+    "build_subagent_governance_snapshot": (".subagent_governance", "build_subagent_governance_snapshot"),
+    "list_capability_presets": (".agent_capability_profile", "list_capability_presets"),
+    "list_middleware_presets": (".agent_middleware_profile", "list_middleware_presets"),
+    "list_sandbox_adapters": ("core.systems.governance.subagent_sandbox", "list_sandbox_adapters"),
+    "AgentToolSyncError": (".agent_tool_sync", "AgentToolSyncError"),
+    "build_agent_tool_inventory": (".agent_tool_inventory", "build_agent_tool_inventory"),
+    "sync_agent_tool": (".agent_tool_sync", "sync_agent_tool"),
+    "create_sub_agent_instance": (".subagent_runtime", "create_sub_agent_instance"),
+    "create_agent_record": (".agent_services", "create_agent_record"),
+    "delegate_agent_task": (".agent_services", "delegate_agent_task"),
+    "invoke_persisted_agent": (".agent_services", "invoke_persisted_agent"),
+    "parse_capabilities": (".agent_services", "parse_capabilities"),
+    "resume_persisted_agent_approval": (".agent_services", "resume_persisted_agent_approval"),
+    "validate_agent_name": (".agent_services", "validate_agent_name"),
+    "AgentDefinition": (".agent_storage", "AgentDefinition"),
+    "AgentModelConfig": (".agent_storage", "AgentModelConfig"),
+    "AgentStorage": (".agent_storage", "AgentStorage"),
     "SubagentConcurrencyLimitError": (".subagent_registry", "SubagentConcurrencyLimitError"),
     "SubagentDepthLimitError": (".subagent_registry", "SubagentDepthLimitError"),
     "SubagentRegistry": (".subagent_registry", "SubagentRegistry"),
@@ -45,7 +45,8 @@ def __getattr__(name: str) -> Any:
         module_name, attr_name = _EXPORTS[name]
     except KeyError as exc:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
-    module = import_module(module_name, __name__)
+    anchor = __name__ if module_name.startswith(".") else None
+    module = import_module(module_name, anchor)
     return getattr(module, attr_name)
 
 

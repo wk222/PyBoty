@@ -5,7 +5,7 @@ from pathlib import Path
 
 from fastapi.middleware.cors import CORSMiddleware
 
-from core.assets.apps.manager import AppManager
+from core.assets.apps.app_manager import AppManager
 from core.systems.integration.channel_manager import ChannelManager
 from core.assets.skills.skill_backends import InMemorySkillBackend
 from core.assets.skills.skill_http_backend import HttpSkillBackend

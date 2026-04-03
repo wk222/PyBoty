@@ -1,4 +1,4 @@
-"""Tests for core.task_definition — TaskDefinition and TaskPipeline."""
+"""Tests for core.assets.workflows.task_definition — TaskDefinition and TaskPipeline."""
 
 from __future__ import annotations
 

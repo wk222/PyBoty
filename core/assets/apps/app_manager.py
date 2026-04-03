@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from core.systems.runtime import ProjectPaths, safe_resolve
-from core.tool_arg_repair import _repair_js_regex as sanitize_js_content
+from core.assets.tools.tool_arg_repair import _repair_js_regex as sanitize_js_content
 
 from .app_templates import APP_TEMPLATES
 

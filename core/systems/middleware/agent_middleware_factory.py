@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.agent_capability_profile import AgentCapabilityProfile
-from core.agent_middleware_profile import AgentMiddlewareProfile
-from core.lc_bus_middleware import LCBusMiddleware
-from core.patch_tool_calls import PatchToolCallsMiddleware
-from core.prompts import build_runtime_prompt_sections
-from core.subagent_sandbox import SubagentSandbox
+from core.assets.agents.agent_capability_profile import AgentCapabilityProfile
+from core.assets.agents.agent_middleware_profile import AgentMiddlewareProfile
+from core.systems.bus.lc_bus_middleware import LCBusMiddleware
+from core.systems.runtime.patch_tool_calls import PatchToolCallsMiddleware
+from core.systems.runtime.prompts import build_runtime_prompt_sections
+from core.systems.governance.subagent_sandbox import SubagentSandbox
 from core.systems.governance.agent_control import AgentControlPolicy
-from core.tool_arg_repair_middleware import ToolArgRepairMiddleware
-from core.tool_eviction_middleware import LCToolEvictionMiddleware
-from core.tool_middleware import DynamicToolMiddleware
+from core.assets.tools.tool_arg_repair_middleware import ToolArgRepairMiddleware
+from core.assets.tools.tool_eviction_middleware import LCToolEvictionMiddleware
+from core.assets.tools.tool_middleware import DynamicToolMiddleware
 
 from .agent_prompt_middleware import PromptSectionMiddleware
 from .insight_vault_middleware import InsightVaultConfig, InsightVaultMiddleware

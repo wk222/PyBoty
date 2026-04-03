@@ -503,7 +503,7 @@ class TaskScheduler:
             task.name, task.consecutive_failures, task.failure_alert_threshold,
         )
         try:
-            from core.event_bus import Event, EventType, event_bus
+            from core.systems.runtime.event_bus import Event, EventType, event_bus
             event_bus.emit(Event(
                 type=EventType.ERROR,
                 payload={
@@ -540,7 +540,7 @@ class TaskScheduler:
                 logger.info("[Scheduler] Delivered result to webhook for task %s", task.name)
 
             elif delivery.mode == "event":
-                from core.event_bus import Event, EventType, event_bus
+                from core.systems.runtime.event_bus import Event, EventType, event_bus
                 event_bus.emit(Event(
                     type=EventType.SCHEDULE_RUN,
                     payload={
@@ -566,7 +566,7 @@ class TaskScheduler:
         if delivery is None or not delivery.failure_destination:
             return
         try:
-            from core.event_bus import Event, EventType, event_bus
+            from core.systems.runtime.event_bus import Event, EventType, event_bus
             event_bus.emit(Event(
                 type=EventType.ERROR,
                 payload={

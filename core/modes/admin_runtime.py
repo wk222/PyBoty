@@ -10,11 +10,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from core.admin_memory import AdminMemoryManager, create_llm_summarizer
-from core.persistent_agent_runner import PersistentAgentRunner, PersistentTask, PersistentTaskStatus, PersistentTaskStep
+from core.systems.memory.admin_memory import AdminMemoryManager, create_llm_summarizer
+from core.assets.agents.persistent_agent_runner import PersistentAgentRunner, PersistentTask, PersistentTaskStatus, PersistentTaskStep
 from core.systems.governance.approval_queue import ApprovalQueue
 from core.systems.runtime.event_bus import Event, EventType, event_bus
-from core.task_queue import TaskQueue
+from core.assets.workflows.task_queue import TaskQueue
 
 from .admin_planner import AdminPlan, AdminPlanner, fallback_admin_plan
 from .capability_synthesis import (

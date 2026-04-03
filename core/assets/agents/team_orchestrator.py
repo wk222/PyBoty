@@ -23,7 +23,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from core.task_definition import TaskDefinition, TaskPipeline, TaskStatus
+from core.assets.workflows.task_definition import TaskDefinition, TaskPipeline, TaskStatus
 
 from .agent_storage import AgentDefinition
 

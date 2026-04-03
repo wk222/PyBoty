@@ -18,7 +18,7 @@ from typing import Any
 from langchain.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.event_bus import Event, EventType, event_bus
+from core.systems.runtime.event_bus import Event, EventType, event_bus
 
 from .speaker_selection import (
     ChatMessage,

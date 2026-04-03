@@ -1,4 +1,4 @@
-"""Tests for core.task_queue — async task queue and checkpointer factory."""
+"""Tests for core.assets.workflows.task_queue — async task queue and checkpointer factory."""
 
 from __future__ import annotations
 

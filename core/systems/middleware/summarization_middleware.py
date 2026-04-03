@@ -38,7 +38,7 @@ except ImportError:
     ModelResponse = object  # type: ignore[assignment,misc]
     BaseTool = object  # type: ignore[assignment,misc]
 
-from core.context_manager import count_tokens_approx
+from core.systems.context.context_manager import count_tokens_approx
 
 from .agent_prompt_middleware import append_to_system_message
 
