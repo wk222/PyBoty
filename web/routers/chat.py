@@ -109,6 +109,7 @@ async def chat_stream(
     )
 
     agent = services.agents.get_or_create(thread_id)
+    session_key = services.session_runtime.session_key_for_thread(thread_id) or ""
 
     def event_generator():
         final_content = None
@@ -117,6 +118,8 @@ async def chat_stream(
             if evt_type in {"step", "schedule", "done", "error"}:
                 if evt_type in {"done", "error"}:
                     final_content = event.get("content", "")
+                if evt_type == "done" and session_key:
+                    event = {**event, "session_key": session_key}
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
         if final_content:

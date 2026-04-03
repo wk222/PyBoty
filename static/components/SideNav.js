@@ -20,6 +20,24 @@ const PRIMARY_LINKS = [
   },
 ];
 
+const GOVERNANCE_LINKS = [
+  {
+    key: 'schedules',
+    to: '/schedules',
+    icon: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  },
+  {
+    key: 'debug',
+    to: '/debug',
+    icon: '<path d="M12 20h.01"/><path d="M8.56 15.69a5 5 0 0 1 6.88 0"/><path d="M5.12 12.25a9 9 0 0 1 13.76 0"/><path d="M1.67 8.81a13 13 0 0 1 20.66 0"/>',
+  },
+  {
+    key: 'settings',
+    to: '/settings',
+    icon: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+  },
+];
+
 const ECOSYSTEM_LINKS = [
   {
     key: 'apps',
@@ -51,34 +69,10 @@ const ECOSYSTEM_LINKS = [
     to: '/hub',
     icon: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>',
   },
-];
-
-const OPERATIONS_LINKS = [
-  {
-    key: 'dashboard',
-    to: '/',
-    exact: true,
-    icon: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
-  },
-  {
-    key: 'schedules',
-    to: '/schedules',
-    icon: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
-  },
   {
     key: 'system',
     to: '/system',
     icon: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/>',
-  },
-  {
-    key: 'debug',
-    to: '/debug',
-    icon: '<path d="M12 20h.01"/><path d="M8.56 15.69a5 5 0 0 1 6.88 0"/><path d="M5.12 12.25a9 9 0 0 1 13.76 0"/><path d="M1.67 8.81a13 13 0 0 1 20.66 0"/>',
-  },
-  {
-    key: 'settings',
-    to: '/settings',
-    icon: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
   },
 ];
 
@@ -91,28 +85,27 @@ export default {
       return t(`nav.${key}`);
     }
 
+    const governanceOpen = computed(() =>
+      ['/governance', ...GOVERNANCE_LINKS.map((item) => item.to)].some((path) =>
+        path === '/' ? route.path === path : route.path.startsWith(path),
+      ),
+    );
     const ecosystemOpen = computed(() =>
       ['/ecosystem', ...ECOSYSTEM_LINKS.map((item) => item.to)].some((path) => route.path.startsWith(path)),
-    );
-    const operationsOpen = computed(() =>
-      OPERATIONS_LINKS.some((item) => (item.exact ? route.path === item.to : route.path.startsWith(item.to))),
     );
 
     return {
       n,
       primaryLinks: PRIMARY_LINKS,
+      governanceLinks: GOVERNANCE_LINKS,
       ecosystemLinks: ECOSYSTEM_LINKS,
-      operationsLinks: OPERATIONS_LINKS,
+      governanceOpen,
       ecosystemOpen,
-      operationsOpen,
     };
   },
   template: `
     <nav class="mx-sidenav">
-      <div style="padding:8px 0 10px;">
-        <div style="font-size:11px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted);padding:0 14px 8px;">
-          {{ n('focus') }}
-        </div>
+      <div style="padding:8px 0 4px;">
         <router-link
           v-for="link in primaryLinks"
           :key="link.key"
@@ -126,12 +119,12 @@ export default {
         </router-link>
       </div>
 
-      <details class="mx-nav-group" :open="ecosystemOpen" style="padding-top:6px;">
+      <details class="mx-nav-group" :open="governanceOpen" style="padding-top:6px;">
         <summary class="mx-nav-group-title" style="cursor:pointer;list-style:none;font-size:11px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted);padding:6px 14px 8px;">
-          {{ n('ecosystemAssets') }}
+          {{ n('governance') }}
         </summary>
         <router-link
-          v-for="link in ecosystemLinks"
+          v-for="link in governanceLinks"
           :key="link.key"
           :to="link.to"
           class="mx-nav-item mx-nav-item--nested"
@@ -144,17 +137,16 @@ export default {
         </router-link>
       </details>
 
-      <details class="mx-nav-group" :open="operationsOpen" style="padding-top:8px;">
+      <details class="mx-nav-group" :open="ecosystemOpen" style="padding-top:6px;">
         <summary class="mx-nav-group-title" style="cursor:pointer;list-style:none;font-size:11px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted);padding:6px 14px 8px;">
-          {{ n('operations') }}
+          {{ n('ecosystemAssets') }}
         </summary>
         <router-link
-          v-for="link in operationsLinks"
+          v-for="link in ecosystemLinks"
           :key="link.key"
           :to="link.to"
           class="mx-nav-item mx-nav-item--nested"
           style="padding-left:24px;"
-          :exact-active-class="link.exact ? 'active' : undefined"
           active-class="active"
           :title="n(link.key)"
         >

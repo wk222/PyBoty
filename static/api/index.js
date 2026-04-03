@@ -265,4 +265,13 @@ export const API = {
     method: 'POST'
   }),
   listGatewayChannelRoutes: () => request('/api/gateway/channel-routes'),
+
+  listSessions: () => request('/api/sessions'),
+  getSessionStatus: (sessionKey, modelName = '') => {
+    const qs = modelName ? `?model_name=${encodeURIComponent(modelName)}` : '';
+    return request(`/api/sessions/${encodeURIComponent(sessionKey)}/status${qs}`);
+  },
+  switchSessionMode: (sessionKey, mode) => request(`/api/sessions/${encodeURIComponent(sessionKey)}/mode`, {
+    method: 'POST', body: JSON.stringify({ mode }),
+  }),
 };

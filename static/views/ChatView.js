@@ -1,4 +1,4 @@
-import { ref, reactive, onMounted, nextTick, watch } from 'vue';
+import { ref, reactive, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { API } from '/static/api/index.js';
 import { toast } from '/static/stores/global.js';
 import { t } from '/static/i18n.js';
@@ -39,11 +39,27 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + s[i];
 }
 
+const MODE_META = {
+  assistant: { label: 'Assistant', color: '#3b82f6' },
+  app_matrix: { label: 'App Matrix', color: '#0891b2' },
+  admin: { label: 'Admin', color: '#d97706' },
+};
+
+const BUDGET_META = {
+  low: { color: '#22c55e', pulse: false },
+  moderate: { color: '#eab308', pulse: false },
+  high: { color: '#f97316', pulse: false },
+  critical: { color: '#ef4444', pulse: true },
+};
+
 export default {
   name: 'ChatView',
   setup() {
     const conversations = ref([]);
     const currentThreadId = ref(null);
+    const currentSessionKey = ref('');
+    const sessionStatus = ref(null);
+    const modeSwitcherOpen = ref(false);
     const messages = ref([]);
     const inputText = ref('');
     const isSending = ref(false);
@@ -57,6 +73,7 @@ export default {
     const messagesEl = ref(null);
     const inputEl = ref(null);
     const fileInput = ref(null);
+    let statusPollTimer = null;
 
     const filteredConversations = () => {
       if (!convSearch.value.trim()) return conversations.value;
@@ -86,6 +103,8 @@ export default {
         await API.deleteConversation(id);
         if (currentThreadId.value === id) {
           currentThreadId.value = null;
+          currentSessionKey.value = '';
+          sessionStatus.value = null;
           messages.value = [];
         }
         await loadConversations();
@@ -94,6 +113,8 @@ export default {
 
     async function switchConversation(id) {
       currentThreadId.value = id;
+      currentSessionKey.value = '';
+      sessionStatus.value = null;
       messages.value = [];
       steps.value = [];
       showSteps.value = false;
@@ -108,7 +129,47 @@ export default {
         await nextTick();
         scrollToBottom();
       } catch (e) { console.error(e); }
+
+      await resolveSessionKey(id);
       if (inputEl.value) inputEl.value.focus();
+    }
+
+    async function resolveSessionKey(threadId) {
+      try {
+        const data = await API.listSessions();
+        const sessions = data.sessions || [];
+        const match = sessions.find(s => s.thread_id === threadId);
+        if (match && match.session_key) {
+          currentSessionKey.value = match.session_key;
+          await loadSessionStatus();
+        }
+      } catch (e) { /* silent */ }
+    }
+
+    async function loadSessionStatus() {
+      if (!currentSessionKey.value) return;
+      try {
+        const data = await API.getSessionStatus(currentSessionKey.value);
+        sessionStatus.value = data;
+      } catch (e) { /* silent */ }
+    }
+
+    async function switchMode(mode) {
+      if (!currentSessionKey.value) return;
+      modeSwitcherOpen.value = false;
+      try {
+        await API.switchSessionMode(currentSessionKey.value, mode);
+        await loadSessionStatus();
+        toast(`Mode: ${MODE_META[mode]?.label || mode}`, 'success');
+      } catch (e) {
+        toast('Mode switch failed: ' + e.message, 'error');
+      }
+    }
+
+    function closeModeSwitcher(e) {
+      if (!e.target.closest('.session-mode-pill')) {
+        modeSwitcherOpen.value = false;
+      }
     }
 
     async function sendMessage() {
@@ -168,6 +229,10 @@ export default {
                 if (conv && (conv.message_count || 0) === 0) {
                   conv.title = text.substring(0, 30) + (text.length > 30 ? '...' : '');
                 }
+                if (evt.session_key && !currentSessionKey.value) {
+                  currentSessionKey.value = evt.session_key;
+                }
+                await loadSessionStatus();
               } else if (evt.type === 'error') {
                 isStreaming.value = false;
                 messages.value.push({
@@ -222,6 +287,11 @@ export default {
       if (fileInput.value) fileInput.value.value = '';
     }
 
+    const currentMode = () => sessionStatus.value?.mode || 'assistant';
+    const currentBudgetLevel = () => sessionStatus.value?.budget?.level || 'low';
+    const modeMeta = () => MODE_META[currentMode()] || MODE_META.assistant;
+    const budgetMeta = () => BUDGET_META[currentBudgetLevel()] || BUDGET_META.low;
+
     onMounted(async () => {
       await loadConversations();
       if (conversations.value.length > 0) {
@@ -229,15 +299,26 @@ export default {
       } else {
         await createConversation();
       }
+      statusPollTimer = setInterval(loadSessionStatus, 30_000);
+      document.addEventListener('click', closeModeSwitcher);
+    });
+
+    onUnmounted(() => {
+      if (statusPollTimer) clearInterval(statusPollTimer);
+      document.removeEventListener('click', closeModeSwitcher);
     });
 
     return {
-      conversations, currentThreadId, messages, inputText, isSending,
+      conversations, currentThreadId, currentSessionKey, sessionStatus,
+      modeSwitcherOpen, messages, inputText, isSending,
       steps, showSteps, stepsExpanded, stepsFinished, streamingContent, isStreaming,
       convSearch, messagesEl, inputEl, fileInput,
       filteredConversations, loadConversations, createConversation,
       deleteConversation, switchConversation, sendMessage, onInputKeydown,
-      handleFileUpload, formatTime, escapeHtml, formatBytes, t,
+      handleFileUpload, switchMode,
+      currentMode, currentBudgetLevel, modeMeta, budgetMeta,
+      MODE_META, BUDGET_META,
+      formatTime, escapeHtml, formatBytes, t,
     };
   },
   template: `
@@ -275,9 +356,81 @@ export default {
       <!-- Main Chat Area -->
       <main class="main">
         <div class="chat-header">
-          <div>
+          <div style="flex:1;min-width:0;">
             <div class="chat-title">{{ currentThreadId ? (conversations.find(c => c.thread_id === currentThreadId)?.title || currentThreadId) : 'Select or create a conversation' }}</div>
             <div class="chat-thread-id" v-if="currentThreadId">{{ currentThreadId }}</div>
+          </div>
+
+          <!-- Session Spine Bar -->
+          <div v-if="currentSessionKey" class="session-spine-bar" style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+
+            <!-- Budget indicator -->
+            <div :title="'Context: ' + currentBudgetLevel() + (sessionStatus?.budget ? ' (' + Math.round((sessionStatus.budget.utilization || 0) * 100) + '%)' : '')"
+                 style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);">
+              <span :style="{
+                display: 'inline-block',
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: budgetMeta().color,
+                animation: budgetMeta().pulse ? 'pulse 1.5s ease-in-out infinite' : 'none',
+                flexShrink: 0,
+              }"></span>
+              <span style="font-size:10px;letter-spacing:0.02em;">{{ currentBudgetLevel() }}</span>
+            </div>
+
+            <!-- Mode pill + switcher -->
+            <div class="session-mode-pill" style="position:relative;">
+              <button
+                @click.stop="modeSwitcherOpen = !modeSwitcherOpen"
+                :style="{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '3px 8px',
+                  borderRadius: '20px',
+                  border: '1px solid ' + modeMeta().color + '55',
+                  background: modeMeta().color + '18',
+                  color: modeMeta().color,
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  letterSpacing: '0.02em',
+                  whiteSpace: 'nowrap',
+                }"
+              >
+                <span :style="{ width: '6px', height: '6px', borderRadius: '50%', background: modeMeta().color, display: 'inline-block', flexShrink: 0 }"></span>
+                {{ modeMeta().label }}
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+
+              <div v-if="modeSwitcherOpen"
+                   style="position:absolute;top:calc(100% + 4px);right:0;min-width:140px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 4px 12px rgba(0,0,0,0.2);z-index:100;overflow:hidden;">
+                <button
+                  v-for="(meta, key) in MODE_META" :key="key"
+                  @click="switchMode(key)"
+                  :style="{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    width: '100%',
+                    padding: '8px 12px',
+                    background: currentMode() === key ? meta.color + '15' : 'transparent',
+                    border: 'none',
+                    color: currentMode() === key ? meta.color : 'var(--text-primary)',
+                    fontSize: '12px',
+                    fontWeight: currentMode() === key ? '600' : '400',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }"
+                >
+                  <span :style="{ width: '7px', height: '7px', borderRadius: '50%', background: meta.color, display: 'inline-block', flexShrink: 0 }"></span>
+                  {{ meta.label }}
+                  <span v-if="currentMode() === key" style="margin-left:auto;font-size:10px;">&#10003;</span>
+                </button>
+              </div>
+            </div>
+
           </div>
         </div>
 
