@@ -248,6 +248,13 @@ These are the next concrete slices that should be implemented first:
    - [x] establish compaction boundaries for resumed sessions
    - [x] fold tool-heavy transcript and file-view context into the same coordinator
 
+5. `Compiled Artifacts → Prompt Assembly`
+   - [x] add render_artifact_context() to session_artifacts.py — formats working_summary, context_notes, typed_memory, notebook summaries, file views, prompt_injection into prompt sections
+   - [x] add session_artifacts param to build_runtime_prompt_sections() in prompts.py
+   - [x] add artifacts_provider: Callable[[], dict | None] param to build_root_langchain_middleware() in agent_middleware_factory.py
+   - [x] add get_compiled_artifacts(session_key) to SessionRuntime so callers get a thread-safe compiled snapshot
+   - [x] wire artifacts_provider closure in create_root_agent() via session_runtime + thread_id — every model call now injects live session spine context into the prompt
+
 ## Success Criteria
 
 This Claude Code alignment is working when:

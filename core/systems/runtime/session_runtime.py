@@ -313,6 +313,14 @@ class SessionRuntime:
                 return None
             return self._kernel_unlocked(record.session_key).snapshot()
 
+    def get_compiled_artifacts(self, session_key: str) -> dict[str, Any] | None:
+        with self._lock:
+            record = self._sessions.get(str(session_key).strip())
+            if record is None:
+                return None
+            kernel = self._kernel_unlocked(record.session_key)
+        return compile_session_artifacts(record, kernel)
+
     def switch_mode(self, session_key: str, *, new_mode: str) -> dict[str, Any]:
         """Switch a session's active mode profile and record the transition."""
         _VALID_MODES = {"assistant", "app_matrix", "admin"}

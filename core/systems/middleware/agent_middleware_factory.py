@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from core.assets.agents.agent_capability_profile import AgentCapabilityProfile
@@ -35,6 +36,7 @@ def build_root_langchain_middleware(
     insight_vault_config: InsightVaultConfig | None = None,
     reasoning_frame_config: ReasoningFrameConfig | None = None,
     vector_store: Any | None = None,
+    artifacts_provider: Callable[[], dict | None] | None = None,
 ) -> list[Any]:
     """Assemble the root-agent LangChain middleware stack.
 
@@ -52,6 +54,7 @@ def build_root_langchain_middleware(
                 workspace_context=runtime.workspace.build_system_context(),
                 memory_context=runtime.memory.get_context_prompt(),
                 skill_extensions=runtime.skill_registry.get_active_prompt_extensions(progressive=True),
+                session_artifacts=artifacts_provider() if artifacts_provider is not None else None,
             ),
         ),
         InsightVaultMiddleware(

@@ -182,6 +182,7 @@ def build_runtime_prompt_sections(
     workspace_context: str = "",
     memory_context: str = "",
     skill_extensions: str = "",
+    session_artifacts: dict | None = None,
 ) -> str:
     """Build dynamic runtime context sections that should stay fresh per request."""
     parts = [
@@ -189,6 +190,12 @@ def build_runtime_prompt_sections(
         f"### 十三、已激活的技能\n{skill_extensions or '暂无额外技能扩展'}",
         memory_context,
     ]
+    if session_artifacts:
+        from core.systems.runtime.session_artifacts import render_artifact_context
+
+        artifact_ctx = render_artifact_context(session_artifacts)
+        if artifact_ctx:
+            parts.append(artifact_ctx)
     return "\n\n".join(part for part in parts if part)
 
 

@@ -532,12 +532,16 @@ def create_root_agent(
         thread_id=getattr(runtime, "_thread_id", "default"),
     )
     session_compaction_callback = None
+    artifacts_provider = None
     if getattr(runtime, "session_runtime", None) is not None:
+        _sr = runtime.session_runtime
+        _tid = str(getattr(runtime, "_thread_id", "default"))
+
         def _record_session_compaction(payload: dict[str, Any]) -> None:
-            runtime.session_runtime.record_external_compaction(
-                thread_id=str(payload.get("thread_id", getattr(runtime, "_thread_id", "default"))),
-                session_key=runtime.session_runtime.session_key_for_thread(
-                    str(payload.get("thread_id", getattr(runtime, "_thread_id", "default")))
+            _sr.record_external_compaction(
+                thread_id=str(payload.get("thread_id", _tid)),
+                session_key=_sr.session_key_for_thread(
+                    str(payload.get("thread_id", _tid))
                 ),
                 summary=str(payload.get("summary", "")),
                 source=str(payload.get("source", "middleware.summarization")),
@@ -549,6 +553,15 @@ def create_root_agent(
             )
 
         session_compaction_callback = _record_session_compaction
+
+        def _get_artifacts() -> dict[str, Any] | None:
+            sk = _sr.session_key_for_thread(_tid)
+            if not sk:
+                return None
+            return _sr.get_compiled_artifacts(sk)
+
+        artifacts_provider = _get_artifacts
+
     kwargs: dict[str, Any] = dict(
         model=runtime.llm,
         tools=assembly.all_tools,
@@ -559,6 +572,7 @@ def create_root_agent(
             and runtime.context_manager.config.summarize_callback,
             summarization_config=summ_config,
             session_compaction_callback=session_compaction_callback,
+            artifacts_provider=artifacts_provider,
         ),
         checkpointer=runtime.checkpointer,
     )
