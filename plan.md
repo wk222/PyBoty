@@ -236,15 +236,15 @@ These are the next concrete slices that should be implemented first:
    - [x] expose kernel / artifact / sidechain surfaces on top of the session ledger
 
 2. `Mode As Profile`
-   - make current mode/profile visible and switchable everywhere through the same session model
-   - reduce remaining mode-specific special cases in public surfaces
+   - [x] make current mode/profile visible and switchable everywhere through the same session model
+   - [x] reduce remaining mode-specific special cases in public surfaces (identity prompt + startup summary now driven by ModeProfile fields)
 
 3. `Memory Taxonomy`
-   - introduce explicit workspace/session/agent/admin memory descriptors
-   - stop treating all summaries as one class of memory
+   - [x] introduce explicit workspace/session/agent/admin memory descriptors (LAYER_DESCRIPTORS + type→layer matrix in memory_taxonomy.py)
+   - [x] stop treating all summaries as one class of memory (validate_layer_for_type, default_layer_for_type, session_memory_policy uses taxonomy)
 
 4. `Context Budget Manager`
-   - add cost accounting and micro-trim rules for expensive tool outputs
+   - [x] add cost accounting and micro-trim rules for expensive tool outputs (record_tool_output, apply_micro_trim, top_expensive_tools, pressure-aware _TRIM_CHARS_BY_PRESSURE)
    - [x] establish compaction boundaries for resumed sessions
    - [x] fold tool-heavy transcript and file-view context into the same coordinator
 

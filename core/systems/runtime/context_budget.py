@@ -32,6 +32,13 @@ PRESSURE_MODERATE = "moderate"
 PRESSURE_HIGH = "high"
 PRESSURE_CRITICAL = "critical"
 
+_TRIM_CHARS_BY_PRESSURE: dict[str, int] = {
+    PRESSURE_LOW: 4000,
+    PRESSURE_MODERATE: 1200,
+    PRESSURE_HIGH: 500,
+    PRESSURE_CRITICAL: 200,
+}
+
 
 @dataclass(frozen=True)
 class BudgetAssessment:
@@ -70,6 +77,8 @@ class TokenUsageRecord:
     recorded_at: float = field(default_factory=time.time)
     run_kind: str = "chat"
     label: str = ""
+    tool_name: str = ""
+    tool_output_chars: int = 0
 
 
 class ContextBudgetManager:
@@ -100,6 +109,7 @@ class ContextBudgetManager:
         self._usage_history: list[TokenUsageRecord] = []
         self._cumulative_input = 0
         self._cumulative_output = 0
+        self._tool_output_totals: dict[str, int] = {}
 
     @staticmethod
     def _resolve_limit(model_name: str) -> int:
@@ -119,18 +129,45 @@ class ContextBudgetManager:
         *,
         run_kind: str = "chat",
         label: str = "",
+        tool_name: str = "",
+        tool_output_chars: int = 0,
     ) -> None:
         record = TokenUsageRecord(
             input_tokens=max(0, int(input_tokens)),
             output_tokens=max(0, int(output_tokens)),
             run_kind=run_kind,
             label=label,
+            tool_name=tool_name,
+            tool_output_chars=tool_output_chars,
         )
         self._usage_history.append(record)
         if len(self._usage_history) > self._max_usage_history:
             self._usage_history = self._usage_history[-self._max_usage_history :]
         self._cumulative_input += record.input_tokens
         self._cumulative_output += record.output_tokens
+        if tool_name and tool_output_chars:
+            self._tool_output_totals[tool_name] = (
+                self._tool_output_totals.get(tool_name, 0) + tool_output_chars
+            )
+
+    def record_tool_output(
+        self,
+        tool_name: str,
+        output: str,
+        *,
+        label: str = "",
+    ) -> None:
+        """Record a tool output and accumulate its cost against the budget."""
+        output_chars = len(str(output or ""))
+        estimated_tokens = output_chars // 4
+        self.record_usage(
+            input_tokens=0,
+            output_tokens=estimated_tokens,
+            run_kind="tool",
+            label=label or tool_name,
+            tool_name=tool_name,
+            tool_output_chars=output_chars,
+        )
 
     def estimate_session_tokens(self, session_record: Any) -> int:
         """Rough token estimate from session state without calling LLM APIs."""
@@ -206,21 +243,70 @@ class ContextBudgetManager:
             notes=notes,
         )
 
-    def micro_trim_tool_output(self, output: str, *, max_chars: int = 800) -> str:
-        """Trim a tool output to fit within a sensible character budget."""
+    def micro_trim_tool_output(
+        self,
+        output: str,
+        *,
+        pressure_level: str = PRESSURE_LOW,
+        max_chars: int = 0,
+    ) -> tuple[str, int]:
+        """Trim a tool output to fit within a pressure-aware character budget.
+
+        Returns (trimmed_text, chars_removed).
+        """
+        budget = max_chars or _TRIM_CHARS_BY_PRESSURE.get(pressure_level, 1200)
         text = str(output or "").strip()
-        if len(text) <= max_chars:
-            return text
-        head = text[: max_chars // 2]
-        tail = text[-(max_chars // 4) :]
-        trimmed = len(text) - max_chars
-        return f"{head}\n… [{trimmed} chars trimmed] …\n{tail}"
+        if len(text) <= budget:
+            return text, 0
+        head = text[: budget // 2]
+        tail = text[-(budget // 4) :]
+        removed = len(text) - budget
+        return f"{head}\n… [{removed} chars trimmed] …\n{tail}", removed
+
+    def apply_micro_trim(
+        self,
+        tool_outputs: dict[str, str],
+        *,
+        assessment: BudgetAssessment | None = None,
+        session_record: Any = None,
+    ) -> tuple[dict[str, str], dict[str, int]]:
+        """Apply micro-trim rules to a map of tool outputs.
+
+        Returns (trimmed_outputs, {tool_name: chars_removed}).
+        Only trims if `assessment.should_micro_trim` is True.
+        """
+        if assessment is None:
+            assessment = self.assess(session_record)
+
+        if not assessment.should_micro_trim:
+            return dict(tool_outputs), {}
+
+        trimmed: dict[str, str] = {}
+        removed: dict[str, int] = {}
+        should_trim_tool = "tool_outputs" in assessment.trim_targets
+
+        for name, output in tool_outputs.items():
+            if should_trim_tool:
+                new_text, chars = self.micro_trim_tool_output(
+                    output, pressure_level=assessment.level
+                )
+                trimmed[name] = new_text
+                if chars:
+                    removed[name] = chars
+            else:
+                trimmed[name] = output
+
+        return trimmed, removed
+
+    def top_expensive_tools(self, *, top_n: int = 5) -> list[tuple[str, int]]:
+        """Return the top N tools by total output character cost, descending."""
+        return sorted(self._tool_output_totals.items(), key=lambda x: x[1], reverse=True)[:top_n]
 
     def usage_summary(self) -> dict[str, Any]:
         if not self._usage_history:
             return {"records": 0, "cumulative_input": 0, "cumulative_output": 0}
         recent = self._usage_history[-1]
-        return {
+        summary: dict[str, Any] = {
             "records": len(self._usage_history),
             "cumulative_input": self._cumulative_input,
             "cumulative_output": self._cumulative_output,
@@ -228,3 +314,6 @@ class ContextBudgetManager:
             "last_output": recent.output_tokens,
             "last_run_kind": recent.run_kind,
         }
+        if self._tool_output_totals:
+            summary["top_tools_by_output"] = self.top_expensive_tools()
+        return summary
