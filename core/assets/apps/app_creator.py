@@ -42,27 +42,8 @@ class CreateAppInput(BaseModel):
 class CreateAppTool(BaseTool):
     name: str = "create_app"
     description: str = """Create an agent-driven sub-application. Served at /apps/<app_name>/.
-
-App modes (choose the best one for the user's request):
-- "chat": Full AI chat interface with streaming responses. Best for: chatbots, customer support, tutors.
-- "rag": Knowledge base Q&A with semantic search + AI answers. Best for: documentation, FAQ, research tools.
-- "workflow": Run a specific workflow with form inputs. Best for: automation, data processing, batch operations.
-- "assistant": Full agent with tool access. Best for: AI assistants, task automation.
-- "static": Plain HTML/CSS/JS. Best for: dashboards, simple tools, landing pages.
-
-PREFER agent-driven modes (chat/rag/workflow/assistant) over static when the user wants something intelligent.
-
-Built-in JS helpers for agent-driven apps:
-- agentChat(message, onChunk): Stream a conversation with the AI agent
-- agentRunWorkflow(name, vars): Trigger a workflow
-- agentKnowledgeQuery(query, collection, topK): Search knowledge base
-- agentSearch(query): Global search
-- agentCallTool(toolName, args): Call a registered tool — returns the tool result DIRECTLY.
-  If the tool returns a list, it returns an Array. Always check Array.isArray().
-- dbQuery(sql), dbWrite(sql, params): Database access
-
-After creating, use update_app_file to customize the HTML/CSS/JS further.
-IMPORTANT: Always write a testing interface (e.g. `test` action in api.py, `window.runSelfTest()` in app.js) and use `test_app_api` to verify your backend works!"""
+    
+    If you need detailed instructions on app modes and JS helpers, please read the `create_app_sop` skill."""
     args_schema: type[BaseModel] = CreateAppInput
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

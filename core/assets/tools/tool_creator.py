@@ -38,33 +38,12 @@ class ToolCreatorInput(BaseModel):
 
     tool_name: str = Field(description="工具名称（英文+下划线，如 calculate_score）")
     description: str = Field(description="工具功能描述，清晰说明工具的作用")
-    parameters: str = Field(
-        description="""参数定义（JSON格式），例如：
-[
-  {"name": "radius", "type": "float", "description": "圆的半径", "default": null},
-  {"name": "unit", "type": "str", "description": "单位", "default": "cm"}
-]
-支持的类型：str, int, float, bool, list, dict
-"""
-    )
+    parameters: str = Field(description="参数定义（JSON格式），详细格式请参考 create_tool_sop 技能")
     dependencies: list[str] = Field(
-        description="需要的第三方Python包列表（如 ['requests', 'beautifulsoup4']）。不需要写内置模块。",
+        description="需要的第三方Python包列表（如 ['requests']）。",
         default_factory=list,
     )
-    code: str = Field(
-        description="""Python执行代码，可使用以下变量和模块：
-- 所有输入参数（直接使用参数名）
-- result 变量（必须设置，作为返回值）
-- print() 函数用于输出日志
-
-注意：代码将在独立的 uv 虚拟环境中运行，请在代码开头 import 你在 dependencies 中声明的库。
-
-示例：
-import requests
-result = radius ** 2 * 3.14159
-print(f"计算结果: {result}")
-"""
-    )
+    code: str = Field(description="Python执行代码，详细编写规范请参考 create_tool_sop 技能")
     usage_guide: str = Field(description="使用指南，说明何时使用此工具", default="")
     target_agent: str | None = Field(
         description="目标智能体名称（可选）。如果指定，工具将创建在该智能体的专属工具库中（即该智能体的文件夹内）。",
@@ -87,22 +66,7 @@ class TemplateToolCreator(BaseTool):
     description: str = """
 📋 模板工具安装器 — 从预制模板一键创建经过验证的工具
 
-可用模板:
-- **http_get** — HTTP GET请求
-- **http_post** — HTTP POST请求
-- **web_scraper** — 网页内容提取(去HTML标签)
-- **web_search** — DuckDuckGo搜索引擎
-- **read_file** — 读取文件
-- **write_file** — 写入文件
-- **list_directory** — 列出目录
-- **run_python** — 执行Python代码
-- **json_processor** — JSON解析/过滤
-- **csv_reader** — CSV读取
-- **text_summarizer** — 文本统计分析
-- **calculator** — 数学计算器
-- **datetime_tool** — 日期时间工具
-- **url_info** — URL元信息获取
-
+如果需要查看所有可用模板列表和使用指南，请参考 `create_tool_sop` 技能。
 使用方式: 直接指定 template_name 即可创建
 """
     args_schema: type[BaseModel] = TemplateToolInput

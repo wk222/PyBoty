@@ -470,14 +470,25 @@ def assemble_primary_tools(
         creator_tools.extend(skill_tools)
         tool_groups.append(("技能工具", len(skill_tools)))
 
+    from core.assets.tools.file_system_tools import get_file_system_tools
+    fs_tools = get_file_system_tools()
+    creator_tools.extend(fs_tools)
+    tool_groups.append(("文件系统工具", len(fs_tools)))
+
     runtime.capability_registry.refresh_local_index(tools=creator_tools)
 
     runtime.channel_manager.set_agent_callback(chat_callback)
+
+    from core.assets.skills.markdown_loader import MarkdownSkillLoader
+    markdown_loader = MarkdownSkillLoader(skills_dir=str(paths.skills_dir))
+    skill_summary = markdown_loader.get_all_skills_summary()
 
     system_prompt = build_static_system_prompt(
         template_section=get_template_prompt_section(),
         root_mode=root_mode,
     )
+    if skill_summary:
+        system_prompt += f"\n\n{skill_summary}"
 
     dynamic_tools = get_dynamic_tools(runtime.storage)
     all_tools = creator_tools + dynamic_tools
@@ -559,7 +570,90 @@ def create_root_agent(
     )
     if response_format is not None:
         kwargs["response_format"] = response_format
-    return create_agent(**kwargs)
+    from langchain.agents import create_tool_calling_agent, AgentExecutor
+    from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+
+    # 为了平滑过渡，仅在 root_mode 为 assistant 时使用轻量级 AgentExecutor
+    root_mode = str(getattr(runtime, "_root_mode", "assistant"))
+    
+    if root_mode == "assistant":
+        # 1. 创建 Prompt Template
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", assembly.system_prompt),
+            MessagesPlaceholder(variable_name="messages"),
+            MessagesPlaceholder(variable_name="agent_scratchpad"),
+        ])
+        
+        # 2. 创建 Tool Calling Agent
+        agent = create_tool_calling_agent(runtime.llm, assembly.all_tools, prompt)
+        
+        # 3. 创建 AgentExecutor
+        # 注意：这里我们暂时不把所有 middleware 塞进 Executor，而是通过 Callback 机制
+        from core.systems.governance.approval_callback import GovernanceApprovalCallback
+        high_risk_tools = [t.name for t in assembly.all_tools if getattr(t, "risk_level", "low") in ("high", "critical")]
+        callbacks = [GovernanceApprovalCallback(high_risk_tools=high_risk_tools, approval_queue=runtime.approval_queue)]
+        
+        agent_executor = AgentExecutor(
+            agent=agent, 
+            tools=assembly.all_tools, 
+            verbose=True,
+            callbacks=callbacks,
+            return_intermediate_steps=True
+        )
+        
+        # 包装一个兼容 invoke 的接口
+        class AssistantAgentWrapper:
+            def invoke(self, state: dict, config: dict = None) -> dict:
+                messages = state.get("messages", [])
+                
+                from core.systems.governance.approval_callback import ApprovalRequiredException
+                from langchain_core.messages import AIMessage, ToolMessage
+                
+                try:
+                    result = agent_executor.invoke(
+                        {"messages": messages}, 
+                        config=config
+                    )
+                except ApprovalRequiredException as e:
+                    # 拦截到需要审批的高危工具，返回等待审批的提示
+                    msg = f"⏸️ 拦截到高危操作 `{e.tool_name}`，参数：\n```json\n{e.tool_input}\n```\n请在控制台确认后继续。"
+                    state["messages"].append(AIMessage(content=msg))
+                    return {"messages": state["messages"]}
+                
+                # 提取中间执行步骤
+                intermediate_steps = result.get("intermediate_steps", [])
+                
+                # 如果有中间步骤，我们需要将其转换为 AIMessage 和 ToolMessage 追加到上下文中
+                # 这样 agent.py 的 _extract_final_reply 才能正确读取工具执行结果
+                if intermediate_steps:
+                    for action, observation in intermediate_steps:
+                        # 追加发起该工具调用的 AIMessage
+                        state["messages"].append(AIMessage(
+                            content=action.log or "",
+                            tool_calls=[{
+                                "name": action.tool,
+                                "args": action.tool_input,
+                                "id": action.tool_call_id
+                            }]
+                        ))
+                        # 追加工具执行结果的 ToolMessage
+                        state["messages"].append(ToolMessage(
+                            content=str(observation),
+                            tool_call_id=action.tool_call_id,
+                            name=action.tool
+                        ))
+                
+                # 最后追加模型的最终回复
+                output_content = result.get("output", "")
+                if output_content:
+                    state["messages"].append(AIMessage(content=output_content))
+                    
+                return {"messages": state["messages"]}
+                
+        return AssistantAgentWrapper()
+    else:
+        # 对于 app_matrix 或 ultimate 等复杂模式，继续使用原有的 create_agent (LangGraph)
+        return create_agent(**kwargs)
 
 
 def delegate_to_sub_agent(

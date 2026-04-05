@@ -17,7 +17,7 @@ import logging
 import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 try:
@@ -341,7 +341,7 @@ class SummarizationMiddleware(AgentMiddleware if _HAS_LC else object):  # type: 
         try:
             os.makedirs(offload_dir, exist_ok=True)
             path = os.path.join(offload_dir, f"{self._config.thread_id}.md")
-            timestamp = datetime.now(UTC).isoformat()
+            timestamp = datetime.now(timezone.utc).isoformat()
             buf = get_buffer_string([m for m in messages if not self._is_summary_msg(m)])
             section = f"\n\n## Summarized at {timestamp}\n\n{buf}\n"
             with open(path, "a", encoding="utf-8") as f:
