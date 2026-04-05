@@ -237,7 +237,7 @@ class WorkflowStorage:
 
     def create_workflow_definition(self, name: str, definition: dict[str, Any]) -> str:
         base = self._safe_basename(name)
-        from core.workflow_spec import export_workflow_spec, strip_workflow_runtime
+        from core.assets.workflows.workflow_spec import export_workflow_spec, strip_workflow_runtime
 
         yml_path = os.path.join(self.workflows_dir, f"{base}.yml")
         json_path = os.path.join(self.workflows_dir, f"{base}.json")
@@ -252,7 +252,7 @@ class WorkflowStorage:
     def update_workflow_definition(self, workflow_id: str, definition: dict[str, Any]) -> str:
         self._resolve_workflow_path(workflow_id)
         base = self._safe_basename(workflow_id)
-        from core.workflow_spec import export_workflow_spec, strip_workflow_runtime
+        from core.assets.workflows.workflow_spec import export_workflow_spec, strip_workflow_runtime
 
         yml_path = os.path.join(self.workflows_dir, f"{base}.yml")
         json_path = os.path.join(self.workflows_dir, f"{base}.json")
@@ -283,7 +283,7 @@ class WorkflowStorage:
         with open(filepath, encoding="utf-8") as file:
             raw = file.read()
         if filepath.endswith((".yml", ".yaml")):
-            from core.workflow_spec import parse_workflow_spec
+            from core.assets.workflows.workflow_spec import parse_workflow_spec
 
             return parse_workflow_spec(raw)
         return json.loads(raw)

@@ -7,6 +7,7 @@ from collections.abc import Callable
 from typing import Any
 
 from .approval_queue import ApprovalQueue
+from .execution_protocol import ApprovalResolutionContext
 
 
 class ApprovalOrchestrator:
@@ -63,31 +64,13 @@ class ApprovalOrchestrator:
         resolution_labels: list[str] | tuple[str, ...] | None = None,
     ) -> dict[str, Any]:
         request = self.approval_queue.get_request(approval_id)
-        metadata = request.metadata if request is not None else {}
+        route = ApprovalResolutionContext.from_request(request)
+        agent = route.resolve_agent(
+            get_agent_for_thread=self._get_agent_for_thread,
+            get_system_agent=self._get_system_agent,
+        )
 
-        parent_thread_id = str(metadata.get("parent_thread_id", "")).strip()
-        target = str(metadata.get("target", "")).strip()
-
-        if parent_thread_id:
-            agent = self._get_agent_for_thread(parent_thread_id)
-            result = self._resolve_agent_approval(
-                agent,
-                approval_id,
-                approved=approved,
-                note=note,
-                approver=approver,
-                resolution_labels=resolution_labels,
-            )
-        elif (
-            request is not None
-            and request.kind == "tool_call"
-            and (target == "root_agent" or target.startswith("subagent:"))
-        ):
-            thread_id = str(metadata.get("thread_id", "")).strip()
-            if target == "root_agent" and thread_id:
-                agent = self._get_agent_for_thread(thread_id)
-            else:
-                agent = self._get_system_agent()
+        if agent is not None:
             result = self._resolve_agent_approval(
                 agent,
                 approval_id,
@@ -105,20 +88,14 @@ class ApprovalOrchestrator:
                 resolution_labels=resolution_labels,
             )
 
-        workflow_id = str(metadata.get("workflow_id", "")).strip()
-        workflow_resume_token = str(metadata.get("workflow_resume_token", "")).strip()
-        workflow_pause_kind = str(metadata.get("workflow_pause_kind", "")).strip()
         if (
             result.get("success")
-            and request is not None
-            and request.kind == "tool_call"
-            and workflow_pause_kind == "delegated_subagent"
-            and workflow_id
-            and workflow_resume_token
+            and route.request_kind == "tool_call"
+            and route.workflow_pause.should_resume_delegated_subagent
         ):
             workflow_result = self._get_system_agent().pyflow_engine.resume_workflow(
-                workflow_id,
-                workflow_resume_token,
+                route.workflow_pause.workflow_id,
+                route.workflow_pause.workflow_resume_token,
                 approved,
                 approval_id=approval_id,
                 note=note,

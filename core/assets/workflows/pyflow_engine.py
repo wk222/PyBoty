@@ -30,13 +30,17 @@ class PyFlowEngine:
             workspace_dir=workspace_dir,
             approval_queue=self.approval_queue,
             log_event=default_log_event,
-            run_workflow=self.run_workflow,
-            resume_workflow=self.resume_workflow,
             session_runtime=session_runtime,
         )
+        bundle.bind_engine_callbacks(
+            run_workflow=self.run_workflow,
+            resume_workflow=self.resume_workflow,
+        )
+        self.runtime_bundle = bundle
         self.workflows_dir = bundle.workflows_dir
         self.definition_runtime = bundle.definition_runtime
         self.lifecycle_runtime = bundle.lifecycle_runtime
+        self.graph_runtime = bundle.graph_runtime
         self.collaboration_runtime = bundle.collaboration_runtime
         self.execution_runtime = bundle.execution_runtime
         self.node_runtime = bundle.node_runtime
@@ -49,13 +53,11 @@ class PyFlowEngine:
         delegate_callback: Callable | None = None,
     ) -> None:
         """Wire tool/agent/delegate callbacks into the appropriate runtimes."""
-        if tool_callback is not None:
-            self.node_runtime.tool_callback = tool_callback
-        if agent_callback is not None:
-            self.node_runtime.agent_callback = agent_callback
-            self.collaboration_runtime.set_agent_callback(agent_callback)
-        if delegate_callback is not None:
-            self.collaboration_runtime.set_delegate_callback(delegate_callback)
+        self.runtime_bundle.configure_callbacks(
+            tool_callback=tool_callback,
+            agent_callback=agent_callback,
+            delegate_callback=delegate_callback,
+        )
 
     def run_workflow(self, workflow: WorkflowDef) -> dict[str, Any]:
         return self.execution_runtime.run_workflow(workflow)

@@ -180,7 +180,7 @@ Do NOT ignore validation warnings in the response.
     def _validate_file(mgr: AppManager, app_name: str, file_path: str) -> list[dict[str, str]]:
         from pathlib import Path
 
-        from core.app_verifier_checks import check_api, check_html, check_javascript
+        from core.assets.apps.app_verifier_checks import check_api, check_html, check_javascript
 
         app_dir = Path(mgr.apps_dir) / app_name
         norm = file_path.replace("\\", "/")

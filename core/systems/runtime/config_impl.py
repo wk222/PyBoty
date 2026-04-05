@@ -2,7 +2,7 @@
 统一配置加载 — 消除 config.json 读取散落在 4+ 个入口文件的重复代码。
 
 用法:
-    from core.config import get_config, get_llm_config, save_config
+    from core.systems.runtime.config_impl import get_config, get_llm_config, save_config
     cfg = get_config()               # 完整 dict
     llm = get_llm_config()           # {'api_key': ..., 'api_base': ..., 'model': ..., ...}
 """

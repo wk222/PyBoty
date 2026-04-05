@@ -14,7 +14,7 @@ Architecture::
 
 Usage::
 
-    from core.media_understanding import MediaPipeline, OpenAIMediaProvider
+    from core.systems.runtime.media_understanding import MediaPipeline, OpenAIMediaProvider
 
     pipeline = MediaPipeline()
     pipeline.register_provider(OpenAIMediaProvider(api_key="..."))

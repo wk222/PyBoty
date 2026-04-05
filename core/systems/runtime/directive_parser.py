@@ -17,7 +17,7 @@ and are stripped from the text before it reaches the LLM.
 
 Usage::
 
-    from core.directive_parser import parse_directives
+    from core.systems.runtime.directive_parser import parse_directives
 
     result = parse_directives("@think @verbose Tell me about Python")
     # result.clean_text == "Tell me about Python"

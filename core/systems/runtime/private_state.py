@@ -6,7 +6,7 @@ excluded from subagent state propagation and invoke output.
 
 Usage::
 
-    from core.private_state import register_private_keys, PRIVATE_STATE_KEYS
+    from core.systems.runtime.private_state import register_private_keys, PRIVATE_STATE_KEYS
 
     register_private_keys("TodoListMiddleware", {"todos", "_todo_state"})
     register_private_keys("SkillsMiddleware", {"skills_metadata"})

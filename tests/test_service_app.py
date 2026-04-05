@@ -811,6 +811,14 @@ def test_system_model_endpoint_surfaces_canonical_concept_boundaries(client):
     assert response.status_code == 200
     payload = response.json()
     assert payload["root_mode_progression"] == ["assistant", "app_matrix", "admin"]
+    assert [item["name"] for item in payload["interaction_surfaces"]] == ["chat", "governance", "ecosystem"]
+    assert [item["name"] for item in payload["ecosystem_families"]] == [
+        "apps",
+        "workflows",
+        "skills",
+        "tools",
+        "agents",
+    ]
     assert [item["name"] for item in payload["product_concepts"]] == [
         "tools",
         "skills",
@@ -834,6 +842,31 @@ def test_system_modes_endpoint_surfaces_profiles_and_current_runtime_mode(client
     assert "plan_app_matrix_topology" in modes["app_matrix"]["api_methods"]
     assert payload["current"]["name"] == "assistant"
     assert payload["current"]["effective_capabilities"]["interactive_chat"] is True
+
+
+def test_chat_stream_endpoint_bootstraps_agent_without_import_errors(client, monkeypatch):
+    services = client.app.state.services
+    original_get_or_create = services.agents.get_or_create
+
+    def _get_or_create(thread_id: str):
+        agent = original_get_or_create(thread_id)
+        monkeypatch.setattr(
+            agent,
+            "chat_stream",
+            lambda _message: iter([{"type": "done", "content": "stream ok"}]),
+        )
+        return agent
+
+    monkeypatch.setattr(services.agents, "get_or_create", _get_or_create)
+
+    response = client.post(
+        "/api/chat/stream",
+        json={"message": "hello", "thread_id": "stream-bootstrap-smoke"},
+    )
+
+    assert response.status_code == 200
+    assert '"type": "done"' in response.text
+    assert '"content": "stream ok"' in response.text
 
 
 def test_plugin_routes_discover_and_manage_runtime_state(client, tmp_path: Path):

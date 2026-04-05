@@ -6,7 +6,7 @@ are blocked by default.
 
 Usage::
 
-    from core.tool_risk import ToolRiskRegistry, RiskLevel
+    from core.assets.tools.tool_risk import ToolRiskRegistry, RiskLevel
 
     registry = ToolRiskRegistry()
     registry.set_risk("exec_shell", RiskLevel.HIGH)

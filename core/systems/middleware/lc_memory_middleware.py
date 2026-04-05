@@ -111,7 +111,7 @@ class LCMemoryMiddleware(AgentMiddleware if _HAS_LC else object):  # type: ignor
     def _legacy_extract(self, messages: list[Any]) -> None:
         """Fallback extraction for non-semantic memory managers."""
         try:
-            from core.memory_manager import extract_key_facts
+            from core.systems.memory.memory_manager import extract_key_facts
 
             conversation = self._build_conversation(messages[-2:])
             if len(conversation) >= 2:

@@ -9,7 +9,7 @@ Inspired by Coze's ``WorkflowAsModelTool`` pattern.
 
 Usage::
 
-    from core.workflow_as_tool import discover_workflow_tools
+    from core.assets.workflows.workflow_as_tool import discover_workflow_tools
 
     tools = discover_workflow_tools(engine)
     # Each tool is named after the workflow: "wf_data_analysis", "wf_report_gen", etc.

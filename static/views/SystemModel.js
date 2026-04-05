@@ -22,6 +22,8 @@ export default {
 
     onMounted(loadModel);
 
+    const interactionSurfaces = computed(() => model.value?.interaction_surfaces || []);
+    const ecosystemFamilies = computed(() => model.value?.ecosystem_families || []);
     const rootModes = computed(() => model.value?.root_modes || []);
     const productConcepts = computed(() => model.value?.product_concepts || []);
     const supportingSystems = computed(() => model.value?.supporting_systems || []);
@@ -38,6 +40,8 @@ export default {
     return {
       loading,
       model,
+      interactionSurfaces,
+      ecosystemFamilies,
       rootModes,
       productConcepts,
       supportingSystems,
@@ -88,6 +92,56 @@ export default {
                 {{ mode }}
               </span>
             </div>
+          </div>
+        </section>
+
+        <section class="mx-section">
+          <h2 class="mx-section-title">{{ s('interactionSurfaces') }}</h2>
+          <div class="mx-stats-grid" style="margin-top:14px;">
+            <article
+              v-for="surface in interactionSurfaces"
+              :key="surface.name"
+              class="mx-stat-card mx-stat-card--static"
+              style="align-items:flex-start;"
+            >
+              <div class="mx-stat-body" style="gap:10px;">
+                <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
+                  <div>
+                    <div class="mx-stat-title">{{ surface.label }}</div>
+                    <code style="display:inline-block;margin-top:6px;padding:4px 8px;border-radius:10px;background:var(--bg-tertiary);color:var(--text-secondary);font-size:12px;">{{ surface.route }}</code>
+                  </div>
+                </div>
+                <div style="color:var(--text-secondary);line-height:1.6;">{{ surface.summary }}</div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                  <span
+                    v-for="job in surface.primary_jobs"
+                    :key="job"
+                    style="padding:6px 10px;border-radius:999px;background:rgba(96,165,250,0.12);color:var(--text-primary);font-size:12px;"
+                  >
+                    {{ job }}
+                  </span>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="mx-section">
+          <h2 class="mx-section-title">{{ s('ecosystemFamilies') }}</h2>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:14px;">
+            <article
+              v-for="family in ecosystemFamilies"
+              :key="family.name"
+              style="padding:16px;border:1px solid var(--border);border-radius:16px;background:var(--bg-secondary);"
+            >
+              <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+                <div>
+                  <div style="font-size:16px;font-weight:700;color:var(--text-primary);">{{ family.label }}</div>
+                  <div style="margin-top:4px;color:var(--text-secondary);line-height:1.6;">{{ family.summary }}</div>
+                </div>
+                <code style="padding:4px 8px;border-radius:10px;background:var(--bg-tertiary);color:var(--text-secondary);font-size:12px;">{{ family.manager_route }}</code>
+              </div>
+            </article>
           </div>
         </section>
 

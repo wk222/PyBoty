@@ -15,7 +15,7 @@ Usage (as a LangChain tool for agents):
 
 Usage (as a workflow node helper):
 
-    from core.llm_task_tool import run_llm_task
+    from core.assets.tools.llm_task_tool import run_llm_task
     output = run_llm_task(
         prompt="Summarise the following text in one sentence.",
         input_text=long_doc,

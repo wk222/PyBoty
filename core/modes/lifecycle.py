@@ -105,7 +105,7 @@ def _legacy_initialize_persistent_runtime(host_agent: Any) -> None:
     """Fallback init when no ModePack is available."""
     if not host_agent._attach_admin_runtime or host_agent.admin is not None:
         return
-    from core.admin_runtime import PersistentAdminRuntime
+    from core.modes.admin_runtime import PersistentAdminRuntime
 
     storage_dir = host_agent._admin_storage_dir or str(
         host_agent.paths.workspace_data_dir / host_agent.mode_profile.durable_runtime_dir

@@ -30,11 +30,14 @@ class TestBusModelCall:
             return MagicMock()
 
         mw.wrap_model_call(request, handler)
-        bus.share_context.assert_called_once()
-        args = bus.share_context.call_args
-        assert args[0][0] == "last_invoke_duration_ms"
-        assert isinstance(args[0][1], float)
-        assert args[1]["source"] == "bus_middleware"
+        assert bus.share_context.call_count == 2
+        first_call = bus.share_context.call_args_list[0]
+        second_call = bus.share_context.call_args_list[1]
+        assert first_call[0][0] == "last_invoke_duration_ms"
+        assert isinstance(first_call[0][1], float)
+        assert first_call[1]["source"] == "bus_middleware"
+        assert second_call[0][0] == "last_model_call"
+        assert second_call[0][1]["message_count"] == 0
 
 
 class TestBusToolCall:
@@ -54,6 +57,9 @@ class TestBusToolCall:
         args = bus.record_invocation.call_args
         assert args[0][0] == "my_tool"
         assert args[1]["success"] is True
+        assert args[1]["source"] == "lc_bus_middleware"
+        assert args[1]["layer"] == "tool"
+        assert args[1]["operation"] == "tool_call"
 
     def test_records_command_as_non_success(self):
         bus = MagicMock()
@@ -68,6 +74,7 @@ class TestBusToolCall:
         mw.wrap_tool_call(request, handler)
         args = bus.record_invocation.call_args
         assert args[1]["success"] is False
+        assert args[1]["metadata"]["result_type"] == "Command"
 
 
 class TestBusProperties:

@@ -117,7 +117,7 @@ def _ensure_admin_runtime(host: Any) -> Any:
 def _initialize_persistent_runtime_if_needed(host: Any) -> None:
     if not getattr(host, "_attach_admin_runtime", False) or host.admin is not None:
         return
-    from core.admin_runtime import PersistentAdminRuntime
+    from core.modes.admin_runtime import PersistentAdminRuntime
 
     storage_dir = host._admin_storage_dir or str(host.paths.workspace_data_dir / host.mode_profile.durable_runtime_dir)
     host.admin = PersistentAdminRuntime(

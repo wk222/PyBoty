@@ -7,6 +7,18 @@ def test_system_model_exposes_canonical_layers():
     model = build_system_model()
 
     assert model["root_mode_progression"] == ["assistant", "app_matrix", "admin"]
+    assert [item["name"] for item in model["interaction_surfaces"]] == [
+        "chat",
+        "governance",
+        "ecosystem",
+    ]
+    assert [item["name"] for item in model["ecosystem_families"]] == [
+        "apps",
+        "workflows",
+        "skills",
+        "tools",
+        "agents",
+    ]
     assert [item["name"] for item in model["product_concepts"]] == [
         "tools",
         "skills",
@@ -38,6 +50,7 @@ def test_system_model_exposes_canonical_layers():
     }
     assert "MCP" in model["not_product_concepts"]
     assert model["mode_profiles_modular"] is True
+    assert any(rule.startswith("一级交互入口默认只有三个") for rule in model["canonical_rules"])
 
 
 def test_asset_packages_expose_apps_and_workflows_entrypoints():

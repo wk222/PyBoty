@@ -13,7 +13,7 @@ The EventBus handles raw pub/sub.  The Hook system adds **typed contexts**,
 
 Usage::
 
-    from core.hook_context import HookType, MessageReceivedContext, hook_registry
+    from core.systems.runtime.hook_context import HookType, MessageReceivedContext, hook_registry
 
     @hook_registry.on(HookType.MESSAGE_RECEIVED)
     def my_hook(ctx: MessageReceivedContext) -> None:
@@ -27,7 +27,7 @@ Usage::
 
 from __future__ import annotations
 
-import importlib
+import importlib.util
 import logging
 import os
 from collections import defaultdict
@@ -140,7 +140,7 @@ class HookRegistry:
     """Central registry for lifecycle hooks with directory discovery."""
 
     def __init__(self) -> None:
-        self._handlers: dict[HookType, list[_HookHandler]] = defaultdict(list)
+        self._handlers: dict[HookType, list[_HookHandler]] = {}
 
     def register(
         self,
@@ -152,8 +152,9 @@ class HookRegistry:
         source: str = "code",
     ) -> None:
         entry = _HookHandler(handler=handler, priority=priority, name=name or handler.__name__, source=source)
-        self._handlers[hook_type].append(entry)
-        self._handlers[hook_type].sort(key=lambda h: -h.priority)
+        handlers = self._get_handlers(hook_type)
+        handlers.append(entry)
+        handlers.sort(key=lambda h: -h.priority)
 
     def on(self, hook_type: HookType, *, priority: int = 0) -> Callable:
         """Decorator to register a hook handler."""
@@ -163,8 +164,9 @@ class HookRegistry:
         return decorator
 
     def unregister(self, hook_type: HookType, handler: Callable) -> bool:
-        before = len(self._handlers.get(hook_type, []))
-        self._handlers[hook_type] = [h for h in self._handlers.get(hook_type, []) if h.handler is not handler]
+        handlers = self._get_handlers(hook_type)
+        before = len(handlers)
+        self._handlers[hook_type] = [h for h in handlers if h.handler is not handler]
         return len(self._handlers.get(hook_type, [])) < before
 
     def run(self, hook_type: HookType, context: BaseHookContext) -> BaseHookContext:
@@ -180,6 +182,11 @@ class HookRegistry:
             except Exception:
                 logger.exception("Hook handler %r failed for %s", entry.name, hook_type.value)
         return context
+
+    def _get_handlers(self, hook_type: HookType) -> list[_HookHandler]:
+        if hook_type not in self._handlers:
+            self._handlers[hook_type] = []
+        return self._handlers[hook_type]
 
     def handler_count(self, hook_type: HookType | None = None) -> int:
         if hook_type is not None:

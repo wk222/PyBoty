@@ -42,11 +42,47 @@ def test_workflow_node_runtime_approve_node_creates_pause_request():
     assert exc_info.value.approval_id == pending[0]["approval_id"]
 
 
+def test_workflow_node_runtime_delegated_pause_attaches_shared_resume_metadata():
+    saved = []
+    queue = ApprovalQueue()
+    request = queue.create_request(
+        kind="tool_call",
+        scope="subagent:helper",
+        summary="helper approval",
+        prompt="allow helper?",
+    )
+    runtime = _build_runtime(
+        approval_queue=queue,
+        save_workflow=lambda workflow: saved.append((workflow.id, workflow.status.value)),
+        extra_dispatch=lambda node, config, workflow: {
+            "status": "waiting_approval",
+            "approval_id": request.approval_id,
+            "workflow_pause_kind": "delegated_subagent",
+            "workflow_pause_mode": "agent",
+            "agent_name": "helper",
+            "task": "完成任务",
+        },
+    )
+    workflow = WorkflowDef(id="wf_delegate", name="delegate-demo")
+    node = FlowNode(id="delegate", type=NodeType.AGENT, label="Helper", config={"agent_name": "helper", "task": "完成任务"})
+
+    with pytest.raises(WorkflowApprovalPause) as exc_info:
+        runtime.exec_node(node, workflow)
+
+    assert workflow.status == WorkflowStatus.PAUSED
+    assert saved == [("wf_delegate", "paused")]
+    assert exc_info.value.approval_id == request.approval_id
+    assert request.metadata["workflow_id"] == "wf_delegate"
+    assert request.metadata["workflow_pause_mode"] == "agent"
+    assert workflow.variables["delegate.approval_id"] == request.approval_id
+
+
 def _build_runtime(
     *,
     approval_queue: ApprovalQueue | None = None,
     save_workflow=None,
     tool_callback=None,
+    extra_dispatch=None,
 ):
     queue = approval_queue or ApprovalQueue()
     return WorkflowNodeRuntime(
@@ -64,7 +100,7 @@ def _build_runtime(
             f"{kwargs['workflow_id']}:{kwargs['node_id']}:{kwargs['resume_token']}"
         ),
         log_event=lambda workflow, node_id, event, detail="": None,
-        extra_dispatch=lambda node, config, workflow: {"node_type": node.type.value, "config": config},
+        extra_dispatch=extra_dispatch or (lambda node, config, workflow: {"node_type": node.type.value, "config": config}),
         tool_callback=tool_callback,
         agent_callback=lambda prompt: prompt,
     )

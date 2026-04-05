@@ -160,6 +160,44 @@ class PackageTargetDescriptor:
         }
 
 
+@dataclass(frozen=True)
+class InteractionSurfaceDescriptor:
+    name: str
+    label: str
+    route: str
+    summary: str
+    primary_jobs: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "label": self.label,
+            "route": self.route,
+            "summary": self.summary,
+            "primary_jobs": list(self.primary_jobs),
+        }
+
+
+@dataclass(frozen=True)
+class EcosystemFamilyDescriptor:
+    name: str
+    label: str
+    singular_name: str
+    summary: str
+    ecosystem_route: str
+    manager_route: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "label": self.label,
+            "singular_name": self.singular_name,
+            "summary": self.summary,
+            "ecosystem_route": self.ecosystem_route,
+            "manager_route": self.manager_route,
+        }
+
+
 _ROOT_MODES: tuple[RootModeDescriptor, ...] = (
     RootModeDescriptor(
         name="assistant",
@@ -262,6 +300,73 @@ _PRODUCT_CONCEPTS: tuple[ProductConceptDescriptor, ...] = (
         responsibility="承载 Web 控制台、工作区应用、交付入口和应用级协作表面。",
         capability_examples=("workspace apps", "web console", "API/CLI surfaces", "app brain topology"),
         typical_modules=("core/assets/apps/", "web/", "static/"),
+    ),
+)
+
+_INTERACTION_SURFACES: tuple[InteractionSurfaceDescriptor, ...] = (
+    InteractionSurfaceDescriptor(
+        name="chat",
+        label="Chat",
+        route="/chat",
+        summary="主工作会话。默认从这里开始提问、执行、切换模式档位和创建能力。",
+        primary_jobs=("开始工作", "运行当前任务", "在会话里切换模式/角色"),
+    ),
+    InteractionSurfaceDescriptor(
+        name="governance",
+        label="Governance",
+        route="/governance",
+        summary="风险、审批和网关控制面。让自治能力保持可见、可管、可恢复。",
+        primary_jobs=("审批高风险动作", "查看治理策略", "管理网关与路由"),
+    ),
+    InteractionSurfaceDescriptor(
+        name="ecosystem",
+        label="Ecosystem",
+        route="/ecosystem",
+        summary="统一的可复用资产工作台。Apps、Workflows、Skills、Tools、Agents 在这里统一浏览。",
+        primary_jobs=("浏览可复用资产", "进入高级管理器", "发现市场与系统结构"),
+    ),
+)
+
+_ECOSYSTEM_FAMILIES: tuple[EcosystemFamilyDescriptor, ...] = (
+    EcosystemFamilyDescriptor(
+        name="apps",
+        label="Apps",
+        singular_name="app",
+        summary="面向用户交付的应用入口与运行外壳。",
+        ecosystem_route="/ecosystem?asset=apps",
+        manager_route="/apps",
+    ),
+    EcosystemFamilyDescriptor(
+        name="workflows",
+        label="Workflows",
+        singular_name="workflow",
+        summary="多步骤编排、调度与暂停恢复的执行蓝图。",
+        ecosystem_route="/ecosystem?asset=workflows",
+        manager_route="/workflows",
+    ),
+    EcosystemFamilyDescriptor(
+        name="skills",
+        label="Skills",
+        singular_name="skill",
+        summary="可复用经验、提示扩展和工具绑定的能力包。",
+        ecosystem_route="/ecosystem?asset=skills",
+        manager_route="/skills",
+    ),
+    EcosystemFamilyDescriptor(
+        name="tools",
+        label="Tools",
+        singular_name="tool",
+        summary="具体可执行动作的统一动作库。",
+        ecosystem_route="/ecosystem?asset=tools",
+        manager_route="/tools",
+    ),
+    EcosystemFamilyDescriptor(
+        name="agents",
+        label="Agents",
+        singular_name="agent",
+        summary="承担角色、记忆和委派关系的执行者。",
+        ecosystem_route="/ecosystem?asset=agents",
+        manager_route="/agents",
     ),
 )
 
@@ -481,6 +586,14 @@ def list_product_concepts() -> list[dict[str, Any]]:
     return [item.to_dict() for item in _PRODUCT_CONCEPTS]
 
 
+def list_interaction_surfaces() -> list[dict[str, Any]]:
+    return [item.to_dict() for item in _INTERACTION_SURFACES]
+
+
+def list_ecosystem_families() -> list[dict[str, Any]]:
+    return [item.to_dict() for item in _ECOSYSTEM_FAMILIES]
+
+
 def list_supporting_systems() -> list[dict[str, Any]]:
     return [item.to_dict() for item in _SUPPORTING_SYSTEMS]
 
@@ -497,11 +610,15 @@ def build_system_summary() -> dict[str, Any]:
     return {
         "root_modes": len(_ROOT_MODES),
         "product_concepts": len(_PRODUCT_CONCEPTS),
+        "interaction_surfaces": len(_INTERACTION_SURFACES),
+        "ecosystem_families": len(_ECOSYSTEM_FAMILIES),
         "supporting_systems": len(_SUPPORTING_SYSTEMS),
         "internal_domains": len(_INTERNAL_DOMAINS),
         "package_targets": len(_PACKAGE_TARGETS),
         "root_mode_labels": [mode.label for mode in _ROOT_MODES],
         "product_concept_labels": [concept.label for concept in _PRODUCT_CONCEPTS],
+        "interaction_surface_labels": [surface.label for surface in _INTERACTION_SURFACES],
+        "ecosystem_family_labels": [family.label for family in _ECOSYSTEM_FAMILIES],
         "supporting_system_labels": [system.label for system in _SUPPORTING_SYSTEMS],
         "message": "3 root modes above 5 product concepts, strengthened by supporting systems.",
     }
@@ -574,6 +691,8 @@ def build_system_model() -> dict[str, Any]:
             "strengthened by supporting systems rather than presented as a repo-shaped feature pile."
         ),
         "root_mode_progression": [mode.name for mode in _ROOT_MODES],
+        "interaction_surfaces": list_interaction_surfaces(),
+        "ecosystem_families": list_ecosystem_families(),
         "root_modes": list_root_modes(),
         "product_concepts": list_product_concepts(),
         "supporting_systems": list_supporting_systems(),
@@ -583,6 +702,7 @@ def build_system_model() -> dict[str, Any]:
         "anti_sprawl_questions": list(_ANTI_SPRAWL_QUESTIONS),
         "canonical_rules": [
             "根模式只有三种：assistant / app_matrix / admin。",
+            "一级交互入口默认只有三个：chat / governance / ecosystem。",
             "用户可见产品概念只有五种：tools / skills / agents / workflows / apps。",
             "MCP、RAG、approvals、middleware、observability 等属于横切支撑系统，不应再讲成额外平台层。",
             (

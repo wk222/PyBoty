@@ -6,12 +6,17 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from core.systems.governance.delegated_approval_runtime import DelegatedApprovalResolutionRuntime
 from core.systems.governance.approval_queue import ApprovalQueue
+from core.systems.governance.delegated_approval_runtime import DelegatedApprovalResolutionRuntime
+from core.systems.governance.execution_protocol import (
+    WaitingApprovalPayload,
+    WorkflowPauseMetadata,
+    attach_workflow_pause_metadata,
+    build_workflow_approval_response,
+)
 
 from .workflow_exceptions import WorkflowApprovalPause
 from .workflow_models import FlowNode, NodeStatus, WorkflowDef, WorkflowStatus
-from .workflow_pause_state import extract_waiting_approval_ids, primary_waiting_approval_id
 
 
 class WorkflowDelegationRuntime:
@@ -41,7 +46,8 @@ class WorkflowDelegationRuntime:
         ) = None,
     ) -> dict[str, Any]:
         waiting_payload = node.output if isinstance(node.output, dict) else {}
-        resolved_approval_id = str(approval_id).strip() or primary_waiting_approval_id(waiting_payload)
+        waiting_state = WaitingApprovalPayload.from_payload(waiting_payload)
+        resolved_approval_id = str(approval_id).strip() or waiting_state.primary_approval_id
         if not resolved_approval_id:
             return {"success": False, "error": f"工作流节点 '{node.id}' 缺少委派审批 ID"}
 
@@ -50,7 +56,7 @@ class WorkflowDelegationRuntime:
             agent_name=str(waiting_payload.get("agent_name", "")),
             task=str(waiting_payload.get("task", "")),
         )
-        pause_mode = str(waiting_payload.get("workflow_pause_mode", "")).strip()
+        pause_mode = waiting_state.workflow_pause_mode
 
         if resolved_payload["status"] == "waiting_approval" and resolved_payload.get("approval_id"):
             return self.queue_waiting_delegate_result(
@@ -75,7 +81,10 @@ class WorkflowDelegationRuntime:
             )
             if continued_result is None:
                 return {"success": False, "error": f"工作流节点 '{node.id}' 无法恢复委派状态"}
-            if continued_result.get("status") == "waiting_approval" and primary_waiting_approval_id(continued_result):
+            if (
+                continued_result.get("status") == "waiting_approval"
+                and WaitingApprovalPayload.from_payload(continued_result).primary_approval_id
+            ):
                 return self.queue_waiting_delegate_result(
                     workflow=workflow,
                     node=node,
@@ -115,8 +124,9 @@ class WorkflowDelegationRuntime:
         node: FlowNode,
         waiting_result: dict[str, Any],
     ) -> dict[str, Any]:
-        approval_ids = extract_waiting_approval_ids(waiting_result)
-        new_approval_id = primary_waiting_approval_id(waiting_result)
+        waiting_state = WaitingApprovalPayload.from_payload(waiting_result)
+        approval_ids = list(waiting_state.all_approval_ids)
+        new_approval_id = waiting_state.primary_approval_id
         if not new_approval_id:
             return {"success": False, "error": "新的委派审批缺少 approval_id"}
 
@@ -124,46 +134,37 @@ class WorkflowDelegationRuntime:
             workflow.resume_token = f"resume-{workflow.id}-{int(time.time())}"
 
         prompt = str(waiting_result.get("response", "")).strip() or "子智能体继续执行后再次暂停。"
-        for pending_approval_id in approval_ids or [new_approval_id]:
-            request = self.approval_queue.get_request(pending_approval_id)
-            if request is None:
-                continue
-            self.approval_queue.update_request_metadata(
-                pending_approval_id,
-                workflow_id=workflow.id,
-                workflow_name=workflow.name,
-                workflow_node_id=node.id,
-                workflow_node_label=node.label,
-                workflow_resume_token=workflow.resume_token,
-                workflow_pause_kind="delegated_subagent",
-                workflow_pause_mode=str(waiting_result.get("workflow_pause_mode", "")).strip(),
-            )
-            if pending_approval_id == new_approval_id:
-                prompt = request.prompt or prompt
+        pause_metadata = WorkflowPauseMetadata.from_waiting_payload(
+            workflow_id=workflow.id,
+            workflow_name=workflow.name,
+            node_id=node.id,
+            node_label=node.label,
+            resume_token=workflow.resume_token,
+            payload=waiting_result,
+        )
+        prompt = attach_workflow_pause_metadata(
+            approval_queue=self.approval_queue,
+            approval_ids=approval_ids,
+            primary_approval_id=new_approval_id,
+            pause_metadata=pause_metadata,
+            default_prompt=prompt,
+        )
 
         node.status = NodeStatus.WAITING
-        node.output = {
-            **waiting_result,
-            "resume_token": workflow.resume_token,
-        }
+        node.output = waiting_state.to_payload({**waiting_result, "resume_token": workflow.resume_token})
         workflow.status = WorkflowStatus.PAUSED
         workflow.variables[f"{node.id}.status"] = "waiting_approval"
         workflow.variables[f"{node.id}.approval_id"] = new_approval_id
         workflow.variables[f"{node.id}.output"] = node.output
         self._save_workflow(workflow)
-        response = self.approval_response(
-            WorkflowApprovalPause(
-                workflow_id=workflow.id,
-                node_id=node.id,
-                resume_token=workflow.resume_token or "",
-                prompt=prompt,
-                approval_id=new_approval_id,
-            )
+        response = pause_metadata.approval_response(
+            prompt=prompt,
+            approval_id=new_approval_id,
         )
         if len(approval_ids) > 1:
             response["approval_ids"] = approval_ids
-        if isinstance(waiting_result.get("pending_approvals"), list):
-            response["pending_approvals"] = waiting_result["pending_approvals"]
+        if waiting_state.pending_approvals:
+            response["pending_approvals"] = [item.to_dict() for item in waiting_state.pending_approvals]
         return response
 
     @staticmethod
@@ -204,11 +205,10 @@ class WorkflowDelegationRuntime:
 
     @staticmethod
     def approval_response(approval_pause: WorkflowApprovalPause) -> dict[str, Any]:
-        return {
-            "status": "waiting_approval",
-            "workflow_id": approval_pause.workflow_id,
-            "node_id": approval_pause.node_id,
-            "resume_token": approval_pause.resume_token,
-            "prompt": approval_pause.prompt,
-            "approval_id": approval_pause.approval_id,
-        }
+        return build_workflow_approval_response(
+            workflow_id=approval_pause.workflow_id,
+            node_id=approval_pause.node_id,
+            resume_token=approval_pause.resume_token,
+            prompt=approval_pause.prompt,
+            approval_id=approval_pause.approval_id,
+        )

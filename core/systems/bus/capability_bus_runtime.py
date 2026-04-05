@@ -11,6 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from .capability_execution import CapabilityInvocation
 from .capability_bus_models import BusEvent, Capability, CapabilityLayer, EventType
 
 
@@ -99,7 +100,34 @@ class CapabilityBusRuntime:
     def find_by_dependency(self, capability_name: str) -> list[Capability]:
         return [capability for capability in self._capabilities.values() if capability_name in capability.dependencies]
 
-    def record_invocation(self, name: str, success: bool, duration_ms: float = 0) -> None:
+    def share_execution_context(self, invocation: CapabilityInvocation) -> None:
+        """Publish the latest structured capability invocation to shared context."""
+        self.share_context(
+            "last_capability_execution",
+            invocation.to_context_payload(),
+            source=invocation.source or invocation.name,
+        )
+
+    def record_invocation(
+        self,
+        name: str,
+        success: bool,
+        duration_ms: float = 0,
+        *,
+        source: str = "",
+        layer: str = "",
+        operation: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        invocation = CapabilityInvocation(
+            name=name,
+            success=success,
+            duration_ms=duration_ms,
+            source=source,
+            layer=layer,
+            operation=operation,
+            metadata=dict(metadata or {}),
+        )
         with self._lock:
             capability = self._capabilities.get(name)
             if capability:
@@ -108,8 +136,21 @@ class CapabilityBusRuntime:
                     capability.success_count += 1
                 capability.total_duration_ms += duration_ms
                 capability.last_invoked = time.time()
+                if not invocation.layer:
+                    invocation = CapabilityInvocation(
+                        name=invocation.name,
+                        success=invocation.success,
+                        duration_ms=invocation.duration_ms,
+                        source=invocation.source,
+                        layer=capability.layer.value,
+                        operation=invocation.operation,
+                        metadata=invocation.metadata,
+                        invoked_at=invocation.invoked_at,
+                    )
+        self.share_execution_context(invocation)
+        self.emit(EventType.CAPABILITY_INVOKED, invocation.source or name, invocation.to_event_payload())
         event_type = EventType.CAPABILITY_COMPLETED if success else EventType.CAPABILITY_FAILED
-        self.emit(event_type, name, {"duration_ms": duration_ms})
+        self.emit(event_type, name, invocation.to_event_payload())
 
     def on(self, event_type: EventType, handler: Callable[[BusEvent], None]) -> None:
         self._event_handlers[event_type].append(handler)

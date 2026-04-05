@@ -22,6 +22,8 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any
 
+from core.systems.bus.capability_reporting import CapabilityBusReporter
+
 try:
     from langchain.agents.middleware.types import AgentMiddleware as LCAgentMiddleware  # noqa: F401
     from langchain.agents.middleware.types import ModelRequest, ModelResponse  # noqa: F401
@@ -85,7 +87,7 @@ class MemoryMiddleware(MiddlewareBase):
 
     def after_invoke(self, state: dict[str, Any], response: Any) -> Any:
         try:
-            from core.memory_manager import extract_key_facts
+            from core.systems.memory.memory_manager import extract_key_facts
 
             messages = state.get("messages", [])
             if messages and len(messages) >= 2:
@@ -162,6 +164,7 @@ class BusMiddleware(MiddlewareBase):
 
     def __init__(self, capability_bus):
         self.bus = capability_bus
+        self._reporter = CapabilityBusReporter(capability_bus)
         self._local = threading.local()
 
     def before_invoke(self, state: dict[str, Any]) -> dict[str, Any]:
@@ -172,11 +175,23 @@ class BusMiddleware(MiddlewareBase):
         start = getattr(self._local, "invoke_start", None)
         if start:
             duration = (time.time() - start) * 1000
-            self.bus.share_context("last_invoke_duration_ms", duration, source="bus_middleware")
+            message_count = len(state.get("messages", []) or []) if isinstance(state, dict) else 0
+            self._reporter.record_model_call(
+                duration_ms=duration,
+                message_count=message_count,
+                source="bus_middleware",
+            )
         return response
 
     def wrap_tool_output(self, tool_name: str, output: str) -> str:
-        self.bus.record_invocation(tool_name, success=True, duration_ms=0)
+        self._reporter.record_tool_call(
+            tool_name=tool_name,
+            success=True,
+            duration_ms=0,
+            source="bus_middleware",
+            operation="tool_output",
+            metadata={"output_preview": output[:120]},
+        )
         return output
 
 

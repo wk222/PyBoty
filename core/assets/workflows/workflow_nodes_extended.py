@@ -399,7 +399,7 @@ def run_iteration(
         workflow_variables["_iteration_length"] = len(items[:max_iterations])
 
         if break_condition:
-            from core.workflow_graph_runtime import WorkflowGraphRuntime
+            from core.assets.workflows.workflow_graph_runtime import WorkflowGraphRuntime
 
             graph_rt = WorkflowGraphRuntime()
 

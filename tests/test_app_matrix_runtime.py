@@ -162,6 +162,10 @@ def test_app_matrix_runtime_discovers_services_and_invokes_with_grant(temp_paths
     assert invoke["provider_app"] == "parser"
     assert invoke["quota_remaining"] == 1
     assert invoke["result"]["kind"] == "excel"
+    parser_capability = capability_registry.capability_bus.get("parser")
+    assert parser_capability is not None
+    assert parser_capability.invoke_count == 1
+    assert capability_registry.capability_bus.get_context("last_capability_execution")["name"] == "parser"
 
 
 def test_app_matrix_runtime_enforces_provider_policy_limits(temp_paths):
@@ -223,3 +227,9 @@ def test_app_matrix_runtime_enforces_provider_policy_limits(temp_paths):
     assert "not permitted" in denied_action["error"]
     assert denied_payload["success"] is False
     assert "Payload exceeds provider policy limit" in denied_payload["error"]
+    parser_capability = capability_registry.capability_bus.get("parser")
+    assert parser_capability is not None
+    assert parser_capability.invoke_count == 2
+    last_execution = capability_registry.capability_bus.get_context("last_capability_execution")
+    assert last_execution["name"] == "parser"
+    assert "Payload exceeds provider policy limit" in last_execution["metadata"]["error"]

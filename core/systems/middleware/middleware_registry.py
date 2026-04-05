@@ -6,7 +6,7 @@ truth about what middlewares exist, what they cost, and when to enable them.
 
 Usage by parent agent or agent_creator::
 
-    from core.middleware_registry import MIDDLEWARE_REGISTRY, query_middlewares
+    from core.systems.middleware.middleware_registry import MIDDLEWARE_REGISTRY, query_middlewares
 
     # List all available enhancement middlewares
     for mw in query_middlewares(category="enhancement"):

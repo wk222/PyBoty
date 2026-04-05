@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from core.systems.governance.approval_queue import ApprovalQueue
+from core.systems.governance.execution_protocol import build_workflow_approval_response
 
 from .workflow_delegation_runtime import WorkflowDelegationRuntime
 from .workflow_exceptions import WorkflowApprovalPause, WorkflowSignalPause, WorkflowTimerPause
@@ -673,14 +674,13 @@ class WorkflowExecutionRuntime:
 
     @staticmethod
     def _approval_response(approval_pause: WorkflowApprovalPause) -> dict[str, Any]:
-        return {
-            "status": "waiting_approval",
-            "workflow_id": approval_pause.workflow_id,
-            "node_id": approval_pause.node_id,
-            "resume_token": approval_pause.resume_token,
-            "prompt": approval_pause.prompt,
-            "approval_id": approval_pause.approval_id,
-        }
+        return build_workflow_approval_response(
+            workflow_id=approval_pause.workflow_id,
+            node_id=approval_pause.node_id,
+            resume_token=approval_pause.resume_token,
+            prompt=approval_pause.prompt,
+            approval_id=approval_pause.approval_id,
+        )
 
     @staticmethod
     def _timer_or_signal_response(pause: WorkflowTimerPause | WorkflowSignalPause) -> dict[str, Any]:

@@ -1,27 +1,12 @@
-"""
-能力总线（Capability Bus）— PyBot 积木式架构的核心联动层
-
-设计理念：
-  Tool → Skill → Agent/Workflow → App
-  每一层都是积木，可以自由组合。母体（PyBot）通过能力总线连接所有子实体，
-  实现能力共享、数据互通、事件联动，1+1>2。
-
-灵感来源：
-- DeepAgents: 中间件栈 + 统一状态协议 + 子任务隔离回合并
-- Dify: 工作流可被 App 调用
-- Unix: 万物皆文件 → 我们的理念：万物皆能力（Capability）
-"""
+"""Thin capability-bus facade over runtime, reporting, and tool surfaces."""
 
 from __future__ import annotations
 
-import json
 from typing import Any
-
-from langchain.tools import BaseTool
-from pydantic import BaseModel, ConfigDict, Field
 
 from .capability_bus_models import CapabilityLayer, EventType
 from .capability_bus_runtime import CapabilityBusRuntime
+from .capability_bus_tools import CapBusQueryInput, CapBusTool, get_capability_bus_tools
 
 
 class CapabilityBus:
@@ -74,8 +59,29 @@ class CapabilityBus:
     def find_by_dependency(self, capability_name: str) -> list[Any]:
         return self.runtime.find_by_dependency(capability_name)
 
-    def record_invocation(self, name: str, success: bool, duration_ms: float = 0) -> None:
-        self.runtime.record_invocation(name, success, duration_ms)
+    def share_execution_context(self, invocation: Any) -> None:
+        self.runtime.share_execution_context(invocation)
+
+    def record_invocation(
+        self,
+        name: str,
+        success: bool,
+        duration_ms: float = 0,
+        *,
+        source: str = "",
+        layer: str = "",
+        operation: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        self.runtime.record_invocation(
+            name,
+            success,
+            duration_ms,
+            source=source,
+            layer=layer,
+            operation=operation,
+            metadata=metadata,
+        )
 
     def on(self, event_type: EventType, handler: Any) -> None:
         self.runtime.on(event_type, handler)
@@ -127,88 +133,3 @@ class CapabilityBus:
 
     def auto_register_workflows(self, pyflow_engine: Any) -> None:
         self.runtime.auto_register_workflows(pyflow_engine)
-
-
-class CapBusQueryInput(BaseModel):
-    action: str = Field(
-        description="""操作类型:
-- stats: 查看能力总线统计
-- graph: 查看层级图谱（Tool→Skill→Agent→Workflow→App 连接关系）
-- find: 查找能力（可按 layer/tag 过滤）
-- events: 查看最近事件
-- deps: 检查某个能力的依赖解析
-- share: 向总线共享数据
-- get: 从总线获取共享数据"""
-    )
-    layer: str = Field(description="过滤层级: tool/skill/agent/workflow/app", default="")
-    tag: str = Field(description="过滤标签", default="")
-    name: str = Field(description="能力名称（用于 deps/get 操作）", default="")
-    key: str = Field(description="共享数据键名（用于 share/get 操作）", default="")
-    value: str = Field(description="共享数据值（JSON，用于 share 操作）", default="")
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-
-class CapBusTool(BaseTool):
-    name: str = "capability_bus"
-    description: str = """PyBot 能力总线 — 查看和管理所有层级的能力（Tool→Skill→Agent→Workflow→App）。
-
-可以查看能力统计、层级图谱、依赖关系，以及在不同能力之间共享数据。
-这是 PyBot 积木式架构的核心：每个工具、技能、智能体、工作流、应用都是一块积木，
-通过能力总线实现 1+1>2 的联动效果。"""
-    args_schema: type[BaseModel] = CapBusQueryInput
-    bus: Any = Field(default=None, exclude=True)
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    def _run(
-        self,
-        action: str = "stats",
-        layer: str = "",
-        tag: str = "",
-        name: str = "",
-        key: str = "",
-        value: str = "",
-    ) -> str:
-        try:
-            if action == "stats":
-                return json.dumps(self.bus.get_stats(), ensure_ascii=False, indent=2)
-            if action == "graph":
-                return json.dumps(self.bus.get_layer_graph(), ensure_ascii=False, indent=2)
-            if action == "find":
-                cap_layer = CapabilityLayer(layer) if layer else None
-                capabilities = self.bus.find(layer=cap_layer, tag=tag or None)
-                return json.dumps([capability.to_dict() for capability in capabilities], ensure_ascii=False, indent=2)
-            if action == "events":
-                return json.dumps(self.bus.get_recent_events(), ensure_ascii=False, indent=2)
-            if action == "deps":
-                if not name:
-                    return json.dumps({"error": "请提供能力名称 (name)"}, ensure_ascii=False)
-                return json.dumps(self.bus.resolve_dependencies(name), ensure_ascii=False, indent=2)
-            if action == "share":
-                if not key:
-                    return json.dumps({"error": "请提供键名 (key)"}, ensure_ascii=False)
-                try:
-                    resolved_value = json.loads(value) if value else None
-                except json.JSONDecodeError:
-                    resolved_value = value
-                self.bus.share_data(key, resolved_value, source="agent")
-                return json.dumps({"success": True, "key": key}, ensure_ascii=False)
-            if action == "get":
-                if not key:
-                    context = self.bus.get_all_context()
-                    shared_context = {item_key: str(item_value)[:200] for item_key, item_value in context.items()}
-                    return json.dumps(
-                        {"shared_context": shared_context},
-                        ensure_ascii=False,
-                        indent=2,
-                    )
-                data = self.bus.get_data(key)
-                return json.dumps({"key": key, "data": data}, ensure_ascii=False, indent=2, default=str)
-            return json.dumps({"error": f"未知操作: {action}"}, ensure_ascii=False)
-        except Exception as exc:
-            return json.dumps({"error": str(exc)}, ensure_ascii=False)
-
-
-def get_capability_bus_tools(bus: CapabilityBus) -> list[BaseTool]:
-    return [CapBusTool(bus=bus)]

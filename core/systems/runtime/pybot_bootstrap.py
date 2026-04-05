@@ -44,7 +44,7 @@ from core.systems.bus import (
     get_capability_bus_tools,
     get_capability_registry_tools,
 )
-from core.systems.context.context_manager import ContextConfig, ContextWindowManager
+from core.systems.context.context_manager import ContextWindowManager
 from core.systems.eval.eval_framework import EvalFramework, get_eval_tools
 from core.systems.execution import get_execution_loop_tools
 from core.systems.governance import AgentControlPolicy, ApprovalQueue
@@ -55,7 +55,6 @@ from core.systems.middleware.agent_middleware_factory import build_root_langchai
 from core.systems.middleware.middleware_stack import MiddlewareStack
 from core.systems.runtime.backend_protocol import LocalSandboxBackend
 from core.systems.runtime.config_impl import (
-    get_agent_control_config,
     get_channel_routes_config,
     get_channels_config,
     get_extra_skill_sources,
@@ -65,6 +64,7 @@ from core.systems.runtime.model_failover import create_failover_model
 from core.systems.runtime.model_resolver import ModelProviderError, resolve_model
 from core.systems.runtime.project_paths import ProjectPaths
 from core.systems.runtime.prompts import build_static_system_prompt
+from core.systems.runtime.runtime_capability_bundle import build_capability_runtime_bundle
 from core.systems.runtime.workspace_manager import WorkspaceManager
 
 
@@ -186,7 +186,7 @@ def build_runtime(
     backend = LocalSandboxBackend(root_dir=str(paths.workspace_dir))
 
     workspace = WorkspaceManager(str(paths.workspace_dir))
-    from core.skill_sources import SkillSource
+    from core.assets.skills.skill_sources import SkillSource
 
     extra_sources_cfg = get_extra_skill_sources()
     skill_sources: list[str | SkillSource] | None = None
@@ -213,50 +213,31 @@ def build_runtime(
         channel_routes=get_channel_routes_config(),
     )
 
-    resolved_approval_queue = approval_queue or ApprovalQueue(storage_path=paths.approvals_file)
-    pyflow_engine = PyFlowEngine(
-        str(paths.workspace_dir),
-        approval_queue=resolved_approval_queue,
-        session_runtime=session_runtime,
-    )
-    pyflow_engine.configure_callbacks(
+    capability_bundle = build_capability_runtime_bundle(
+        paths=paths,
+        thread_id=thread_id,
+        summarize_callback=summarize_callback,
         tool_callback=tool_callback,
         agent_callback=agent_callback,
         delegate_callback=delegate_callback,
-    )
-
-    tool_chain = ToolChainExecutor()
-    tool_chain.set_tool_callback(tool_callback)
-
-    eval_framework = EvalFramework(str(paths.workspace_dir))
-    eval_framework.set_agent_callback(summarize_callback)
-
-    context_manager = ContextWindowManager(
-        ContextConfig(
-            max_tokens=12000,
-            summarize_callback=summarize_callback,
-            offload_dir=str(paths.conversation_offload_dir),
-            thread_id=thread_id,
-        )
-    )
-    capability_bus = CapabilityBus(str(paths.workspace_dir))
-    capability_registry = CapabilityRegistry(
-        workspace_dir=paths.workspace_dir,
-        capability_bus=capability_bus,
-        skill_marketplace=skill_marketplace,
         skill_registry=skill_registry,
+        skill_marketplace=skill_marketplace,
         app_manager=app_manager,
         agent_storage=agent_storage,
-        pyflow_engine=pyflow_engine,
+        control_config=control_config,
+        approval_queue=approval_queue,
+        session_runtime=session_runtime,
     )
-    control_policy = AgentControlPolicy.from_config(control_config or get_agent_control_config())
-    subagent_registry = SubagentRegistry(
-        max_depth=control_policy.max_subagent_depth,
-        max_concurrent=control_policy.max_concurrent_subagents,
-        default_timeout_seconds=control_policy.subagent_timeout_seconds,
-    )
-
-    middleware_stack = MiddlewareStack()  # empty legacy stack; all middleware now in LangChain pipeline
+    resolved_approval_queue = capability_bundle.approval_queue
+    pyflow_engine = capability_bundle.pyflow_engine
+    tool_chain = capability_bundle.tool_chain
+    eval_framework = capability_bundle.eval_framework
+    context_manager = capability_bundle.context_manager
+    capability_bus = capability_bundle.capability_bus
+    capability_registry = capability_bundle.capability_registry
+    control_policy = capability_bundle.control_policy
+    subagent_registry = capability_bundle.subagent_registry
+    middleware_stack = capability_bundle.middleware_stack
 
     knowledge_tools_list: list[Any] = []
     memory: MemoryManager | SemanticMemoryManager = MemoryManager(str(paths.workspace_dir))
@@ -265,9 +246,9 @@ def build_runtime(
 
         rag_cfg = get_rag_config()
         if rag_cfg.get("enabled"):
-            from core.document_pipeline import ChunkConfig, DocumentPipeline
-            from core.embedding_resolver import resolve_embeddings
-            from core.knowledge_tools import get_knowledge_tools
+            from core.systems.knowledge.document_pipeline import ChunkConfig, DocumentPipeline
+            from core.systems.knowledge.embedding_resolver import resolve_embeddings
+            from core.systems.knowledge.knowledge_tools import get_knowledge_tools
             from core.systems.knowledge.vector_store import create_vector_store
 
             persist_dir = rag_cfg.get("persist_dir") or str(paths.workspace_dir / "vector_store")
@@ -525,7 +506,7 @@ def create_root_agent(
             structured output from the agent. When provided, the agent's
             final response will be validated against this schema.
     """
-    from core.summarization_middleware import SummarizationConfig
+    from core.systems.middleware.summarization_middleware import SummarizationConfig
 
     summ_config = SummarizationConfig(
         offload_dir=str(getattr(runtime, "_conversation_offload_dir", "")),

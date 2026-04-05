@@ -1,22 +1,7 @@
 import { onMounted, ref, watch } from 'vue';
 import { API } from '/static/api/index.js';
 import { locale, toggleLocale, t } from '/static/i18n.js';
-
-const TYPE_ROUTES = {
-  tool: '/tools',
-  skill: '/skills',
-  agent: '/agents',
-  workflow: '/workflows',
-  app: '/apps',
-};
-
-const TYPE_COLORS = {
-  tool: '#fbbf24',
-  skill: '#34d399',
-  agent: '#818cf8',
-  workflow: '#60a5fa',
-  app: '#f472b6',
-};
+import { getSearchResultColor, getSearchResultRoute } from '/static/config/navigation.js';
 
 export default {
   name: 'TopBar',
@@ -40,12 +25,15 @@ export default {
     });
 
     function route(item) {
-      showResults.value = false;
-      query.value = '';
-      return TYPE_ROUTES[item.type] || '/';
+      return getSearchResultRoute(item);
     }
 
-    function color(type) { return TYPE_COLORS[type] || 'var(--text-muted)'; }
+    function color(type) { return getSearchResultColor(type); }
+
+    function selectResult() {
+      showResults.value = false;
+      query.value = '';
+    }
 
     function closeResults() { showResults.value = false; }
     function delayClose() { setTimeout(() => closeResults(), 200); }
@@ -73,6 +61,7 @@ export default {
       showResults,
       route,
       color,
+      selectResult,
       closeResults,
       delayClose,
       locale,
@@ -86,7 +75,7 @@ export default {
   template: `
     <header class="mx-topbar">
       <div class="mx-topbar-left">
-        <router-link to="/" class="mx-topbar-brand">
+        <router-link to="/chat" class="mx-topbar-brand">
           <span class="mx-topbar-logo">P</span>
           <span class="mx-topbar-title">PyBot <small>{{ t('topbar.spine') }}</small></span>
         </router-link>
@@ -101,7 +90,7 @@ export default {
                  class="mx-search-input" />
           <div v-if="showResults" class="mx-search-results">
             <router-link v-for="(r, i) in results" :key="i" :to="route(r)"
-                         class="mx-search-result-item" @click="showResults = false; query = ''">
+                         class="mx-search-result-item" @click="selectResult">
               <span class="mx-search-result-type" :style="{ background: color(r.type) + '18', color: color(r.type), borderRadius: '100px', padding: '2px 8px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }">{{ r.type }}</span>
               <span style="font-weight:600;color:var(--text-primary);">{{ r.name }}</span>
               <span v-if="r.description" style="color:var(--text-muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;">{{ r.description }}</span>

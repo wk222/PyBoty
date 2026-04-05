@@ -22,7 +22,8 @@ import DebugPanel from '/static/views/DebugPanel.js';
 import Settings from '/static/views/Settings.js';
 
 const routes = [
-  { path: '/', component: Dashboard },
+  { path: '/', redirect: '/chat' },
+  { path: '/dashboard', component: Dashboard },
   { path: '/ecosystem', component: EcosystemView },
   { path: '/system', component: SystemModel },
   { path: '/chat', component: ChatView },

@@ -30,14 +30,42 @@ class WorkflowEngineRuntimeBundle:
     node_runtime: WorkflowNodeRuntime
     workflows_dir: str
 
+    def bind_engine_callbacks(
+        self,
+        *,
+        run_workflow: Any | None = None,
+        resume_workflow: Any | None = None,
+    ) -> None:
+        """Bind engine methods after construction to avoid circular setup."""
+        self.node_runtime.bind_engine_callbacks(
+            run_workflow=run_workflow,
+            resume_workflow=resume_workflow,
+        )
+
+    def configure_callbacks(
+        self,
+        *,
+        tool_callback: Any | None = None,
+        agent_callback: Any | None = None,
+        delegate_callback: Any | None = None,
+    ) -> None:
+        """Wire tool/agent/delegate callbacks into the shared runtimes."""
+        if tool_callback is not None:
+            self.node_runtime.tool_callback = tool_callback
+        if agent_callback is not None:
+            self.node_runtime.agent_callback = agent_callback
+            self.collaboration_runtime.set_agent_callback(agent_callback)
+        if delegate_callback is not None:
+            self.collaboration_runtime.set_delegate_callback(delegate_callback)
+
 
 def build_workflow_engine_runtime_bundle(
     *,
     workspace_dir: str,
     approval_queue: ApprovalQueue,
     log_event: Any,
-    run_workflow: Any,
-    resume_workflow: Any,
+    run_workflow: Any | None = None,
+    resume_workflow: Any | None = None,
     session_runtime: Any | None = None,
 ) -> WorkflowEngineRuntimeBundle:
     """Assemble workflow runtimes with shared storage and orchestration callbacks."""
@@ -56,8 +84,8 @@ def build_workflow_engine_runtime_bundle(
         approval_queue=approval_queue,
         save_workflow=lifecycle_runtime.save_runtime,
         load_workflow=lifecycle_runtime.load_workflow,
-        resume_workflow=resume_workflow,
-        run_workflow=run_workflow,
+        resume_workflow=None,
+        run_workflow=None,
         resolve_var=graph_runtime.resolve_var,
         resolve_config=graph_runtime.resolve_config,
         evaluate_condition=graph_runtime.evaluate_condition,
@@ -84,7 +112,7 @@ def build_workflow_engine_runtime_bundle(
         reset_edge_states=graph_runtime.reset_edge_states,
         resume_collaboration_node=collaboration_runtime.resume_delegated_node,
     )
-    return WorkflowEngineRuntimeBundle(
+    bundle = WorkflowEngineRuntimeBundle(
         definition_runtime=definition_runtime,
         lifecycle_runtime=lifecycle_runtime,
         graph_runtime=graph_runtime,
@@ -93,6 +121,11 @@ def build_workflow_engine_runtime_bundle(
         node_runtime=node_runtime,
         workflows_dir=workflows_dir,
     )
+    bundle.bind_engine_callbacks(
+        run_workflow=run_workflow,
+        resume_workflow=resume_workflow,
+    )
+    return bundle
 
 
 def _workflow_approval_fingerprint(*, workflow_id: str, node_id: str, resume_token: str) -> str:

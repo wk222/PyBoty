@@ -15,7 +15,7 @@ and be selected via configuration.
 
 Typical usage::
 
-    from core.context_engine import get_engine, register_engine
+    from core.systems.context.context_engine import get_engine, register_engine
 
     register_engine(MyCustomEngine())
 

@@ -12,6 +12,8 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from .capability_reporting import CapabilityBusReporter
+
 try:
     from langchain.agents.middleware import AgentMiddleware
     from langchain.agents.middleware.types import ModelRequest, ModelResponse, ToolCallRequest
@@ -32,6 +34,7 @@ class LCBusMiddleware(AgentMiddleware if _HAS_LC else object):  # type: ignore[m
 
     def __init__(self, capability_bus: Any) -> None:
         self._bus = capability_bus
+        self._reporter = CapabilityBusReporter(capability_bus)
 
     @property
     def name(self) -> str:
@@ -45,7 +48,11 @@ class LCBusMiddleware(AgentMiddleware if _HAS_LC else object):  # type: ignore[m
         start = time.time()
         response = handler(request)
         duration = (time.time() - start) * 1000
-        self._bus.share_context("last_invoke_duration_ms", duration, source="bus_middleware")
+        self._reporter.record_model_call(
+            duration_ms=duration,
+            message_count=len(getattr(request, "messages", []) or []),
+            source="bus_middleware",
+        )
         return response
 
     async def awrap_model_call(
@@ -56,7 +63,11 @@ class LCBusMiddleware(AgentMiddleware if _HAS_LC else object):  # type: ignore[m
         start = time.time()
         response = await handler(request)
         duration = (time.time() - start) * 1000
-        self._bus.share_context("last_invoke_duration_ms", duration, source="bus_middleware")
+        self._reporter.record_model_call(
+            duration_ms=duration,
+            message_count=len(getattr(request, "messages", []) or []),
+            source="bus_middleware",
+        )
         return response
 
     def wrap_tool_call(
@@ -69,7 +80,16 @@ class LCBusMiddleware(AgentMiddleware if _HAS_LC else object):  # type: ignore[m
         duration = (time.time() - start) * 1000
         tool_name = getattr(request, "name", "unknown")
         success = isinstance(result, ToolMessage)
-        self._bus.record_invocation(tool_name, success=success, duration_ms=duration)
+        self._reporter.record_tool_call(
+            tool_name=tool_name,
+            success=success,
+            duration_ms=duration,
+            source="lc_bus_middleware",
+            metadata={
+                "request_type": type(request).__name__,
+                "result_type": type(result).__name__,
+            },
+        )
         return result
 
     async def awrap_tool_call(
@@ -82,5 +102,14 @@ class LCBusMiddleware(AgentMiddleware if _HAS_LC else object):  # type: ignore[m
         duration = (time.time() - start) * 1000
         tool_name = getattr(request, "name", "unknown")
         success = isinstance(result, ToolMessage)
-        self._bus.record_invocation(tool_name, success=success, duration_ms=duration)
+        self._reporter.record_tool_call(
+            tool_name=tool_name,
+            success=success,
+            duration_ms=duration,
+            source="lc_bus_middleware",
+            metadata={
+                "request_type": type(request).__name__,
+                "result_type": type(result).__name__,
+            },
+        )
         return result

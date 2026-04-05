@@ -355,6 +355,6 @@ class WorkflowDef:
         return payload
 
     def to_workflow_spec(self) -> str:
-        from core.workflow_spec import export_workflow_spec
+        from core.assets.workflows.workflow_spec import export_workflow_spec
 
         return export_workflow_spec(self.to_dict(runtime=True))

@@ -8,7 +8,7 @@ Provides:
 
 Usage::
 
-    from core.link_safety import safe_urls
+    from core.systems.integration.link_safety import safe_urls
 
     urls = safe_urls("Check https://example.com and http://169.254.1.1/admin")
     # urls == ["https://example.com"]   (169.254.x.x is blocked)

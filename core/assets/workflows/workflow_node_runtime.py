@@ -12,6 +12,11 @@ import uuid
 from typing import Any
 
 from core.systems.governance import ApprovalQueue
+from core.systems.governance.execution_protocol import (
+    WaitingApprovalPayload,
+    WorkflowPauseMetadata,
+    attach_workflow_pause_metadata,
+)
 from core.systems.runtime import ProjectPaths
 from core.assets.workflows.workflow_models import FlowNode, NodeStatus, NodeType, WorkflowDef, WorkflowStatus
 from core.assets.workflows.workflow_nodes_extended import (
@@ -25,7 +30,6 @@ from core.assets.workflows.workflow_nodes_extended import (
     run_question_classifier,
     run_variable_assigner,
 )
-from core.assets.workflows.workflow_pause_state import extract_waiting_approval_ids, primary_waiting_approval_id
 from core.assets.workflows.workflow_plugin import get_plugin
 
 from .node_operator import NodeOperator
@@ -42,8 +46,8 @@ class WorkflowNodeRuntime:
         approval_queue: ApprovalQueue,
         save_workflow: Any,
         load_workflow: Any,
-        resume_workflow: Any,
-        run_workflow: Any,
+        resume_workflow: Any | None = None,
+        run_workflow: Any | None = None,
         resolve_var: Any,
         resolve_config: Any,
         evaluate_condition: Any,
@@ -70,6 +74,24 @@ class WorkflowNodeRuntime:
         self.tool_callback = tool_callback
         self.agent_callback = agent_callback
         self.operator = NodeOperator()
+
+    def bind_engine_callbacks(
+        self,
+        *,
+        run_workflow: Any | None = None,
+        resume_workflow: Any | None = None,
+    ) -> None:
+        """Attach engine-level run/resume callbacks after bundle construction."""
+        if run_workflow is not None:
+            self.run_workflow = run_workflow
+        if resume_workflow is not None:
+            self.resume_workflow = resume_workflow
+
+    @staticmethod
+    def _require_callback(callback: Any, name: str) -> Any:
+        if callback is not None:
+            return callback
+        raise RuntimeError(f"Workflow node runtime missing required callback: {name}")
 
     def exec_node(self, node: FlowNode, workflow: WorkflowDef, run_id: str = "local") -> Any:
         """Execute a node using the strong NodeOperator control plane."""
@@ -327,7 +349,10 @@ class WorkflowNodeRuntime:
                 node_id=node.id,
                 resume_token=workflow.resume_token,
             ),
-            callback=lambda approved, note: self.resume_workflow(
+            callback=lambda approved, note: self._require_callback(
+                self.resume_workflow,
+                "resume_workflow",
+            )(
                 workflow.id,
                 workflow.resume_token or "",
                 approved,
@@ -351,41 +376,39 @@ class WorkflowNodeRuntime:
         workflow: WorkflowDef,
         result: Any,
     ) -> None:
-        if not isinstance(result, dict):
-            return
-        if str(result.get("workflow_pause_kind", "")).strip() != "delegated_subagent":
+        waiting = WaitingApprovalPayload.from_payload(result if isinstance(result, dict) else None)
+        if not waiting.is_delegated_subagent_pause:
             return
 
-        approval_ids = extract_waiting_approval_ids(result)
-        approval_id = primary_waiting_approval_id(result)
+        approval_ids = list(waiting.all_approval_ids)
+        approval_id = waiting.primary_approval_id
         if not approval_id:
             raise RuntimeError(f"工作流节点 '{node.id}' 等待委派审批，但缺少 approval_id")
 
         workflow.resume_token = uuid.uuid4().hex
         workflow.status = WorkflowStatus.PAUSED
         node.status = NodeStatus.WAITING
-        node.output = {**result, "resume_token": workflow.resume_token}
+        node.output = waiting.to_payload({**result, "resume_token": workflow.resume_token})
         workflow.variables[f"{node.id}.status"] = "waiting_approval"
         workflow.variables[f"{node.id}.approval_id"] = approval_id
         workflow.variables[f"{node.id}.output"] = node.output
 
         prompt = str(result.get("response", "")).strip() or "子智能体委派已暂停，等待审批。"
-        for pending_approval_id in approval_ids or [approval_id]:
-            request = self.approval_queue.get_request(pending_approval_id)
-            if request is None:
-                continue
-            self.approval_queue.update_request_metadata(
-                pending_approval_id,
-                workflow_id=workflow.id,
-                workflow_name=workflow.name,
-                workflow_node_id=node.id,
-                workflow_node_label=node.label,
-                workflow_resume_token=workflow.resume_token,
-                workflow_pause_kind="delegated_subagent",
-                workflow_pause_mode=str(result.get("workflow_pause_mode", "")).strip(),
-            )
-            if pending_approval_id == approval_id:
-                prompt = request.prompt or prompt
+        pause_metadata = WorkflowPauseMetadata.from_waiting_payload(
+            workflow_id=workflow.id,
+            workflow_name=workflow.name,
+            node_id=node.id,
+            node_label=node.label,
+            resume_token=workflow.resume_token,
+            payload=result,
+        )
+        prompt = attach_workflow_pause_metadata(
+            approval_queue=self.approval_queue,
+            approval_ids=approval_ids,
+            primary_approval_id=approval_id,
+            pause_metadata=pause_metadata,
+            default_prompt=prompt,
+        )
         self.save_workflow(workflow)
         raise WorkflowApprovalPause(
             workflow_id=workflow.id,
@@ -477,7 +500,10 @@ class WorkflowNodeRuntime:
         sub_workflow.id = uuid.uuid4().hex[:12]
         for key, value in config.get("input", {}).items():
             sub_workflow.variables[key] = self.resolve_var(value, workflow) if isinstance(value, str) else value
-        return {"subflow": subflow_name, "result": self.run_workflow(sub_workflow)}
+        return {
+            "subflow": subflow_name,
+            "result": self._require_callback(self.run_workflow, "run_workflow")(sub_workflow),
+        }
 
     def _run_transform(self, config: dict[str, Any], workflow: WorkflowDef) -> Any:
         operation = config.get("operation", "passthrough")

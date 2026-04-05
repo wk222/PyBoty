@@ -27,10 +27,14 @@ def test_capability_bus_registers_persists_and_tracks_context(temp_paths):
 
     registry_path = temp_paths.workspace_dir / "data" / "capability_registry.json"
     payload = json.loads(registry_path.read_text(encoding="utf-8"))
+    last_execution = bus.get_context("last_capability_execution")
 
     assert seen == ["calc", "planner"]
     assert bus.get_context("phase") == "draft"
     assert bus.get_data("artifact") == {"ok": True}
+    assert last_execution["name"] == "planner"
+    assert last_execution["layer"] == "agent"
+    assert last_execution["status"] == "completed"
     assert payload["capabilities"]["planner"]["success_rate"] == "100%"
     assert bus.resolve_dependencies("planner")["resolved"] is True
 
