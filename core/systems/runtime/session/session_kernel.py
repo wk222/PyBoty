@@ -38,8 +38,8 @@ class SessionKernel:
     discovered_skill_names: list[str] = field(default_factory=list)
     loaded_memory_paths: list[str] = field(default_factory=list)
     usage: dict[str, int] = field(default_factory=dict)
-    file_view_projection: dict[str, Any] = field(default_factory=dict)
-    mutable_artifacts: dict[str, Any] = field(default_factory=dict)
+    runtime_view: dict[str, Any] = field(default_factory=dict)
+    mutable_views: dict[str, Any] = field(default_factory=dict)
     invalidations: list[dict[str, Any]] = field(default_factory=list)
     sidechains: dict[str, SessionSidechain] = field(default_factory=dict)
 
@@ -109,8 +109,8 @@ class SessionKernel:
             "discovered_skill_names": list(self.discovered_skill_names),
             "loaded_memory_paths": list(self.loaded_memory_paths),
             "usage": dict(self.usage),
-            "file_view_projection": dict(self.file_view_projection),
-            "mutable_artifacts": dict(self.mutable_artifacts),
+            "runtime_view": dict(self.runtime_view),
+            "mutable_views": dict(self.mutable_views),
             "invalidations": list(self.invalidations),
             "sidechains": [sidechain.to_dict() for sidechain in self.sidechains.values()],
         }

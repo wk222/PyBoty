@@ -76,7 +76,7 @@ The system introduces a \emph{tri-modal root identity}---Assistant, App Matrix, 
 Five first-class capability layers (Tools, Skills, Agents, Workflows, Apps) are connected by a runtime Capability Bus, with cross-cutting governance (approval queues, risk grading, sandboxing) ensuring controllability at every layer.
 We detail the architecture of PyBot's strict four-layer core engine, describe its middleware-based extensibility model, and present quantitative evidence from 1\,474 automated tests covering tool creation, durable execution, memory lifecycle, workflow DAGs, security modules, and application orchestration.
 PyBot demonstrates that a single, governable agent runtime can serve as a continuously evolving capability accumulator rather than a disposable conversational endpoint.
-Recent enhancements include: a Plan-Hash-Revalidate security chain; a distributed Node/Operator control plane; background Session Reapers; an advanced Query Expansion RAG pipeline; a formal four-layer typed memory taxonomy (workspace/session/agent/admin) with validated type-to-layer routing; a pressure-aware Context Budget Manager with per-tool cost accounting; and a \emph{compiled-artifacts context assembly pipeline} in which the session spine's working summaries, typed memory projections, and tool transcripts are rendered directly into the model's dynamic prompt on every turn---closing the loop between session recording and context utilization.
+Recent enhancements include: a formal \emph{ProjectedRuntimeView} that acts as the canonical single source of truth for prompt assembly, routing, and context hygiene; a \emph{Managed Policy Plane} for trusted security and runtime capability gating; an advanced \emph{Multi-Agent Control Plane} built on strict isolation models (CWD, worktree overrides) and shared \emph{Team Memory} continuity; and an upgraded \emph{App Matrix} featuring ephemeral sandboxed generators and multi-mode app switching (Static, Chat, Workflow, AaaS, RAG). The session spine now ensures that all capabilities---from tool execution to application generation---grow from a unified, safe, and context-aware foundation.
 \end{abstract}
 
 % ================================================================
@@ -298,16 +298,20 @@ Each agent is defined by:
   \item A \textbf{system prompt} describing its role and expertise.
   \item A \textbf{Capability Profile} specifying which tools it can access (own tools, global tools, or both).
   \item A \textbf{Middleware Profile} controlling which middleware layers apply to its invocations.
-  \item An optional \textbf{Sandbox Policy} restricting execution to containers or isolated environments.
+  \item A formal \textbf{Isolation Model} and \textbf{Sandbox Policy}, which dictates worktree overrides (CWD, remote targets) and restricts filesystem or code execution capabilities during delegation.
 \end{itemize}
 
-Crucially, PyBot implements \textbf{Subagent Streaming and Isolation}. When a parent agent delegates a task, the subagent runs in an isolated context but can stream its internal thought process and intermediate steps back to the parent asynchronously. This prevents long-running delegated tasks from causing UI blocking, dramatically improving the operator user experience.
+Crucially, PyBot implements a sophisticated \textbf{Multi-Agent Control Plane} encompassing two primary features:
+\begin{enumerate}
+  \item \textbf{Subagent Streaming and Isolation:} When a parent agent delegates a task, the subagent runs in an isolated, contract-bound context. It can stream its internal thought processes asynchronously, preventing UI blocking while ensuring that delegated operations do not violate parent constraints.
+  \item \textbf{Team Memory and Shared Continuity:} Subagents do not merely return a single string upon completion. Using tools like \texttt{add\_team\_note}, agents can push critical contracts, discoveries, and blockers into a shared \emph{Team Memory} space. This allows sibling agents and the parent coordinator to achieve real-time consensus, enabling long-lived Swarm behaviors that outlast individual task delegations.
+\end{enumerate}
 
 Multi-agent coordination is supported through three paradigms implemented as PyFlow workflow nodes:
 \begin{itemize}
   \item \textbf{Debate:} Agents argue different positions; a judge synthesises the final answer.
   \item \textbf{Consensus (MoE):} Multiple experts produce independent analyses that are merged.
-  \item \textbf{Supervisor:} A routing agent dynamically selects which specialist to invoke.
+  \item \textbf{Supervisor:} A routing agent dynamically selects which specialist to invoke based on real-time team memory.
 \end{itemize}
 
 \subsection{Layer 4: Workflows}
@@ -332,8 +336,8 @@ Workflows support:
 PyBot can generate, host, and serve complete web applications as workspace-resident artefacts:
 
 \begin{itemize}
-  \item \textbf{Scaffolding:} \texttt{create\_app} generates an HTML/CSS/JS skeleton with pre-injected helper functions (\texttt{dbQuery}, \texttt{apiCall}, \texttt{agentChat}, etc.).
-  \item \textbf{Modes:} Apps can operate as static pages, chat interfaces, workflow triggers, RAG-enhanced assistants, or general-purpose assistants.
+  \item \textbf{Managed App Runtime:} Applications are generated within an ephemeral, strict subagent sandbox using tools like \texttt{build\_app\_iteratively}. This closed-loop generator writes code (\texttt{UpdateAppFileTool}) and immediately lints/tests it (\texttt{VerifyAppTool}), automatically repairing failures without exposing the host to raw code execution risks.
+  \item \textbf{Multi-Mode Switching:} Apps can dynamically switch between operating as static pages, chat interfaces, workflow triggers, RAG-enhanced assistants, or general-purpose assistants (AaaS), rebuilding their frontend templates seamlessly via the API.
   \item \textbf{API Backend:} Each app can define a Python \texttt{api.py} that is executed in a subprocess sandbox with SQLite access.
   \item \textbf{Verification:} A built-in HTML/CSS/JS linter detects common issues before deployment.
 \end{itemize}
@@ -417,17 +421,18 @@ This replaces the previous flat model in which all summaries were treated as a s
 The \textbf{SessionRuntime} is the canonical event ledger for all interaction surfaces (chat, gateway, workflow).
 It maintains per-session \texttt{SessionRecord} objects and an associated \texttt{SessionKernel} that tracks long-lived projections---tool transcripts, notebook entries, file view history, compaction boundaries, and typed memory layers.
 
-The \texttt{compile\_session\_artifacts(record, kernel)} function materialises these projections into a structured artifact dict with five sections:
+The \texttt{compile\_session\_runtime\_view(record, kernel)} function materialises these projections into a canonical \textbf{ProjectedRuntimeView} with core sections:
 \begin{enumerate}
   \item \textbf{system\_context}: active mode, working summary, and any queued prompt injections.
   \item \textbf{user\_context}: context notes and typed memory entries (by type and layer).
-  \item \textbf{session\_notebook\_projection}: LLM-compressed notebook summary, tool-transcript summary, and compaction boundary metadata.
-  \item \textbf{file\_view\_projection}: recently accessed file paths, deduplicated and time-ordered.
-  \item \textbf{tool\_projection}: recent tool run summaries for the current session.
+  \item \textbf{context\_hygiene}: LLM-compressed notebook summary, tool-transcript summary, and compaction boundary metadata.
+  \item \textbf{workspace}: recently accessed file paths, deduplicated and time-ordered.
+  \item \textbf{team\_memory}: shared team notes across multiple active subagent delegations.
+  \item \textbf{isolation}: sandbox worktree, visibility bounds, and active delegation contract.
 \end{enumerate}
 
-The \texttt{render\_artifact\_context(artifacts)} renderer formats this dict into prompt-ready sections and feeds it through the \texttt{PromptSectionMiddleware} on every model call.
-The root-agent middleware factory accepts an \texttt{artifacts\_provider: Callable[[], dict | None]} closure that calls \texttt{SessionRuntime.get\_compiled\_artifacts(session\_key)} just before each LLM invocation, ensuring the model always sees the live session state rather than a stale snapshot baked at startup.
+The \texttt{render\_runtime\_view\_context(view)} renderer formats this model into prompt-ready sections and feeds it through the \texttt{PromptSectionMiddleware} on every model call.
+The root-agent middleware factory accepts a \texttt{runtime\_view\_provider: Callable[[], ProjectedRuntimeView | None]} closure that calls \texttt{SessionRuntime.get\_compiled\_runtime\_view(session\_key)} just before each LLM invocation, ensuring the model always sees the live, canonical session state rather than a stale snapshot baked at startup.
 
 This closes the loop between session recording (which was already strong) and context utilisation (which previously discarded the compiled artifact entirely).
 
@@ -675,7 +680,11 @@ PyBot is fully open-source (Apache 2.0) and comprises a strict four-layer archit
 
 Recent engineering advances have deepened the session spine: (1) a formal typed memory taxonomy with four validated layers replaces the prior flat model; (2) a pressure-aware Context Budget Manager provides per-tool cost accounting and adaptive output trimming; (3) the compiled-artifacts pipeline now feeds the session spine's working summaries, typed memory projections, notebook summaries, and file view history directly into every model invocation prompt, transforming the session recording subsystem from a write-only ledger into an active context assembly driver; and (4) tri-modal identity prompts have been unified into the \texttt{ModeProfile} object, eliminating scattered branching logic across the bootstrap pipeline.
 
-Future work includes migrating the runtime memory backend from YAML/JSON files to SQL + vector store for structured queries and semantic search; scaling the admin runtime to wider distributed multi-node deployments; adding formal verification of workflow DAGs; and integrating reinforcement learning for autonomous re-planning.
+Future work includes three primary directions:
+(1) \textbf{Event-Driven Swarm Synchronization:} Advancing the Multi-Agent Control Plane by introducing native \texttt{Wait/Sleep} primitives and Pub/Sub wakeups over Team Memory, allowing the Coordinator to orchestrate highly parallel, non-blocking agentic swarms similar to the actor models in AutoGen and MetaGPT.
+(2) \textbf{VLM-Based Visual Testing for the App Matrix:} Upgrading the sandboxed App Generator's verification loop to include Vision Language Model (VLM) UI snapshot testing. By rendering the generated applications in a headless browser and feeding the DOM+screenshot to a VLM, the agent can semantically verify and repair visual layout issues and usability bugs, surpassing brittle pixel-matching approaches.
+(3) \textbf{MCTS and Autonomous Re-planning:} Enhancing the Admin Runtime's planner with Monte Carlo Tree Search (MCTS) or Language Agent Tree Search (LATS). By introducing a \emph{CriticAgent} to score execution branches, the system can utilize its durable checkpoints to perform ``time-travel'' back-tracking, enabling true autonomous self-correction on complex, multi-step tasks.
+Additionally, we plan to migrate the semantic memory backend from YAML/JSON files to SQL + vector store for structured queries.
 
 % ================================================================
 \bibliographystyle{plainnat}

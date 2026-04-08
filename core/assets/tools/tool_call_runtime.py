@@ -130,6 +130,38 @@ class ToolCallRuntime:
             )
         )
 
+    def _apply_execution_options(
+        self,
+        tool_name: str,
+        tool_args: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Modify tool arguments based on the subagent's execution options (cwd, worktree_dir)."""
+        import os
+        context = self._event_context()
+        options = context.get("execution_options", {})
+        if not options:
+            return tool_args
+
+        base_cwd = options.get("cwd", "")
+        if not base_cwd:
+            return tool_args
+
+        # 1. Rebase 'cwd' if present (e.g. for bash tool)
+        if "cwd" in tool_args:
+            requested_cwd = str(tool_args["cwd"])
+            if not os.path.isabs(requested_cwd):
+                # Rebase relative CWD to the execution_options.cwd
+                tool_args["cwd"] = os.path.abspath(os.path.join(base_cwd, requested_cwd))
+            
+        # 2. Rebase 'path' if present (e.g. for file tools)
+        if "path" in tool_args:
+            requested_path = str(tool_args["path"])
+            if not os.path.isabs(requested_path):
+                # Rebase relative path to the execution_options.cwd
+                tool_args["path"] = os.path.abspath(os.path.join(base_cwd, requested_path))
+
+        return tool_args
+
     def run_tool_call(
         self,
         request: Any,
@@ -140,6 +172,10 @@ class ToolCallRuntime:
         tool_args = self.tool_args(tool_call)
         tool_call_id = self.tool_call_id(tool_call)
         is_dynamic = self._inventory.is_dynamic_tool(tool_name)
+
+        # Apply execution options (cwd, etc) before repair and hooks
+        tool_args = self._apply_execution_options(tool_name, tool_args)
+        self._set_tool_args(tool_call, tool_args)
 
         request = self._try_repair_args(request, tool_call, tool_name, tool_args)
         tool_args = self.tool_args(request.tool_call)
@@ -214,6 +250,10 @@ class ToolCallRuntime:
         tool_args = self.tool_args(tool_call)
         tool_call_id = self.tool_call_id(tool_call)
         is_dynamic = self._inventory.is_dynamic_tool(tool_name)
+
+        # Apply execution options (cwd, etc) before repair and hooks
+        tool_args = self._apply_execution_options(tool_name, tool_args)
+        self._set_tool_args(tool_call, tool_args)
 
         request = self._try_repair_args(request, tool_call, tool_name, tool_args)
         tool_args = self.tool_args(request.tool_call)

@@ -116,6 +116,19 @@ _WORKFLOW_GUIDE = """\
 记住：**优先使用模板，主动创造工具解决问题！**\
 """
 
+_CAPABILITY_TREE_ROUTING_GUIDE = """\
+## Tree Routing
+
+1. Start with the trunk and the Single-Agent Runtime first.
+2. Use Skills for strategy and SOP guidance, not as a replacement for platform execution.
+3. Escalate to Workflow only when the task is repeatable, multi-step, branching, approval-gated, or scheduled.
+4. Escalate to Apps only when you are building a durable user-facing product surface.
+5. Escalate to Multi-Agent only when the task is separable and specialist delegation materially helps.
+6. For app creation, prefer `build_app_iteratively`, then `create_app -> update_app_file -> verify_app -> test_app_api`, and use raw file tools only as a fallback.
+7. For retrieval or grounding, prefer the Knowledge / RAG branch over stuffing long reference context into the prompt.
+8. For live information, prefer the Web branch only when freshness or external URLs truly matter.
+"""
+
 _APP_BRAIN_GUIDE = """\
 ## 应用矩阵协作指南
 
@@ -171,6 +184,8 @@ def build_static_system_prompt(*, template_section: str = "", root_mode: str = "
         _AGENT_CREATION_GUIDE,
         "---",
         _WORKFLOW_GUIDE,
+        "---",
+        _CAPABILITY_TREE_ROUTING_GUIDE,
     ]
     if profile.enables_app_topology_planning:
         parts.extend(["---", _APP_BRAIN_GUIDE])
@@ -182,7 +197,7 @@ def build_runtime_prompt_sections(
     workspace_context: str = "",
     memory_context: str = "",
     skill_extensions: str = "",
-    session_artifacts: dict | None = None,
+    projected_runtime_view: dict | None = None,
 ) -> str:
     """Build dynamic runtime context sections that should stay fresh per request."""
     parts = [
@@ -190,10 +205,10 @@ def build_runtime_prompt_sections(
         f"### 十三、已激活的技能\n{skill_extensions or '暂无额外技能扩展'}",
         memory_context,
     ]
-    if session_artifacts:
-        from core.systems.runtime.session_artifacts import render_artifact_context
+    if projected_runtime_view:
+        from core.systems.runtime.session.session_runtime_view import render_runtime_view_context
 
-        artifact_ctx = render_artifact_context(session_artifacts)
+        artifact_ctx = render_runtime_view_context(projected_runtime_view)
         if artifact_ctx:
             parts.append(artifact_ctx)
     return "\n\n".join(part for part in parts if part)

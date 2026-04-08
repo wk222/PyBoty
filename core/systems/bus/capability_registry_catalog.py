@@ -14,6 +14,11 @@ from core.systems.runtime.event_bus import Event, EventType, event_bus
 
 from .capability_bus import CapabilityBus
 from .capability_bus_models import Capability, CapabilityLayer
+from .capability_tree import (
+    annotate_capability_tree_metadata,
+    build_capability_route_projection,
+    selection_metadata_for_capability,
+)
 
 
 class CapabilityCatalogRuntime:
@@ -79,13 +84,17 @@ class CapabilityCatalogRuntime:
         page: int = 1,
     ) -> dict[str, Any]:
         self.refresh_local_index(save=False)
+        projected_runtime_view = self.capability_bus.get_context("projected_runtime_view")
         local = [
-            capability.to_dict()
+            self._serialize_capability_for_selection(
+                capability, query=query, provides=provides, projected_runtime_view=projected_runtime_view
+            )
             for capability in self._filter_local_capabilities(
                 query=query,
                 layer=layer,
                 tag=tag,
                 provides=provides,
+                projected_runtime_view=projected_runtime_view,
             )
         ]
         marketplace = self._discover_marketplace(query=query, provides=provides) if include_marketplace else []
@@ -132,7 +141,10 @@ class CapabilityCatalogRuntime:
         capabilities = self._filter_local_capabilities(provides=provides, layer=layer)
         return {
             "provides": provides,
-            "providers": [capability.to_dict() for capability in capabilities],
+            "providers": [
+                self._serialize_capability_for_selection(capability, query=provides, provides=provides)
+                for capability in capabilities
+            ],
             "count": len(capabilities),
         }
 
@@ -141,6 +153,15 @@ class CapabilityCatalogRuntime:
         capability = self.capability_bus.get(capability_name)
         if capability is None:
             return None
+        tree_metadata = annotate_capability_tree_metadata(
+            name=capability.name,
+            layer=capability.layer,
+            description=capability.description,
+            tags=capability.tags,
+            dependencies=capability.dependencies,
+            provides=capability.provides,
+            metadata=capability.metadata,
+        ).get("tree", {})
         contract = {
             "id": capability.name,
             "layer": capability.layer.value,
@@ -149,6 +170,7 @@ class CapabilityCatalogRuntime:
             "provides": list(capability.provides),
             "dependencies": list(capability.dependencies),
             "metadata": dict(capability.metadata),
+            "tree": dict(tree_metadata),
             "interface": self._build_interface_contract(capability),
         }
         if capability.layer == CapabilityLayer.APP and self.app_manager is not None:
@@ -264,11 +286,14 @@ class CapabilityCatalogRuntime:
         return result
 
     def get_registry_snapshot(self) -> dict[str, Any]:
-        capabilities = [capability.to_dict() for capability in self.capability_bus.list_capabilities()]
-        capabilities.sort(key=lambda item: (item["layer"], item["name"]))
+        capabilities = [
+            self._serialize_capability_for_selection(capability)
+            for capability in self._filter_local_capabilities()
+        ]
         summary: dict[str, Any] = {
             "stats": self.capability_bus.get_stats(),
             "graph": self.capability_bus.get_layer_graph(),
+            "tree": self.capability_bus.get_tree_projection(),
             "capabilities": capabilities,
             "marketplace": {
                 "catalog": sorted(self.skill_marketplace.list_available(), key=lambda item: item.get("name", "")),
@@ -285,6 +310,45 @@ class CapabilityCatalogRuntime:
             summary["apps"] = {"count": len(apps), "items": apps}
         return summary
 
+    def route_query(
+        self,
+        *,
+        query: str = "",
+        layer: str = "",
+        tag: str = "",
+        provides: str = "",
+        max_matches: int = 5,
+        include_marketplace: bool = True,
+    ) -> dict[str, Any]:
+        self.refresh_local_index(save=False)
+        local_capabilities = []
+        for capability in self.capability_bus.list_capabilities():
+            if layer and capability.layer.value != layer:
+                continue
+            if tag and tag not in capability.tags:
+                continue
+            if provides and provides not in capability.provides:
+                continue
+            local_capabilities.append(capability)
+        payload = build_capability_route_projection(
+            local_capabilities,
+            query=query,
+            provides=provides,
+            tree_projection=self.capability_bus.get_tree_projection(),
+            projected_runtime_view=self.capability_bus.get_context("projected_runtime_view"),
+            max_matches=max_matches,
+        )
+        payload["filters"] = {
+            "layer": layer,
+            "tag": tag,
+            "provides": provides,
+        }
+        if include_marketplace:
+            marketplace = self._discover_marketplace(query=query, provides=provides)
+            payload["marketplace_candidates"] = marketplace[: max(1, int(max_matches))]
+            payload["marketplace_count"] = len(marketplace)
+        return payload
+
     def _register_from_unified_inventory(self, inventory: UnifiedAssetInventory) -> None:
         all_info = inventory.list_all()
         skill_groups: dict[str, list[str]] = {}
@@ -299,6 +363,13 @@ class CapabilityCatalogRuntime:
                     CapabilityLayer.TOOL,
                     description=info.description[:200],
                     tags=info.tags,
+                    metadata=annotate_capability_tree_metadata(
+                        name=info.name,
+                        layer=CapabilityLayer.TOOL,
+                        description=info.description[:200],
+                        tags=info.tags,
+                    ),
+                    registered_by="unified_inventory",
                 )
 
         if self.skill_registry is not None:
@@ -309,8 +380,23 @@ class CapabilityCatalogRuntime:
                     skill_name,
                     CapabilityLayer.SKILL,
                     description=description[:200],
+                    dependencies=tool_names,
                     provides=tool_names,
                     tags=skill_def.capabilities if skill_def else [],
+                    metadata=annotate_capability_tree_metadata(
+                        name=skill_name,
+                        layer=CapabilityLayer.SKILL,
+                        description=description[:200],
+                        tags=list(skill_def.capabilities if skill_def else []),
+                        dependencies=tool_names,
+                        provides=tool_names,
+                        metadata={
+                            "source_name": getattr(skill_def, "source_name", "") if skill_def else "",
+                            "enabled": bool(getattr(skill_def, "enabled", True)) if skill_def else True,
+                            "tool_count": len(tool_names),
+                        },
+                    ),
+                    registered_by="unified_inventory",
                 )
 
     def _filter_local_capabilities(
@@ -320,6 +406,7 @@ class CapabilityCatalogRuntime:
         layer: str = "",
         tag: str = "",
         provides: str = "",
+        projected_runtime_view: dict[str, Any] | None = None,
     ) -> list[Capability]:
         capabilities = self.capability_bus.list_capabilities()
         query_lower = query.lower().strip()
@@ -344,8 +431,29 @@ class CapabilityCatalogRuntime:
                 if query_lower not in haystack:
                     continue
             filtered.append(capability)
-        filtered.sort(key=lambda item: (item.layer.value, item.name))
+        filtered.sort(
+            key=lambda item: selection_metadata_for_capability(
+                item, query=query, provides=provides, projected_runtime_view=projected_runtime_view
+            )["selection_sort_key"]
+        )
         return filtered
+
+    @staticmethod
+    def _serialize_capability_for_selection(
+        capability: Capability,
+        *,
+        query: str = "",
+        provides: str = "",
+        projected_runtime_view: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        payload = capability.to_dict()
+        selection = selection_metadata_for_capability(
+            capability, query=query, provides=provides, projected_runtime_view=projected_runtime_view
+        )
+        payload["tree"] = dict(selection.get("tree", {}))
+        payload["selection_score"] = int(selection.get("selection_score", 0) or 0)
+        payload["selection_reason"] = str(selection.get("selection_reason", "")).strip()
+        return payload
 
     def _discover_marketplace(self, *, query: str = "", provides: str = "") -> list[dict[str, Any]]:
         query_lower = (query or provides).lower().strip()

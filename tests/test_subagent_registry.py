@@ -96,3 +96,40 @@ def test_subagent_registry_records_steering_and_abort():
     assert aborted.status == "aborted"
     assert registry.get_active(agent_name="worker", thread_id="thread-1") is None
     assert registry.get_latest(agent_name="worker", thread_id="thread-1").error == "operator stop"
+
+
+def test_subagent_registry_builds_team_memory_projection_from_context_notes():
+    registry = SubagentRegistry(max_depth=3, max_concurrent=2, default_timeout_seconds=60)
+    registry.spawn(
+        agent_name="worker",
+        thread_id="thread-1",
+        team_key="session-1",
+        owner_session_key="session-1",
+        owner_thread_id="root-thread",
+    )
+    registry.complete(
+        agent_name="worker",
+        thread_id="thread-1",
+        response="done",
+        context_notes=["checked failing tests", "captured stack trace"],
+    )
+    
+    registry.add_team_note(
+        team_key="session-1",
+        agent_name="coordinator",
+        note="Worker finished successfully, proceeding to next task.",
+    )
+
+    projection = registry.build_team_memory_projection(
+        team_key="session-1",
+        owner_session_key="session-1",
+        owner_thread_id="root-thread",
+    )
+
+    assert projection["team_key"] == "session-1"
+    assert projection["shared_memory_ready"] is True
+    assert "worker" in projection["participant_agents"]
+    assert "coordinator" in projection["participant_agents"]
+    assert projection["note_count"] == 3
+    assert projection["recent_notes"][-1]["note"] == "Worker finished successfully, proceeding to next task."
+

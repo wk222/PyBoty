@@ -20,6 +20,7 @@ from core.assets.apps.app_verifier_checks import (
     check_javascript,
     check_runtime_contract,
     check_ux,
+    check_visual_ui,
     generate_fix_instructions,
     score_issues,
     summarize_issues,
@@ -42,7 +43,7 @@ class AppVerificationService:
 
     app_manager: AppManager
 
-    def verify_app(self, app_name: str, *, auto_fix: bool = True) -> dict[str, Any]:
+    def verify_app(self, app_name: str, *, auto_fix: bool = True, llm: Any = None) -> dict[str, Any]:
         app_dir = self._resolve_app_dir(app_name)
         if app_dir is None:
             return {"success": False, "error": f"无效的应用名称: '{app_name}'"}
@@ -91,6 +92,9 @@ class AppVerificationService:
             issues.extend(check_ux(html_content, js_content))
         elif html_content is not None:
             issues.extend(check_ux(html_content, ""))
+            
+        if llm is not None and html_content is not None:
+            issues.extend(check_visual_ui(app_dir, llm=llm))
 
         score = score_issues(issues)
         result: dict[str, Any] = {
@@ -171,6 +175,10 @@ class VerifyAppTool(BaseTool):
     name: str = "verify_app"
     description: str = """验证子应用的代码质量，检查常见问题。
 
+这是 App Runtime 分支里的正式验证节点，应该和 `create_app` / `update_app_file` /
+`build_app_iteratively` 组成“生成 -> 验证 -> 修复”的闭环，而不是被裸 `write_file`
+流程绕过去。
+
 **验证内容**：
 1. HTML 结构完整性（标签闭合、必要元素）
 2. JavaScript 语法检查（通过 Node.js）
@@ -178,6 +186,7 @@ class VerifyAppTool(BaseTool):
 4. API 调用一致性
 5. 响应式设计检查
 6. 用户体验要素（加载状态、空状态、错误处理）
+7. 视觉UI布局检查（如果支持 VLM 和 Playwright）
 
 **何时使用**：
 - 创建或更新子应用后，验证代码质量
@@ -188,9 +197,10 @@ class VerifyAppTool(BaseTool):
 """
     args_schema: type[BaseModel] = VerifyAppInput
     model_config = ConfigDict(arbitrary_types_allowed=True)
+    llm: Any = Field(default=None, exclude=True)
 
     def _run(self, app_name: str, auto_fix: bool = True) -> str:
-        result = get_app_verification_service().verify_app(app_name, auto_fix=auto_fix)
+        result = get_app_verification_service().verify_app(app_name, auto_fix=auto_fix, llm=self.llm)
         return json.dumps(result, ensure_ascii=False, indent=2)
 
 
@@ -202,6 +212,9 @@ class ReadAppFileInput(BaseModel):
 class ReadAppFileTool(BaseTool):
     name: str = "read_app_file"
     description: str = """读取子应用的文件内容，用于审查和修复。
+
+优先用它来检查托管 app 内的文件状态；它属于 App Runtime 分支，语义上比通用 `read_file`
+更贴近“修 app”这条链。
 
 常用文件:
 - index.html: 主页面

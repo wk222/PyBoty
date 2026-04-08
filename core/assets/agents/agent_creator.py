@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
+import uuid
 from typing import Any
 
 from langchain.tools import BaseTool
@@ -15,7 +18,7 @@ from core.systems.runtime.event_bus import Event, EventType, event_bus
 from core.systems.runtime.project_paths import ProjectPaths
 
 from .agent_services import create_agent_record, delegate_agent_task
-from .agent_storage import AgentStorage
+from .agent_storage import AgentDefinition, AgentModelConfig, AgentStorage
 from .subagent_runtime import create_sub_agent_instance
 
 
@@ -116,6 +119,13 @@ class DelegateToAgentInput(BaseModel):
     agent_name: str = Field(description="目标智能体名称")
     task: str = Field(description="要委派的任务描述")
     context: str = Field(description="任务上下文信息（可选）", default="")
+    cwd: str | None = Field(description="执行工作目录（可选），相对路径将相对于主工作区", default=None)
+    worktree_dir: str | None = Field(description="工作树目录（可选），用于多版本/分支协作隔离", default=None)
+    remote_target: str | None = Field(description="远程执行目标（可选），用于跨机器/容器调度", default=None)
+    capability_override: str | None = Field(
+        description="能力画像覆盖（可选，JSON格式）。例如：{\"allow_code_execution\": false}",
+        default=None,
+    )
     stream: bool = Field(description="是否以流式返回结果", default=False)
 
 
@@ -126,6 +136,14 @@ class DelegateToAgentTool(BaseTool):
 
 适合复杂、独立、上下文密集的任务拆分。子智能体会在隔离线程中执行，
 并只把最终结果和受控状态更新返回给主智能体。
+
+你可以指定 execution options (cwd, worktree_dir, remote_target) 和
+capability_override 来动态控制子智能体的隔离环境与权限。
+
+路由原则：
+- 先判断 Single-Agent + trunk 工具是否已经足够
+- 只有任务可独立拆分、且专门角色能明显提升效果时再委派
+- 不要把平台级闭环（如 app runtime / workflow runtime）直接退化成纯 delegation
 """
     args_schema: type[BaseModel] = DelegateToAgentInput
     agent_storage: Any = Field(default=None, exclude=True)
@@ -171,6 +189,10 @@ class DelegateToAgentTool(BaseTool):
         agent_name: str,
         task: str,
         context: str = "",
+        cwd: str | None = None,
+        worktree_dir: str | None = None,
+        remote_target: str | None = None,
+        capability_override: str | None = None,
         stream: bool = False,
     ) -> str | Any:
         event_bus.emit(
@@ -198,6 +220,10 @@ class DelegateToAgentTool(BaseTool):
                 parent_thread_id=runtime_context.get("thread_id"),
                 parent_depth=int(runtime_context.get("depth", 0) or 0),
                 stream=stream,
+                cwd=cwd,
+                worktree_dir=worktree_dir,
+                remote_target=remote_target,
+                capability_override=capability_override,
             )
             if stream:
                 return result
@@ -215,6 +241,107 @@ class DelegateToAgentTool(BaseTool):
             )
         )
         return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+class SpawnSubagentInput(BaseModel):
+    agent_name: str = Field(description="目标智能体名称")
+    task: str = Field(description="要委派的任务描述")
+    context: str = Field(description="任务上下文信息（可选）", default="")
+    cwd: str | None = Field(description="执行工作目录", default=None)
+    capability_override: str | None = Field(description="能力画像覆盖 (JSON)", default=None)
+
+
+class SpawnSubagentTool(BaseTool):
+    name: str = "spawn_subagent"
+    description: str = """
+🚀 异步任务启动器 - 在后台启动一个子智能体任务并立即返回 run_id。
+适用于启动多个并行任务（Swarm 模式）。启动后，你可以继续执行其它操作，
+稍后使用 `wait_subagent` 工具来同步结果。
+"""
+    args_schema: type[BaseModel] = SpawnSubagentInput
+    agent_storage: Any = Field(default=None, exclude=True)
+    tool_storage: Any = Field(default=None, exclude=True)
+    llm_factory: Any = Field(default=None, exclude=True)
+    control_policy: Any = Field(default=None, exclude=True)
+    global_tool_storage: Any = Field(default=None, exclude=True)
+    approval_queue: Any = Field(default=None, exclude=True)
+    project_paths: Any = Field(default=None, exclude=True)
+    subagent_registry: Any = Field(default=None, exclude=True)
+    runtime_context: Any = Field(default=None, exclude=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    def _run(self, agent_name: str, task: str, context: str = "", cwd: str | None = None, capability_override: str | None = None) -> str:
+        from .agent_services import delegate_agent_task
+        
+        target_thread_id = f"swarm_{agent_name}_{uuid.uuid4().hex[:8]}"
+        
+        def bg_run():
+            try:
+                delegate_agent_task(
+                    agent_storage=self.agent_storage,
+                    agent_name=agent_name,
+                    task=task,
+                    context=context,
+                    llm_factory=self.llm_factory,
+                    control_policy=self.control_policy,
+                    global_tool_storage=self.global_tool_storage,
+                    approval_queue=self.approval_queue,
+                    project_paths=self.project_paths,
+                    subagent_registry=self.subagent_registry,
+                    cwd=cwd,
+                    capability_override=capability_override,
+                    parent_agent_name=self.runtime_context.get("current_agent_name"),
+                    parent_run_id=self.runtime_context.get("run_id"),
+                    parent_thread_id=self.runtime_context.get("thread_id"),
+                    parent_depth=self.runtime_context.get("depth", 0),
+                    thread_id=target_thread_id,
+                )
+            except Exception:
+                pass 
+
+        thread = threading.Thread(target=bg_run, daemon=True)
+        thread.start()
+        
+        for _ in range(10):
+            record = self.subagent_registry.get_latest(agent_name=agent_name, thread_id=target_thread_id)
+            if record:
+                return json.dumps({"success": True, "run_id": record.run_id, "message": f"智能体 {agent_name} 已在后台启动。"}, ensure_ascii=False)
+            time.sleep(0.1)
+            
+        return json.dumps({"success": False, "error": "启动超时或失败，请检查智能体状态。"})
+
+
+class WaitSubagentInput(BaseModel):
+    run_id: str = Field(description="要等待的任务运行 ID")
+    timeout: float = Field(description="最大等待秒数", default=60.0)
+
+
+class WaitSubagentTool(BaseTool):
+    name: str = "wait_subagent"
+    description: str = """
+⏳ 任务同步器 - 等待一个异步启动的子智能体任务完成并返回结果。
+如果任务已完成，立即返回结果；否则将阻塞当前执行直到超时或任务结束。
+"""
+    args_schema: type[BaseModel] = WaitSubagentInput
+    subagent_registry: Any = Field(default=None, exclude=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    def _run(self, run_id: str, timeout: float = 60.0) -> str:
+        finished = self.subagent_registry.wait(run_id, timeout=timeout)
+        record = self.subagent_registry.get(run_id)
+        if not record:
+            return f"错误：找不到任务 {run_id}"
+            
+        if not finished:
+            return f"等待超时（{timeout}s），任务 {run_id} 仍在运行中。"
+            
+        return json.dumps({
+            "status": record.status,
+            "response": record.last_response,
+            "error": record.error,
+            "error_context": record.error_context,
+            "notes": record.context_notes
+        }, ensure_ascii=False, indent=2)
 
 
 class AskAgentInput(BaseModel):
@@ -425,6 +552,18 @@ def get_agent_creator_tools(
             subagent_registry=subagent_registry,
             runtime_context=runtime_context or {"current_agent_name": "root", "depth": 0},
         ),
+        SpawnSubagentTool(
+            agent_storage=agent_storage,
+            tool_storage=tool_storage,
+            llm_factory=llm_factory,
+            control_policy=control_policy,
+            global_tool_storage=tool_storage,
+            approval_queue=approval_queue,
+            project_paths=project_paths,
+            subagent_registry=subagent_registry,
+            runtime_context=runtime_context or {"current_agent_name": "root", "depth": 0},
+        ),
+        WaitSubagentTool(subagent_registry=subagent_registry),
         ListAgentsTool(agent_storage=agent_storage),
         RemoveAgentTool(agent_storage=agent_storage),
     ]
@@ -450,6 +589,10 @@ __all__ = [
     "delegate_agent_task",
     "DelegateToAgentInput",
     "DelegateToAgentTool",
+    "SpawnSubagentInput",
+    "SpawnSubagentTool",
+    "WaitSubagentInput",
+    "WaitSubagentTool",
     "get_agent_creator_tools",
     "ListAgentsInput",
     "ListAgentsTool",

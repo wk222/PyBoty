@@ -2,11 +2,87 @@
 
 from __future__ import annotations
 
-import re
-import subprocess
-from collections import Counter
-from pathlib import Path
-from typing import Any
+import json
+import base64
+
+def check_visual_ui(app_dir: Path, llm: Any = None) -> list[dict[str, str]]:
+    """Use Playwright and a Vision-capable LLM to verify the app's visual layout."""
+    issues: list[dict[str, str]] = []
+    if llm is None:
+        return issues
+        
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        issues.append(
+            issue(
+                "warning",
+                "visual",
+                "无法执行视觉测试：未安装 playwright。请运行 `pip install playwright && playwright install`。",
+                "安装 playwright 以启用 VLM 视觉验证",
+            )
+        )
+        return issues
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            # File URL to the app's index.html
+            file_url = f"file://{app_dir.absolute()}/index.html"
+            page.goto(file_url, wait_until="networkidle", timeout=10000)
+            
+            # Take screenshot
+            screenshot_bytes = page.screenshot(type="jpeg", quality=80)
+            base64_image = base64.b64encode(screenshot_bytes).decode("utf-8")
+            browser.close()
+            
+        # Call VLM
+        from langchain_core.messages import HumanMessage
+        
+        prompt = (
+            "You are an expert UI/UX designer and frontend QA engineer. "
+            "Analyze the provided screenshot of a web application for visual bugs. "
+            "Look for overlapping text, cut-off elements, unstyled raw HTML, broken layouts, or illegible contrast. "
+            "If the UI looks reasonable and usable, return an empty JSON array: []. "
+            "If there are issues, return a JSON array of objects with keys: 'severity' (warning or critical), 'category' (visual), 'message', and 'fix'. "
+            "Do not include markdown wrappers, just raw JSON."
+        )
+        
+        msg = HumanMessage(
+            content=[
+                {"type": "text", "text": prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
+                },
+            ]
+        )
+        
+        response = llm.invoke([msg])
+        content = str(response.content).strip()
+        if content.startswith("```json"):
+            content = content[7:]
+        if content.endswith("```"):
+            content = content[:-3]
+            
+        vlm_issues = json.loads(content.strip())
+        if isinstance(vlm_issues, list):
+            for i in vlm_issues:
+                issues.append(issue(i.get("severity", "warning"), "visual", i.get("message", "Visual bug"), i.get("fix", "Adjust CSS/HTML")))
+                
+    except Exception as e:
+        issues.append(
+            issue(
+                "warning",
+                "visual",
+                f"视觉测试执行失败: {e}",
+                "检查 Playwright 配置或 VLM API 连通性",
+            )
+        )
+        
+    return issues
+
 
 HELPER_FUNCTION_MARKERS = ("apiCall(", "dbQuery(", "dbWrite(")
 ASYNC_CALL_MARKERS = ("fetch(", "apiCall(", "dbQuery(")

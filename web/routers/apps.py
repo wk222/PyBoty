@@ -104,6 +104,21 @@ async def toggle_app(
     return result
 
 
+class AppModeSwitchRequest(BaseModel):
+    mode: str
+    rebuild_template: bool = False
+
+@router.patch("/api/apps/{app_name}/mode")
+async def switch_app_mode(
+    app_name: str,
+    req: AppModeSwitchRequest,
+    services: WebServices = Depends(get_services),
+) -> dict[str, object]:
+    result = services.app_manager.switch_app_mode(app_name, req.mode, req.rebuild_template)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    return result
+
 @router.post("/api/apps/{app_name}/api")
 async def call_app_api(
     app_name: str,

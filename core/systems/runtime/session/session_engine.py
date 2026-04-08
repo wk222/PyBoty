@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from core.systems.runtime.context_budget import BudgetAssessment, ContextBudgetManager
-    from core.systems.runtime.session_runtime import SessionRecord, SessionRuntime
+    from core.systems.runtime.session.session_runtime import SessionRecord, SessionRuntime
 
 
 RUN_KIND_CHAT = "chat"

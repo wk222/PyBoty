@@ -41,9 +41,16 @@ class CreateAppInput(BaseModel):
 
 class CreateAppTool(BaseTool):
     name: str = "create_app"
-    description: str = """Create an agent-driven sub-application. Served at /apps/<app_name>/.
-    
-    If you need detailed instructions on app modes and JS helpers, please read the `create_app_sop` skill."""
+    description: str = """Create the managed scaffold for a sub-application. Served at /apps/<app_name>/.
+
+Use this when you want the platform to create the app runtime correctly:
+- app.json metadata
+- mode-aware template scaffold
+- static assets
+- pybot-helpers.js injection
+
+If you want a one-shot 'build + verify + auto-repair' loop, prefer `build_app_iteratively`.
+If you need app-mode guidance or step-by-step strategy, read the `create_app_sop` skill."""
     args_schema: type[BaseModel] = CreateAppInput
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -124,6 +131,7 @@ TESTING & VERIFICATION (CRITICAL):
 When writing an app, ALWAYS leave testing interfaces and verify basic functions:
 1. For backend (api.py): Write testable actions and use the `test_app_api` tool to verify they work without errors.
 2. For frontend (app.js): Add a `window.runSelfTest = async () => { ... }` function that tests basic API calls or UI rendering logic and logs to console.
+3. After meaningful changes, call `verify_app` to keep the app inside the managed repair loop.
 
 IMPORTANT: When overwriting index.html, always keep the pybot-helpers.js script tag.
 App.js MUST be wrapped in document.addEventListener('DOMContentLoaded', () => { ... });

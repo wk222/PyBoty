@@ -8,10 +8,17 @@ from core.systems.runtime.config_impl import (
     get_llm_fallback_config,
     get_observability_config,
     get_openclaw_compat_config,
+    get_permission_config,
     get_rag_config,
+    get_settings_projection,
+    get_trusted_settings,
     reload_config,
     resolve_config_path,
+    resolve_project_config_path,
+    resolve_system_config_path,
     save_config,
+    save_project_config,
+    save_system_config,
 )
 
 __all__ = [
@@ -22,8 +29,15 @@ __all__ = [
     "get_llm_fallback_config",
     "get_openclaw_compat_config",
     "get_observability_config",
+    "get_permission_config",
     "get_rag_config",
+    "get_settings_projection",
+    "get_trusted_settings",
     "reload_config",
     "resolve_config_path",
+    "resolve_project_config_path",
+    "resolve_system_config_path",
     "save_config",
+    "save_project_config",
+    "save_system_config",
 ]

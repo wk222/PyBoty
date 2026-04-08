@@ -11,6 +11,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from core.systems.runtime.projected_runtime_view import extract_projected_runtime_view
+
 
 _DEFAULT_MODEL_LIMITS: dict[str, int] = {
     "gpt-4o": 128_000,
@@ -175,20 +177,39 @@ class ContextBudgetManager:
         if not session_record:
             return tokens
 
+        runtime_view = None
         if isinstance(session_record, dict):
             timeline = session_record.get("timeline", [])
             message_count = session_record.get("message_count", 0)
             working_summary = session_record.get("working_summary", "")
-            context_notes = session_record.get("context_notes", [])
+            note_lines: list[str] = []
+            runtime_view = extract_projected_runtime_view(session_record.get("runtime_view", {}))
         else:
             timeline = getattr(session_record, "timeline", [])
             message_count = getattr(session_record, "message_count", 0)
             working_summary = getattr(session_record, "working_summary", "")
-            context_notes = getattr(session_record, "context_notes", [])
+            note_lines: list[str] = []
+            metadata = getattr(session_record, "metadata", {})
+            runtime_view = extract_projected_runtime_view(
+                metadata.get("runtime_view", {}) if isinstance(metadata, dict) else {}
+            )
+
+        if runtime_view is not None:
+            working_summary = (
+                str(runtime_view.system_context.get("working_summary", "")).strip()
+                or str(runtime_view.session.get("working_summary", "")).strip()
+                or working_summary
+            )
+            notebook_summary = str(runtime_view.session.get("session_notebook_summary", "")).strip()
+            if notebook_summary:
+                note_lines = [line for line in notebook_summary.splitlines() if line.strip()]
+            activities = list(runtime_view.tasks.get("activities", []))
+            if activities:
+                timeline = activities
 
         tokens += int(message_count) * 150
         tokens += len(str(working_summary)) // 4
-        tokens += sum(len(str(note)) // 4 for note in context_notes)
+        tokens += sum(len(str(note)) // 4 for note in note_lines)
         tokens += len(timeline) * 80
 
         if self._usage_history:
@@ -209,7 +230,7 @@ class ContextBudgetManager:
             should_compact = True
             should_micro_trim = True
             should_rehydrate = True
-            trim_targets = ["tool_outputs", "file_views", "timeline_events", "context_notes"]
+            trim_targets = ["tool_outputs", "file_views", "timeline_events", "session_notebook"]
             notes.append(f"Critical utilization {utilization:.0%} — rehydrate from session memory")
         elif utilization >= self._compact_threshold:
             level = PRESSURE_HIGH

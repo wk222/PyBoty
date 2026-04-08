@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import json
+import logging
+import threading
+import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from langchain_core.language_models import BaseChatModel
 
@@ -26,12 +30,18 @@ from core.systems.governance.tool_approval_runtime import (
 from core.systems.middleware.agent_middleware_factory import build_subagent_langchain_middleware
 from core.systems.runtime.private_state import get_private_keys
 from core.systems.runtime.project_paths import ProjectPaths
+from core.systems.runtime.subagent_isolation import (
+    build_subagent_isolation_projection,
+    materialize_isolation_execution_options,
+)
 
 from .agent_capability_profile import AgentCapabilityProfile
 from .agent_middleware_profile import AgentMiddlewareProfile
 from .agent_storage import AgentDefinition
 from .subagent_governance import derive_subagent_control_policy, filter_tools_for_policy
 from .subagent_registry import SubagentRegistry
+
+logger = logging.getLogger(__name__)
 
 EXCLUDED_SUBAGENT_STATE_KEYS = get_private_keys()
 
@@ -61,6 +71,7 @@ def resolve_subagent_tools(
     project_paths: ProjectPaths | None = None,
     runtime_context: dict[str, Any] | None = None,
     registry: SubagentRegistry | None = None,
+    summarize_fn: Any | None = None,
 ) -> list[Any]:
     from core.assets.tools.tool_creator import get_dynamic_tools
     from core.assets.tools.tool_runtime import build_dynamic_tool
@@ -118,6 +129,38 @@ def resolve_subagent_tools(
         tools.append(tool)
         seen_names.add(tool.name)
 
+    if profile.allow_memory_garden:
+        from core.systems.memory.garden_tools import get_garden_tools
+        ws = str(sandbox.workspace_dir) if sandbox else "workspace"
+        for tool in get_garden_tools(workspace_dir=ws, summarize_fn=summarize_fn):
+            if tool.name in seen_names:
+                continue
+            tools.append(tool)
+            seen_names.add(tool.name)
+
+    if profile.allow_dense_memory:
+        from core.systems.knowledge.vector_store import create_vector_store
+        from core.systems.knowledge.knowledge_tools import get_knowledge_tools
+        ws = str(sandbox.workspace_dir) if sandbox else "workspace"
+        persist_dir = os.path.join(ws, ".vector_store")
+        
+        # Determine embedding function (fallback to None if not easily available)
+        # In a real scenario, we might want to pass this down.
+        vector_store = create_vector_store(backend="sqlite-vec", persist_dir=persist_dir)
+        for tool in get_knowledge_tools(vector_store=vector_store):
+            if tool.name in seen_names:
+                continue
+            tools.append(tool)
+            seen_names.add(tool.name)
+
+    # Always allow taking notes for team/context sync
+    from core.assets.tools.session_notes_tool import get_session_note_tools
+    for tool in get_session_note_tools(runtime_context=runtime_context, registry=registry):
+        if tool.name in seen_names:
+            continue
+        tools.append(tool)
+        seen_names.add(tool.name)
+
     return filter_tools_for_policy(
         tools=tools,
         control_policy=effective_policy,
@@ -142,6 +185,8 @@ class SubAgentInvocationResult:
     tool_names: list[str]
     thread_id: str
     sandbox: dict[str, Any]
+    isolation: dict[str, Any]
+    context_notes: list[str] = field(default_factory=list)
     approval_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -155,6 +200,8 @@ class SubAgentInvocationResult:
             "tool_names": self.tool_names,
             "thread_id": self.thread_id,
             "sandbox": self.sandbox,
+            "isolation": self.isolation,
+            "context_notes": list(self.context_notes),
             "approval_id": self.approval_id,
         }
 
@@ -167,6 +214,7 @@ class SubAgentRuntime:
         *,
         graph: Any,
         definition: AgentDefinition,
+        tools: list[Any],
         tool_names: list[str],
         control_policy: AgentControlPolicy,
         sandbox: SubagentSandbox,
@@ -178,6 +226,7 @@ class SubAgentRuntime:
     ):
         self.graph = graph
         self.definition = definition
+        self.tools = tools
         self.tool_names = tool_names
         self.control_policy = control_policy
         self.sandbox = sandbox
@@ -215,7 +264,24 @@ class SubAgentRuntime:
             "configurable": {"thread_id": thread_id},
             "recursion_limit": self.runtime_config.recursion_limit,
         }
+        # Initialize context notes buffer for this run
+        self.runtime_context["context_notes_buffer"] = []
+        
         try:
+            isolation_projection = build_subagent_isolation_projection(
+                agent_name=self.definition.name,
+                sandbox=self.sandbox,
+                thread_id=thread_id,
+                parent_thread_id=parent_thread_id or "",
+                depth=parent_depth + 1,
+                owner_session_key=str(self.runtime_context.get("session_key", "") or ""),
+            )
+            self._set_runtime_context(
+                thread_id=thread_id,
+                run_id=run_record.run_id if run_record is not None else self.runtime_context.get("run_id"),
+                depth=(run_record.depth if run_record is not None else max(0, int(parent_depth)) + 1),
+                isolation=isolation_projection,
+            )
             if stream:
                 return self._invoke_stream(
                     subagent_state=subagent_state,
@@ -225,6 +291,10 @@ class SubAgentRuntime:
                 )
 
             result = self.graph.invoke(subagent_state, config=config)
+            
+            # Extract notes taken during this run
+            context_notes = list(self.runtime_context.get("context_notes_buffer", []))
+
             pending = self._register_tool_approval(result, thread_id=thread_id, config=config)
             if pending is not None:
                 if self.registry is not None:
@@ -243,6 +313,8 @@ class SubAgentRuntime:
                     tool_names=self.tool_names,
                     thread_id=thread_id,
                     sandbox=self.sandbox.to_dict(),
+                    isolation=isolation_projection,
+                    context_notes=context_notes,
                     approval_id=pending.approval_id,
                 ).to_dict()
 
@@ -259,12 +331,14 @@ class SubAgentRuntime:
                         agent_name=self.definition.name,
                         thread_id=thread_id,
                         response=response_text,
+                        context_notes=context_notes,
                     )
                 else:
                     self.registry.fail(
                         agent_name=self.definition.name,
                         thread_id=thread_id,
                         error=response_text or "subagent returned an error status",
+                        context_notes=context_notes,
                     )
 
             return SubAgentInvocationResult(
@@ -277,13 +351,18 @@ class SubAgentRuntime:
                 tool_names=self.tool_names,
                 thread_id=thread_id,
                 sandbox=self.sandbox.to_dict(),
+                isolation=isolation_projection,
+                context_notes=context_notes,
             ).to_dict()
         except Exception as exc:
+            import traceback
+            error_context = traceback.format_exc()
             if self.registry is not None:
                 self.registry.fail(
                     agent_name=self.definition.name,
                     thread_id=thread_id,
                     error=str(exc),
+                    error_context=error_context,
                 )
             raise
         finally:
@@ -297,6 +376,7 @@ class SubAgentRuntime:
                     thread_id=thread_id,
                     run_id=run_record.run_id if run_record is not None else self.runtime_context.get("run_id"),
                     depth=current_depth,
+                    isolation=self.runtime_context.get("isolation", {}),
                 )
             else:
                 self._clear_runtime_context()
@@ -323,11 +403,14 @@ class SubAgentRuntime:
                     response="Stream completed",
                 )
         except Exception as exc:
+            import traceback
+            error_context = traceback.format_exc()
             if self.registry is not None:
                 self.registry.fail(
                     agent_name=self.definition.name,
                     thread_id=thread_id,
                     error=str(exc),
+                    error_context=error_context,
                 )
             raise
         finally:
@@ -529,22 +612,62 @@ class SubAgentRuntime:
             parent_run_id=parent_run_id,
             parent_thread_id=parent_thread_id,
             parent_depth=parent_depth,
+            team_key=str(self.runtime_context.get("team_key", "")).strip(),
+            owner_session_key=str(self.runtime_context.get("session_key", "")).strip(),
+            owner_thread_id=str(self.runtime_context.get("owner_thread_id", "")).strip(),
             timeout_seconds=self.control_policy.subagent_timeout_seconds,
             metadata={"role": self.definition.role},
         )
         self._set_runtime_context(thread_id=thread_id, run_id=record.run_id, depth=record.depth)
         return record
 
-    def _set_runtime_context(self, *, thread_id: str, run_id: str | None, depth: int) -> None:
+    def _set_runtime_context(
+        self,
+        *,
+        thread_id: str,
+        run_id: str | None,
+        depth: int,
+        isolation: dict[str, Any] | None = None,
+    ) -> None:
         self.runtime_context["current_agent_name"] = self.definition.name
         self.runtime_context["thread_id"] = thread_id
         self.runtime_context["run_id"] = run_id
         self.runtime_context["depth"] = max(0, int(depth))
+        if isolation is not None:
+            payload = dict(isolation)
+            self.runtime_context["isolation"] = payload
+            exec_opts = materialize_isolation_execution_options(payload)
+            self.runtime_context["execution_options"] = exec_opts
+            self.runtime_context["permission_scope"] = str(payload.get("permission_scope", "")).strip()
+            self.runtime_context["audit_scope"] = str(payload.get("audit_scope", "")).strip()
+            self.runtime_context["session_key"] = str(payload.get("owner_session_key", "")).strip()
+            self.runtime_context["owner_thread_id"] = str(payload.get("owner_thread_id", "")).strip()
+            self.runtime_context["team_key"] = (
+                str(payload.get("owner_session_key", "")).strip()
+                or str(payload.get("owner_thread_id", "")).strip()
+                or thread_id
+            )
+            
+            if hasattr(self, "tools"):
+                target_cwd = exec_opts.get("cwd") or ""
+                target_worktree = exec_opts.get("worktree_dir") or target_cwd
+                for tool in self.tools:
+                    if hasattr(tool, "workspace_dir") and target_worktree:
+                        tool.workspace_dir = target_worktree
+                    if hasattr(tool, "cwd") and target_cwd:
+                        tool.cwd = target_cwd
 
     def _clear_runtime_context(self) -> None:
         self.runtime_context["thread_id"] = None
         self.runtime_context["run_id"] = None
         self.runtime_context["depth"] = 0
+        self.runtime_context["isolation"] = {}
+        self.runtime_context["execution_options"] = {}
+        self.runtime_context["permission_scope"] = ""
+        self.runtime_context["audit_scope"] = ""
+        self.runtime_context["session_key"] = ""
+        self.runtime_context["owner_thread_id"] = ""
+        self.runtime_context["team_key"] = ""
 
     def close(self) -> None:
         self.checkpoint_bundle.close()
@@ -573,12 +696,33 @@ def create_sub_agent_instance(
     approval_queue: ApprovalQueue | None = None,
     project_paths: ProjectPaths | None = None,
     registry: SubagentRegistry | None = None,
+    runtime_context: dict[str, Any] | None = None,
     runtime_config: SubAgentRuntimeConfig | None = None,
+    cwd: str | None = None,
+    worktree_dir: str | None = None,
+    remote_target: str | None = None,
+    capability_override: dict[str, Any] | str | None = None,
 ) -> SubAgentRuntime:
     """Create an isolated subagent runtime with its own checkpoint scope."""
     from langchain.agents import create_agent
 
-    profile = AgentCapabilityProfile.from_value(agent_def.capability_profile)
+    base_profile = AgentCapabilityProfile.from_value(agent_def.capability_profile)
+    if capability_override:
+        # Merge override into base profile
+        override_data = base_profile.to_dict()
+        if isinstance(capability_override, str):
+            try:
+                ov = json.loads(capability_override)
+                if isinstance(ov, dict):
+                    override_data.update(ov)
+            except Exception:
+                pass
+        elif isinstance(capability_override, dict):
+            override_data.update(capability_override)
+        profile = AgentCapabilityProfile.from_dict(override_data)
+    else:
+        profile = base_profile
+
     middleware_profile = AgentMiddlewareProfile.from_value(agent_def.middleware_profile)
     subagent_policy = derive_subagent_control_policy(base_policy=control_policy, capability_profile=profile)
     llm = (
@@ -591,12 +735,35 @@ def create_sub_agent_instance(
         capability_profile=profile,
         project_paths=project_paths,
     )
-    runtime_context: dict[str, Any] = {
+    
+    # Materialize execution options
+    options = {}
+    if cwd:
+        options["cwd"] = str(cwd).strip()
+    if worktree_dir:
+        options["worktree_dir"] = str(worktree_dir).strip()
+    if remote_target:
+        options["remote_target"] = str(remote_target).strip()
+
+    runtime_context_val: dict[str, Any] = {
         "current_agent_name": agent_def.name,
         "thread_id": None,
         "run_id": None,
         "depth": 0,
+        "session_key": "",
+        "permission_scope": "",
+        "audit_scope": "",
+        "isolation": {},
+        "execution_options": options,
     }
+    if runtime_context:
+        runtime_context_val.update(runtime_context)
+        if options:
+            runtime_context_val.setdefault("execution_options", {}).update(options)
+
+    from core.systems.memory.admin_memory import create_llm_summarizer
+    summarize_fn = create_llm_summarizer(llm)
+
     tools = resolve_subagent_tools(
         agent_def=agent_def,
         tool_storage=tool_storage,
@@ -606,8 +773,9 @@ def create_sub_agent_instance(
         control_policy=control_policy,
         approval_queue=approval_queue,
         project_paths=project_paths,
-        runtime_context=runtime_context,
+        runtime_context=runtime_context_val,
         registry=registry,
+        summarize_fn=summarize_fn,
     )
     tool_names = [tool.name for tool in tools]
     known_dynamic_tool_names = set(agent_def.tools)
@@ -622,7 +790,11 @@ def create_sub_agent_instance(
             "thread_id": str(runtime_context.get("thread_id", "") or ""),
             "run_id": str(runtime_context.get("run_id", "") or ""),
             "current_agent_name": str(runtime_context.get("current_agent_name", agent_def.name) or agent_def.name),
-            "approval_scope": f"subagent:{agent_def.name}",
+            "approval_scope": str(runtime_context.get("permission_scope", "") or f"subagent:{agent_def.name}"),
+            "audit_scope": str(runtime_context.get("audit_scope", "") or ""),
+            "cwd": str(runtime_context.get("execution_options", {}).get("cwd", "") or ""),
+            "worktree_dir": str(runtime_context.get("execution_options", {}).get("worktree_dir", "") or ""),
+            "remote_target": str(runtime_context.get("execution_options", {}).get("remote_target", "") or ""),
             "root_mode": "assistant",
         },
     )
@@ -649,6 +821,7 @@ def create_sub_agent_instance(
     return SubAgentRuntime(
         graph=graph,
         definition=agent_def,
+        tools=tools,
         tool_names=tool_names,
         control_policy=subagent_policy,
         sandbox=sandbox,

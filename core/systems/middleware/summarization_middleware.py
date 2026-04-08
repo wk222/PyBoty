@@ -1,33 +1,16 @@
-"""LLM-driven conversation summarization middleware.
-
-Inspired by DeepAgents' SummarizationMiddleware — upgrades PyBot's rule-based
-ContextWindowManager with:
-
-1. **LLM summarization** — older messages are summarized via a model call
-2. **Model-aware triggers** — threshold calculated from token count
-3. **Tool-arg truncation** — large write_file/edit_file args clipped before
-   full summarization fires (reduces token waste)
-4. **compact_conversation tool** — agent can proactively compact its context
-5. **History offload** — evicted messages appended to per-thread markdown files
-"""
+"""Context-compaction middleware backed by the canonical hygiene runtime."""
 
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any
 
 try:
     from langchain.agents.middleware import AgentMiddleware
     from langchain.agents.middleware.types import ModelRequest, ModelResponse
-    from langchain_core.messages import (
-        AIMessage,
-        HumanMessage,
-        get_buffer_string,
-    )
+    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
     from langchain_core.tools import BaseTool, StructuredTool
 
     _HAS_LC = True
@@ -36,36 +19,25 @@ except ImportError:
     AgentMiddleware = object  # type: ignore[assignment,misc]
     ModelRequest = object  # type: ignore[assignment,misc]
     ModelResponse = object  # type: ignore[assignment,misc]
+    AIMessage = object  # type: ignore[assignment,misc]
+    HumanMessage = object  # type: ignore[assignment,misc]
+    ToolMessage = object  # type: ignore[assignment,misc]
     BaseTool = object  # type: ignore[assignment,misc]
+    StructuredTool = None  # type: ignore[assignment,misc]
 
-from core.systems.context.context_manager import count_tokens_approx
+from core.systems.runtime.context_hygiene_runtime import ContextHygieneRuntime, count_message_tokens
 
 from .agent_prompt_middleware import append_to_system_message
 
 logger = logging.getLogger(__name__)
 
-SUMMARY_PROMPT = (
-    "Summarize the following conversation in 3-8 sentences. "
-    "Preserve key facts, decisions, action items, and any file "
-    "paths or code snippets that are still relevant:\n\n{text}"
-)
-
-COMPACT_TOOL_PROMPT = """## Context Compaction — compact_conversation
+COMPACT_TOOL_PROMPT = """## Context Compaction - compact_conversation
 
 You have a `compact_conversation` tool. Use it when:
 - The user moves to a completely different topic
 - You finished a large task and previous context is no longer needed
 - The conversation feels long and previous working context is stale
 """
-
-_TRUNCATABLE_TOOLS = frozenset({"write_file", "edit_file", "create_file"})
-
-
-EPISODE_SUMMARY_PROMPT = (
-    "Condense this tool interaction into one concise line. "
-    "Include: tool name, key input, and outcome. Example: "
-    "'write_file(main.py) → created 45-line Flask app'\n\n{text}"
-)
 
 
 @dataclass
@@ -78,24 +50,15 @@ class SummarizationConfig:
     tool_arg_trigger_messages: int = 30
     offload_dir: str | None = None
     thread_id: str = "default"
+    microcompact_age: int = 6
 
 
 def _count_message_tokens(messages: list[Any]) -> int:
-    total = 0
-    for msg in messages:
-        content = getattr(msg, "content", "")
-        if isinstance(content, str):
-            total += count_tokens_approx(content)
-        elif isinstance(content, list):
-            for part in content:
-                total += count_tokens_approx(str(part))
-        for tc in getattr(msg, "tool_calls", []) or []:
-            total += count_tokens_approx(str(tc.get("args", "")))
-    return total
+    return count_message_tokens(messages)
 
 
 class SummarizationMiddleware(AgentMiddleware if _HAS_LC else object):  # type: ignore[misc]
-    """LLM-driven summarization with tool-arg truncation and offload."""
+    """Thin LangChain wrapper over ContextHygieneRuntime."""
 
     def __init__(
         self,
@@ -103,41 +66,77 @@ class SummarizationMiddleware(AgentMiddleware if _HAS_LC else object):  # type: 
         summarize_fn: Callable[[str], str] | None = None,
         config: SummarizationConfig | None = None,
         compaction_callback: Callable[[dict[str, Any]], None] | None = None,
+        session_memory_extractor: Any | None = None,
+        runtime_view_provider: Callable[[], dict[str, Any] | None] | None = None,
+        hooks_runtime: Any | None = None,
     ):
         self._summarize_fn = summarize_fn
         self._config = config or SummarizationConfig()
         self._compaction_callback = compaction_callback
-        self._cutoff_index: int = 0
-        self._summary_message: HumanMessage | None = None
+        self._session_extractor = session_memory_extractor
+        self._runtime_view_provider = runtime_view_provider
+        self._seen_tool_call_keys: set[str] = set()
+        self._runtime = ContextHygieneRuntime(config=self._config, hooks_runtime=hooks_runtime)
         self.tools: list[Any] = [self._build_compact_tool()]
 
     @property
     def name(self) -> str:
         return "SummarizationMiddleware"
 
+    @property
+    def _summary_message(self) -> HumanMessage | None:  # type: ignore[override]
+        return self._runtime.summary_message
+
+    @_summary_message.setter
+    def _summary_message(self, value: HumanMessage | None) -> None:  # type: ignore[override]
+        self._runtime.summary_message = value
+
+    @property
+    def _cutoff_index(self) -> int:  # type: ignore[override]
+        return self._runtime.cutoff_index
+
+    @_cutoff_index.setter
+    def _cutoff_index(self, value: int) -> None:  # type: ignore[override]
+        self._runtime.cutoff_index = int(value or 0)
+
+    @property
+    def _last_microcompact_count(self) -> int:  # type: ignore[override]
+        return self._runtime.last_microcompact_count
+
+    @_last_microcompact_count.setter
+    def _last_microcompact_count(self, value: int) -> None:  # type: ignore[override]
+        self._runtime.last_microcompact_count = int(value or 0)
+
+    def get_context_hygiene_projection(self) -> dict[str, Any]:
+        return self._runtime.build_projection()
+
     def _build_compact_tool(self) -> Any:
-        mw = self
+        middleware = self
 
         def compact_conversation() -> str:
             """Compact the conversation by summarizing older messages."""
-            return mw._run_compact()
+            return middleware._run_compact()
 
         return StructuredTool.from_function(
             name="compact_conversation",
             description=(
-                "Compact the conversation by summarizing older messages "
-                "into a concise summary. Frees up context window space. "
-                "Takes no arguments."
+                "Compact the conversation by summarizing older messages into a concise summary. "
+                "Frees up context window space. Takes no arguments."
             ),
             func=compact_conversation,
         )
 
     def _run_compact(self) -> str:
         if not self._last_messages:
-            return "Nothing to compact — conversation is short."
-        effective = self._get_effective_messages(self._last_messages)
+            return "Nothing to compact - conversation is short."
+        effective = self._prepare_effective_messages(self._last_messages)
         if len(effective) <= self._config.keep_recent_messages:
-            return "Nothing to compact — conversation is within budget."
+            return "Nothing to compact - conversation is within budget."
+        if self._session_extractor is not None:
+            try:
+                self._session_extractor.force_extract(effective, _count_message_tokens(effective))
+            except Exception as exc:
+                logger.debug("Session memory force_extract failed: %s", exc)
         result = self._do_summarize(effective)
         if result:
             return f"Compacted {result} messages into a summary."
@@ -150,13 +149,13 @@ class SummarizationMiddleware(AgentMiddleware if _HAS_LC else object):  # type: 
     ) -> ModelResponse:
         messages = list(request.messages)
         self._last_messages = messages
-        effective = self._get_effective_messages(messages)
-        effective = self._truncate_tool_args(effective)
+        effective = self._prepare_effective_messages(messages)
         total_tokens = _count_message_tokens(effective)
+        self._tick_session_extractor(messages, effective, total_tokens)
         if total_tokens >= self._config.token_trigger:
             count = self._do_summarize(effective)
             if count:
-                effective = self._get_effective_messages(messages)
+                effective = self._prepare_effective_messages(messages)
         request = request.override(
             messages=effective,
             system_message=append_to_system_message(request.system_message, COMPACT_TOOL_PROMPT),
@@ -170,189 +169,136 @@ class SummarizationMiddleware(AgentMiddleware if _HAS_LC else object):  # type: 
     ) -> ModelResponse:
         messages = list(request.messages)
         self._last_messages = messages
-        effective = self._get_effective_messages(messages)
-        effective = self._truncate_tool_args(effective)
+        effective = self._prepare_effective_messages(messages)
         total_tokens = _count_message_tokens(effective)
+        self._tick_session_extractor(messages, effective, total_tokens)
         if total_tokens >= self._config.token_trigger:
             count = self._do_summarize(effective)
             if count:
-                effective = self._get_effective_messages(messages)
+                effective = self._prepare_effective_messages(messages)
         request = request.override(
             messages=effective,
             system_message=append_to_system_message(request.system_message, COMPACT_TOOL_PROMPT),
         )
         return await handler(request)
 
+    def _prepare_effective_messages(self, messages: list[Any]) -> list[Any]:
+        return self._runtime.prepare_effective_messages(messages)
+
+    def _tick_session_extractor(
+        self,
+        messages: list[Any],
+        effective: list[Any],
+        total_tokens: int,
+    ) -> None:
+        if self._session_extractor is None:
+            return
+        delta = self._consume_new_tool_calls(messages)
+        try:
+            self._session_extractor.tick(
+                effective,
+                tool_call_delta=delta,
+                current_token_count=total_tokens,
+            )
+        except Exception as exc:
+            logger.debug("Session memory tick failed: %s", exc)
+
+    def _consume_new_tool_calls(self, messages: list[Any]) -> int:
+        delta = 0
+        anonymous_counts: dict[str, int] = {}
+        for message in messages:
+            if not isinstance(message, AIMessage):
+                continue
+            for tool_call in getattr(message, "tool_calls", None) or []:
+                call_id = tool_call.get("id")
+                if call_id:
+                    key = f"id:{call_id}"
+                else:
+                    signature = f"{tool_call.get('name', '')}:{repr(tool_call.get('args', {}))}"
+                    occurrence = anonymous_counts.get(signature, 0)
+                    anonymous_counts[signature] = occurrence + 1
+                    key = f"sig:{signature}#{occurrence}"
+                if key in self._seen_tool_call_keys:
+                    continue
+                self._seen_tool_call_keys.add(key)
+                delta += 1
+        return delta
+
     def _get_effective_messages(self, messages: list[Any]) -> list[Any]:
-        if self._summary_message is None:
-            return list(messages)
-        result: list[Any] = [self._summary_message]
-        if self._cutoff_index < len(messages):
-            result.extend(messages[self._cutoff_index :])
-        return result
+        return self._runtime.get_effective_messages(messages)
+
+    def _microcompact(self, messages: list[Any]) -> list[Any]:
+        return self._runtime.microcompact(messages)
 
     def _truncate_tool_args(self, messages: list[Any]) -> list[Any]:
-        cfg = self._config
-        if len(messages) < cfg.tool_arg_trigger_messages:
-            return messages
-        cutoff = max(0, len(messages) - cfg.keep_recent_messages)
-        result = []
-        for i, msg in enumerate(messages):
-            if i < cutoff and isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
-                truncated_calls = []
-                modified = False
-                for tc in msg.tool_calls:
-                    if tc.get("name") in _TRUNCATABLE_TOOLS:
-                        new_args = {}
-                        for k, v in tc.get("args", {}).items():
-                            if isinstance(v, str) and len(v) > cfg.max_tool_arg_chars:
-                                new_args[k] = v[:20] + cfg.tool_arg_truncation_text
-                                modified = True
-                            else:
-                                new_args[k] = v
-                        truncated_calls.append({**tc, "args": new_args})
-                    else:
-                        truncated_calls.append(tc)
-                if modified:
-                    new_msg = msg.model_copy()
-                    new_msg.tool_calls = truncated_calls
-                    result.append(new_msg)
-                    continue
-            result.append(msg)
-        return result
+        return self._runtime.truncate_tool_args(messages)
 
     def _do_summarize(self, effective: list[Any]) -> int | None:
-        keep = self._config.keep_recent_messages
-        mid = self._config.mid_tier_messages
-        if len(effective) <= keep:
-            return None
-
-        cutoff = len(effective) - keep
-        to_summarize = effective[:cutoff]
-
-        self._offload(to_summarize)
-
-        if cutoff > mid:
-            old_batch = to_summarize[: cutoff - mid]
-            mid_batch = to_summarize[cutoff - mid:]
-            bulk_summary = self._generate_summary(old_batch)
-            episode_summaries = self._generate_episode_summaries(mid_batch)
-            parts = []
-            if bulk_summary:
-                parts.append(f"### Earlier context\n{bulk_summary}")
-            if episode_summaries:
-                parts.append("### Recent actions\n" + "\n".join(f"- {s}" for s in episode_summaries))
-            summary_text = "\n\n".join(parts) if parts else None
-        else:
-            episode_summaries = self._generate_episode_summaries(to_summarize)
-            if episode_summaries:
-                summary_text = "### Recent actions\n" + "\n".join(f"- {s}" for s in episode_summaries)
-            else:
-                summary_text = self._generate_summary(to_summarize)
-
-        if not summary_text:
-            return None
-
-        file_hint = ""
-        if self._config.offload_dir:
-            file_hint = f"\n\nFull history saved to {self._config.offload_dir}/{self._config.thread_id}.md"
-
-        self._summary_message = HumanMessage(
-            content=(f"[Previous conversation summarized]{file_hint}\n\n<summary>\n{summary_text}\n</summary>"),
-            additional_kwargs={"lc_source": "summarization"},
+        return self._runtime.summarize(
+            effective,
+            summarize_fn=self._summarize_fn,
+            session_notes=self._get_session_notes() or "",
+            resume_bundle_text=self._get_resume_bundle_text() or "",
+            compaction_callback=self._compaction_callback,
+            projected_runtime_view=self._get_resume_runtime_view() or {},
         )
-        if self._compaction_callback is not None:
-            try:
-                self._compaction_callback(
-                    {
-                        "thread_id": self._config.thread_id,
-                        "summary": summary_text,
-                        "source": "middleware.summarization",
-                        "reason": "conversation_compaction",
-                        "message_count": len(to_summarize),
-                        "recent_window": self._config.keep_recent_messages,
-                        "offload_path": (
-                            os.path.join(self._config.offload_dir, f"{self._config.thread_id}.md")
-                            if self._config.offload_dir
-                            else ""
-                        ),
-                    }
-                )
-            except Exception as exc:
-                logger.warning("Compaction callback failed: %s", exc)
-        old_cutoff = self._cutoff_index
-        self._cutoff_index = old_cutoff + cutoff - (1 if self._summary_message else 0)
-        return len(to_summarize)
+
+    def _get_session_notes(self) -> str | None:
+        if self._session_extractor is None:
+            return None
+        try:
+            return self._session_extractor.get_notes()
+        except Exception:
+            return None
+
+    def _get_resume_bundle_text(self) -> str | None:
+        runtime_view = self._get_resume_runtime_view()
+        if not runtime_view:
+            return None
+        try:
+            from core.systems.runtime.session.session_runtime_view import render_runtime_view_context
+
+            text = render_runtime_view_context(runtime_view)
+            return text.strip() or None
+        except Exception as exc:
+            logger.debug("Resume artifacts render failed: %s", exc)
+            return None
+
+    def _get_resume_runtime_view(self) -> dict[str, Any] | None:
+        if self._runtime_view_provider is None:
+            return None
+        try:
+            runtime_view = self._runtime_view_provider()
+            return runtime_view if isinstance(runtime_view, dict) and runtime_view else None
+        except Exception as exc:
+            logger.debug("Resume runtime view fetch failed: %s", exc)
+            return None
 
     def _generate_episode_summaries(self, messages: list[Any]) -> list[str]:
-        """Generate per-episode one-line summaries for mid-tier messages."""
-        summaries: list[str] = []
-        i = 0
-        while i < len(messages):
-            msg = messages[i]
-            if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
-                tc = msg.tool_calls[0]
-                tool_name = tc.get("name", "unknown")
-                args_preview = str(tc.get("args", {}))[:80]
-                result_preview = ""
-                if i + 1 < len(messages):
-                    next_msg = messages[i + 1]
-                    result_content = getattr(next_msg, "content", "")
-                    if isinstance(result_content, str):
-                        result_preview = result_content[:100]
-                if self._summarize_fn:
-                    try:
-                        text = f"Tool: {tool_name}, Args: {args_preview}, Result: {result_preview}"
-                        one_liner = self._summarize_fn(EPISODE_SUMMARY_PROMPT.format(text=text))
-                        summaries.append(one_liner.strip())
-                        i += 2
-                        continue
-                    except Exception:
-                        pass
-                summaries.append(f"{tool_name}({args_preview[:40]}) → {result_preview[:60]}")
-                i += 2
-                continue
-            i += 1
-        return summaries
+        return self._runtime.generate_episode_summaries(messages, summarize_fn=self._summarize_fn)
 
     def _generate_summary(self, messages: list[Any]) -> str | None:
-        if self._summarize_fn:
-            try:
-                text = get_buffer_string(messages)[:8000]
-                return self._summarize_fn(SUMMARY_PROMPT.format(text=text))
-            except Exception as exc:
-                logger.warning("LLM summarization failed: %s", exc)
-
-        topics = []
-        for msg in messages:
-            content = getattr(msg, "content", "")
-            if isinstance(content, str) and len(content) > 5:
-                role = getattr(msg, "type", "unknown")
-                if role == "human":
-                    topics.append(content[:120])
-        if not topics:
-            return None
-        return "Topics discussed: " + "; ".join(topics[-8:])
+        return self._runtime.generate_summary(messages, summarize_fn=self._summarize_fn)
 
     def _offload(self, messages: list[Any]) -> None:
-        offload_dir = self._config.offload_dir
-        if not offload_dir or not messages:
-            return
-        try:
-            os.makedirs(offload_dir, exist_ok=True)
-            path = os.path.join(offload_dir, f"{self._config.thread_id}.md")
-            timestamp = datetime.now(timezone.utc).isoformat()
-            buf = get_buffer_string([m for m in messages if not self._is_summary_msg(m)])
-            section = f"\n\n## Summarized at {timestamp}\n\n{buf}\n"
-            with open(path, "a", encoding="utf-8") as f:
-                f.write(section)
-        except Exception as exc:
-            logger.warning("Offload failed: %s", exc)
+        self._runtime.offload(
+            messages,
+            projected_runtime_view=self._get_resume_runtime_view() or {},
+        )
 
     @staticmethod
-    def _is_summary_msg(msg: Any) -> bool:
-        if not isinstance(msg, HumanMessage):
-            return False
-        return msg.additional_kwargs.get("lc_source") == "summarization"
+    def _is_summary_msg(message: Any) -> bool:
+        return ContextHygieneRuntime.is_summary_msg(message)
+
+    @staticmethod
+    def _make_microcompact_stub(tool_label: str, content: str) -> str:
+        return ContextHygieneRuntime.make_microcompact_stub(tool_label, content)
+
+    @staticmethod
+    def _format_tool_call_preview(tool_name: str, args: Any) -> str:
+        return ContextHygieneRuntime.format_tool_call_preview(tool_name, args)
+
+    def _tool_call_preview(self, messages: list[Any], tool_index: int, tool_message: ToolMessage) -> str:
+        return self._runtime.tool_call_preview(messages, tool_index, tool_message)
 
     _last_messages: list[Any] = []

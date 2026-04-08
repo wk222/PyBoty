@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from core.systems.runtime import config_impl, get_config, reload_config, save_config
+from core.systems.runtime import (
+    config_impl,
+    get_config,
+    reload_config,
+    save_config,
+    save_project_config,
+)
 
 
 def test_missing_config_uses_fresh_defaults(tmp_path: Path):
@@ -63,3 +69,38 @@ def test_save_config_defaults_to_runtime_home(monkeypatch, tmp_path: Path):
 
     assert saved_path == (runtime_home / "config.json").resolve()
     assert saved_path.exists()
+
+
+def test_project_settings_override_user_settings(tmp_path: Path):
+    user_config = tmp_path / "config.json"
+    project_config = tmp_path / ".pybot" / "project.config.json"
+
+    save_config({"permission": {"mode": "plan"}}, user_config)
+    save_project_config({"permission": {"mode": "bypass"}}, project_config)
+
+    loaded = reload_config(user_config, project_path=project_config)
+
+    assert loaded["permission"]["mode"] == "bypass"
+
+
+def test_trusted_settings_projection_includes_layer_paths(tmp_path: Path):
+    user_config = tmp_path / "config.json"
+    project_config = tmp_path / ".pybot" / "project.config.json"
+    system_config = tmp_path / "settings.system.json"
+
+    save_config({"permission": {"mode": "default"}}, user_config)
+    save_project_config({"permission": {"mode": "plan"}}, project_config)
+    config_impl.save_system_config({"permission": {"rules": {"web_fetch": "allow"}}}, system_config)
+
+    projection = config_impl.get_settings_projection(
+        user_config,
+        project_path=project_config,
+        system_path=system_config,
+        session_overrides={"permission": {"mode": "bypass"}},
+    )
+
+    assert projection["permission_mode"] == "bypass"
+    assert projection["paths"]["user"] == str(user_config.resolve())
+    assert projection["paths"]["project"] == str(project_config.resolve())
+    assert projection["paths"]["system"] == str(system_config.resolve())
+    assert projection["active_sources"] == ["system", "user", "project", "session"]

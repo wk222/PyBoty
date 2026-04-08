@@ -66,7 +66,12 @@ class RunWorkflowTool(BaseTool):
     name: str = "run_workflow"
     description: str = """执行 DAG 工作流。支持工作流规范（YAML/JSON），15 种节点类型，
 条件分支、并行执行、循环遍历、子工作流、AI 处理、人工审批等。
-变量通过 ${node_id.output} 在节点间传递。"""
+变量通过 ${node_id.output} 在节点间传递。
+
+当任务是“可复用的多步流程”“需要分支/审批/调度”时优先用它。
+如果只是一次性的直线任务，优先停留在 Single-Agent + trunk 工具面。
+其中 `agent / debate / consensus / supervisor` 节点属于 workflow collaboration，
+它们依赖已注册智能体和 multi-agent 分支。"""
     args_schema: type[BaseModel] = RunWorkflowInput
     engine: Any = Field(default=None, exclude=True)
 
@@ -125,7 +130,10 @@ class GenerateWorkflowTool(BaseTool):
     name: str = "generate_workflow"
     description: str = """根据自然语言描述自动生成 DAG 工作流规范。
 AI 会分析需求，选择合适的节点类型，设计合理的流程图，并自动保存。
-用户也可以在 Workflow 编辑器中修改和复用。"""
+用户也可以在 Workflow 编辑器中修改和复用。
+
+适合把“人脑里的步骤”沉淀成长期可运行流程。
+如果需求本质上是产品界面，走 app branch；如果只是一次性专家协作，先评估 single-agent 或 delegate 是否更轻。"""
     args_schema: type[BaseModel] = GenerateWorkflowInput
     engine: Any = Field(default=None, exclude=True)
 
@@ -503,7 +511,10 @@ edges:
 
 class TriggerWorkflowTool(BaseTool):
     name: str = "trigger_workflow"
-    description: str = "触发执行一个已保存的工作流（从 workspace/workflows/ 目录加载并运行）"
+    description: str = (
+        "触发执行一个已保存的工作流（从 workspace/workflows/ 目录加载并运行）。"
+        " 适合已经沉淀成流程资产的任务，不适合临时性单次直线工作。"
+    )
     args_schema: type[BaseModel] = TriggerWorkflowInput
     engine: Any = Field(default=None, exclude=True)
 

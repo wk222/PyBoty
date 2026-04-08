@@ -13,6 +13,8 @@ from web.state import WebServices
 router = APIRouter(tags=["sessions"])
 SERVICES_DEPENDENCY = Depends(get_services)
 
+_SESSION_NOT_FOUND = "Session not found"
+
 
 class SessionSummaryRequest(BaseModel):
     summary: str
@@ -45,6 +47,13 @@ class SessionModeSwitchRequest(BaseModel):
     mode: str
 
 
+def _session_or_404(services: WebServices, session_key: str) -> dict[str, Any]:
+    session = services.session_runtime.get_session(session_key)
+    if session is None:
+        raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
+    return session
+
+
 @router.get("/api/sessions")
 async def list_sessions(
     services: WebServices = SERVICES_DEPENDENCY,
@@ -59,10 +68,7 @@ async def get_session(
     services: WebServices = SERVICES_DEPENDENCY,
 ) -> dict[str, Any]:
     services.sync_session_spine()
-    session = services.session_runtime.get_session(session_key)
-    if session is None:
-        raise HTTPException(status_code=404, detail="会话不存在")
-    return {"session": session}
+    return {"session": _session_or_404(services, session_key)}
 
 
 @router.get("/api/sessions/{session_key}/overview")
@@ -73,7 +79,7 @@ async def get_session_overview(
     services.sync_session_spine()
     overview = services.session_runtime.get_overview(session_key)
     if overview is None:
-        raise HTTPException(status_code=404, detail="会话不存在")
+        raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
     return {"overview": overview}
 
 
@@ -85,9 +91,7 @@ async def get_session_timeline(
     services: WebServices = SERVICES_DEPENDENCY,
 ) -> dict[str, Any]:
     services.sync_session_spine()
-    session = services.session_runtime.get_session(session_key)
-    if session is None:
-        raise HTTPException(status_code=404, detail="会话不存在")
+    _session_or_404(services, session_key)
     return {
         "session_key": session_key,
         "timeline": services.session_runtime.get_timeline(session_key, kind=kind, limit=limit),
@@ -102,9 +106,7 @@ async def get_session_events(
     services: WebServices = SERVICES_DEPENDENCY,
 ) -> dict[str, Any]:
     services.sync_session_spine()
-    session = services.session_runtime.get_session(session_key)
-    if session is None:
-        raise HTTPException(status_code=404, detail="会话不存在")
+    _session_or_404(services, session_key)
     return {
         "session_key": session_key,
         "events": services.session_runtime.get_event_log(session_key, op=op, limit=limit),
@@ -118,9 +120,7 @@ async def get_session_file_views(
     services: WebServices = SERVICES_DEPENDENCY,
 ) -> dict[str, Any]:
     services.sync_session_spine()
-    session = services.session_runtime.get_session(session_key)
-    if session is None:
-        raise HTTPException(status_code=404, detail="会话不存在")
+    _session_or_404(services, session_key)
     return {
         "session_key": session_key,
         "file_views": services.session_runtime.get_file_views(session_key, limit=limit),
@@ -135,7 +135,7 @@ async def get_session_kernel(
     services.sync_session_spine()
     kernel = services.session_runtime.get_kernel_snapshot(session_key)
     if kernel is None:
-        raise HTTPException(status_code=404, detail="会话不存在")
+        raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
     return {"session_key": session_key, "kernel": kernel}
 
 
@@ -145,9 +145,7 @@ async def get_session_sidechains(
     services: WebServices = SERVICES_DEPENDENCY,
 ) -> dict[str, Any]:
     services.sync_session_spine()
-    session = services.session_runtime.get_session(session_key)
-    if session is None:
-        raise HTTPException(status_code=404, detail="会话不存在")
+    _session_or_404(services, session_key)
     return {
         "session_key": session_key,
         "sidechains": services.session_runtime.get_sidechains(session_key),
@@ -160,9 +158,9 @@ async def get_session_artifacts(
     services: WebServices = SERVICES_DEPENDENCY,
 ) -> dict[str, Any]:
     services.sync_session_spine()
-    artifacts = services.session_runtime.get_compiled_artifacts(session_key)
+    artifacts = services.session_runtime.get_compiled_runtime_view(session_key)
     if artifacts is None:
-        raise HTTPException(status_code=404, detail="会话不存在")
+        raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
     return {"session_key": session_key, "artifacts": artifacts}
 
 
@@ -173,14 +171,14 @@ async def update_session_summary(
     services: WebServices = SERVICES_DEPENDENCY,
 ) -> dict[str, Any]:
     try:
-        session = services.session_runtime.update_summary(
+        services.session_runtime.update_summary(
             session_key,
             summary=request.summary,
             layer=request.layer,
         )
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="会话不存在") from exc
-    return {"session": session}
+        raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND) from exc
+    return {"session": _session_or_404(services, session_key)}
 
 
 @router.post("/api/sessions/{session_key}/notes")
@@ -190,7 +188,7 @@ async def add_session_note(
     services: WebServices = SERVICES_DEPENDENCY,
 ) -> dict[str, Any]:
     try:
-        session = services.session_runtime.remember(
+        services.session_runtime.remember(
             session_key,
             note=request.note,
             layer=request.layer,
@@ -200,10 +198,10 @@ async def add_session_note(
             verified=request.verified,
         )
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="会话不存在") from exc
+        raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"session": session}
+    return {"session": _session_or_404(services, session_key)}
 
 
 @router.post("/api/sessions/{session_key}/compact")
@@ -213,10 +211,10 @@ async def compact_session_context(
     services: WebServices = SERVICES_DEPENDENCY,
 ) -> dict[str, Any]:
     try:
-        session = services.session_runtime.compact_session(session_key, reason=request.reason)
+        services.session_runtime.compact_session(session_key, reason=request.reason)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="会话不存在") from exc
-    return {"session": session}
+        raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND) from exc
+    return {"session": _session_or_404(services, session_key)}
 
 
 @router.post("/api/sessions/{session_key}/artifacts/invalidate")
@@ -226,14 +224,13 @@ async def invalidate_session_artifacts(
     services: WebServices = SERVICES_DEPENDENCY,
 ) -> dict[str, Any]:
     try:
-        result = services.session_runtime.invalidate_artifacts(
+        return services.session_runtime.invalidate_runtime_view(
             session_key,
             reason=request.reason,
             scopes=request.scopes,
         )
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="会话不存在") from exc
-    return result
+        raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND) from exc
 
 
 @router.post("/api/sessions/{session_key}/prompt-injection")
@@ -243,13 +240,13 @@ async def set_session_prompt_injection(
     services: WebServices = SERVICES_DEPENDENCY,
 ) -> dict[str, Any]:
     try:
-        session = services.session_runtime.set_prompt_injection(
+        services.session_runtime.set_prompt_injection(
             session_key,
             prompt_injection=request.prompt_injection,
         )
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="会话不存在") from exc
-    return {"session": session}
+        raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND) from exc
+    return {"session": _session_or_404(services, session_key)}
 
 
 @router.post("/api/sessions/checkpoint/rebuild")
@@ -268,10 +265,10 @@ async def switch_session_mode(
 ) -> dict[str, Any]:
     try:
         result = services.session_runtime.switch_mode(session_key, new_mode=request.mode)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="会话不存在")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"session_key": session_key, **result}
 
 
@@ -283,10 +280,7 @@ async def get_session_budget(
 ) -> dict[str, Any]:
     from core.systems.runtime.context_budget import ContextBudgetManager
 
-    session = services.session_runtime.get_session(session_key)
-    if session is None:
-        raise HTTPException(status_code=404, detail="会话不存在")
-
+    session = _session_or_404(services, session_key)
     budget_mgr = ContextBudgetManager(model_name=model_name)
     assessment = budget_mgr.assess(session)
     return {"session_key": session_key, "budget": assessment.to_dict()}
@@ -301,9 +295,7 @@ async def get_session_status(
     from core.systems.runtime.context_budget import ContextBudgetManager
 
     services.sync_session_spine()
-    session = services.session_runtime.get_session(session_key)
-    if session is None:
-        raise HTTPException(status_code=404, detail="会话不存在")
+    session = _session_or_404(services, session_key)
 
     budget_mgr = ContextBudgetManager(model_name=model_name)
     assessment = budget_mgr.assess(session)

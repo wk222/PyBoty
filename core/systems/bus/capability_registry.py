@@ -185,18 +185,38 @@ class CapabilityRegistry:
             hub_token=hub_token,
         )
 
+    def route(
+        self,
+        *,
+        query: str = "",
+        layer: str = "",
+        tag: str = "",
+        provides: str = "",
+        max_matches: int = 5,
+        include_marketplace: bool = True,
+    ) -> dict[str, Any]:
+        return self.catalog_runtime.route_query(
+            query=query,
+            layer=layer,
+            tag=tag,
+            provides=provides,
+            max_matches=max_matches,
+            include_marketplace=include_marketplace,
+        )
+
     def get_registry_snapshot(self) -> dict[str, Any]:
         return self.catalog_runtime.get_registry_snapshot()
 
 
 class CapabilityRegistryInput(BaseModel):
     action: str = Field(
-        description="registry action: snapshot / discover / providers / contract / publish_skill / install_skill"
+        description="registry action: snapshot / discover / route / providers / contract / publish_skill / install_skill"
     )
     query: str = Field(default="", description="search query for discovery")
     layer: str = Field(default="", description="filter layer: tool/skill/agent/workflow/app")
     tag: str = Field(default="", description="filter tag")
     provides: str = Field(default="", description="required provided capability")
+    limit: int = Field(default=5, description="max routed capability matches to return")
     name: str = Field(default="", description="capability or skill name")
     package_path: str = Field(default="", description="local .skill package path for install")
     url: str = Field(default="", description="remote package URL for install")
@@ -227,6 +247,7 @@ class CapabilityRegistryTool(BaseTool):
         layer: str = "",
         tag: str = "",
         provides: str = "",
+        limit: int = 5,
         name: str = "",
         package_path: str = "",
         url: str = "",
@@ -250,6 +271,14 @@ class CapabilityRegistryTool(BaseTool):
                 include_hub=bool(hub_url.strip()),
                 hub_url=hub_url,
                 hub_token=hub_token,
+            )
+        elif action == "route":
+            payload = self.registry.route(
+                query=query,
+                layer=layer,
+                tag=tag,
+                provides=provides,
+                max_matches=limit,
             )
         elif action == "providers":
             payload = self.registry.find_providers(provides or query, layer=layer)

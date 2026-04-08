@@ -44,5 +44,19 @@ uv_envs/
 # Tools workspace (isolated execution sandbox)
 .tools_workspace/
 
+# Plans
+plan.md
+PROJECT_PLAN.md
+replit.md
+*_PLAN.md
+
+# LaTeX
+*.aux
+*.fdb_latexmk
+*.fls
+*.out
+*.pdf
+*.synctex.gz
+
 # Logs
 *.log

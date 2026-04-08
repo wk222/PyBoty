@@ -13,31 +13,26 @@ from .capability_bus_models import CapabilityLayer
 
 class CapBusQueryInput(BaseModel):
     action: str = Field(
-        description="""操作类型:
-- stats: 查看能力总线统计
-- graph: 查看层级图谱（Tool→Skill→Agent→Workflow→App 连接关系）
-- find: 查找能力（可按 layer/tag 过滤）
-- events: 查看最近事件
-- deps: 检查某个能力的依赖解析
-- share: 向总线共享数据
-- get: 从总线获取共享数据"""
+        description="action type: stats / graph / tree / route / find / events / deps / share / get"
     )
-    layer: str = Field(description="过滤层级: tool/skill/agent/workflow/app", default="")
-    tag: str = Field(description="过滤标签", default="")
-    name: str = Field(description="能力名称（用于 deps/get 操作）", default="")
-    key: str = Field(description="共享数据键名（用于 share/get 操作）", default="")
-    value: str = Field(description="共享数据值（JSON，用于 share 操作）", default="")
+    query: str = Field(default="", description="task query used by route guidance")
+    provides: str = Field(default="", description="required capability name for route guidance")
+    limit: int = Field(default=5, description="max recommended matches for route guidance")
+    layer: str = Field(default="", description="filter layer: tool/skill/agent/workflow/app")
+    tag: str = Field(default="", description="filter tag")
+    name: str = Field(default="", description="capability name for deps/get fallbacks")
+    key: str = Field(default="", description="shared-data key for share/get")
+    value: str = Field(default="", description="shared-data payload for share (JSON allowed)")
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class CapBusTool(BaseTool):
     name: str = "capability_bus"
-    description: str = """PyBot 能力总线 — 查看和管理所有层级的能力（Tool→Skill→Agent→Workflow→App）。
-
-可以查看能力统计、层级图谱、依赖关系，以及在不同能力之间共享数据。
-这是 PyBot 积木式架构的核心：每个工具、技能、智能体、工作流、应用都是一块积木，
-通过能力总线实现 1+1>2 的联动效果。"""
+    description: str = (
+        "Query the PyBot capability bus: inspect the tree, graph, stats, dependencies, "
+        "shared context, and route guidance across tools, skills, agents, workflows, and apps."
+    )
     args_schema: type[BaseModel] = CapBusQueryInput
     bus: Any = Field(default=None, exclude=True)
 
@@ -46,6 +41,9 @@ class CapBusTool(BaseTool):
     def _run(
         self,
         action: str = "stats",
+        query: str = "",
+        provides: str = "",
+        limit: int = 5,
         layer: str = "",
         tag: str = "",
         name: str = "",
@@ -57,6 +55,18 @@ class CapBusTool(BaseTool):
                 return json.dumps(self.bus.get_stats(), ensure_ascii=False, indent=2)
             if action == "graph":
                 return json.dumps(self.bus.get_layer_graph(), ensure_ascii=False, indent=2)
+            if action == "tree":
+                return json.dumps(self.bus.get_tree_projection(), ensure_ascii=False, indent=2)
+            if action == "route":
+                return json.dumps(
+                    self.bus.get_route_projection(
+                        query=query or name,
+                        provides=provides,
+                        max_matches=limit,
+                    ),
+                    ensure_ascii=False,
+                    indent=2,
+                )
             if action == "find":
                 cap_layer = CapabilityLayer(layer) if layer else None
                 capabilities = self.bus.find(layer=cap_layer, tag=tag or None)
@@ -65,11 +75,11 @@ class CapBusTool(BaseTool):
                 return json.dumps(self.bus.get_recent_events(), ensure_ascii=False, indent=2)
             if action == "deps":
                 if not name:
-                    return json.dumps({"error": "请提供能力名称 (name)"}, ensure_ascii=False)
+                    return json.dumps({"error": "Provide capability name (name)"}, ensure_ascii=False)
                 return json.dumps(self.bus.resolve_dependencies(name), ensure_ascii=False, indent=2)
             if action == "share":
                 if not key:
-                    return json.dumps({"error": "请提供键名 (key)"}, ensure_ascii=False)
+                    return json.dumps({"error": "Provide key"}, ensure_ascii=False)
                 try:
                     resolved_value = json.loads(value) if value else None
                 except json.JSONDecodeError:
@@ -80,14 +90,10 @@ class CapBusTool(BaseTool):
                 if not key:
                     context = self.bus.get_all_context()
                     shared_context = {item_key: str(item_value)[:200] for item_key, item_value in context.items()}
-                    return json.dumps(
-                        {"shared_context": shared_context},
-                        ensure_ascii=False,
-                        indent=2,
-                    )
+                    return json.dumps({"shared_context": shared_context}, ensure_ascii=False, indent=2)
                 data = self.bus.get_data(key)
                 return json.dumps({"key": key, "data": data}, ensure_ascii=False, indent=2, default=str)
-            return json.dumps({"error": f"未知操作: {action}"}, ensure_ascii=False)
+            return json.dumps({"error": f"unknown action: {action}"}, ensure_ascii=False)
         except Exception as exc:
             return json.dumps({"error": str(exc)}, ensure_ascii=False)
 

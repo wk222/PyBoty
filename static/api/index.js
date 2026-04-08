@@ -149,6 +149,9 @@ export const API = {
   toggleApp: (name, enabled) => request(`/api/apps/${encodeURIComponent(name)}/toggle`, {
     method: 'PATCH', body: JSON.stringify({ enabled })
   }),
+  switchAppMode: (name, mode, rebuildTemplate = false) => request(`/api/apps/${encodeURIComponent(name)}/mode`, {
+    method: 'PATCH', body: JSON.stringify({ mode, rebuild_template: rebuildTemplate })
+  }),
   deleteApp: (name) => request(`/api/apps/${encodeURIComponent(name)}`, { method: 'DELETE' }),
 
   getStatus: (threadId) => request(`/api/status/${threadId}`),

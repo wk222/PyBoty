@@ -150,7 +150,7 @@ def test_session_memory_endpoints_update_summary_and_notes(client):
         json={"note": "User prefers concise updates"},
     )
     assert note.status_code == 200
-    assert note.json()["session"]["context_notes"] == ["User prefers concise updates"]
+    assert note.json()["session"]["runtime_view"]["hooks"]["notes"] == ["User prefers concise updates"]
 
     durable = client.post(
         f"/api/sessions/{session_key}/notes",
@@ -163,7 +163,7 @@ def test_session_memory_endpoints_update_summary_and_notes(client):
         },
     )
     assert durable.status_code == 200
-    entries = durable.json()["session"]["memory_layers"]["workspace"]["entries"]
+    entries = durable.json()["session"]["runtime_view"]["workspace"]["entries"]
     assert entries[-1]["memory_type"] == "user"
 
     invalid = client.post(
@@ -183,7 +183,7 @@ def test_session_memory_endpoints_update_summary_and_notes(client):
         json={"reason": "manual"},
     )
     assert compact.status_code == 200
-    assert compact.json()["session"]["compaction_state"]["last_reason"] == "manual"
+    assert compact.json()["session"]["runtime_view"]["context_hygiene"]["last_reason"] == "manual"
 
 
 def test_session_artifact_kernel_and_checkpoint_endpoints(client):
@@ -225,11 +225,11 @@ def test_session_artifact_kernel_and_checkpoint_endpoints(client):
     assert artifacts.status_code == 200
     artifact_payload = artifacts.json()["artifacts"]
     assert artifact_payload["system_context"]["prompt_injection"] == "Prefer concise operator-facing status updates."
-    assert artifact_payload["file_view_projection"]["view_hashes"]
+    assert artifact_payload["projected_runtime_view"]["workspace"]["view_hashes"]
 
     kernel = client.get(f"/api/sessions/{session_key}/kernel")
     assert kernel.status_code == 200
-    assert kernel.json()["kernel"]["mutable_artifacts"]["prompt_injection"] == (
+    assert kernel.json()["kernel"]["runtime_view"]["system_context"]["prompt_injection"] == (
         "Prefer concise operator-facing status updates."
     )
 

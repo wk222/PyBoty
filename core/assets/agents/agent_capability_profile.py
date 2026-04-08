@@ -27,6 +27,8 @@ class AgentCapabilityProfile:
     allow_workflow_management: bool = False
     allow_skill_installation: bool = False
     allow_app_mutation: bool = False
+    allow_memory_garden: bool = False
+    allow_dense_memory: bool = False
     blocked_tools: tuple[str, ...] = ()
     approval_required_tools: tuple[str, ...] = ()
 
@@ -71,6 +73,8 @@ class AgentCapabilityProfile:
             allow_workflow_management=bool(data.get("allow_workflow_management", False)),
             allow_skill_installation=bool(data.get("allow_skill_installation", False)),
             allow_app_mutation=bool(data.get("allow_app_mutation", False)),
+            allow_memory_garden=bool(data.get("allow_memory_garden", False)),
+            allow_dense_memory=bool(data.get("allow_dense_memory", False)),
             blocked_tools=_normalize_names(data.get("blocked_tools")),
             approval_required_tools=_normalize_names(data.get("approval_required_tools")),
         )
@@ -93,6 +97,8 @@ class AgentCapabilityProfile:
             "allow_workflow_management": self.allow_workflow_management,
             "allow_skill_installation": self.allow_skill_installation,
             "allow_app_mutation": self.allow_app_mutation,
+            "allow_memory_garden": self.allow_memory_garden,
+            "allow_dense_memory": self.allow_dense_memory,
             "blocked_tools": list(self.blocked_tools),
             "approval_required_tools": list(self.approval_required_tools),
         }
@@ -110,6 +116,8 @@ class AgentCapabilityProfile:
                 self.allow_workflow_management,
                 self.allow_skill_installation,
                 self.allow_app_mutation,
+                self.allow_memory_garden,
+                self.allow_dense_memory,
             )
         )
 
@@ -132,6 +140,8 @@ def _preset_values(preset: str) -> dict[str, Any]:
             "allow_workflow_management": False,
             "allow_skill_installation": False,
             "allow_app_mutation": False,
+            "allow_memory_garden": True,
+            "allow_dense_memory": False,
             "blocked_tools": (),
             "approval_required_tools": (),
         }
@@ -152,6 +162,8 @@ def _preset_values(preset: str) -> dict[str, Any]:
             "allow_workflow_management": False,
             "allow_skill_installation": False,
             "allow_app_mutation": False,
+            "allow_memory_garden": True,
+            "allow_dense_memory": False,
             "blocked_tools": (),
             "approval_required_tools": (),
         }
@@ -172,6 +184,8 @@ def _preset_values(preset: str) -> dict[str, Any]:
             "allow_workflow_management": False,
             "allow_skill_installation": False,
             "allow_app_mutation": False,
+            "allow_memory_garden": True,
+            "allow_dense_memory": False,
             "blocked_tools": (),
             "approval_required_tools": (),
         }
@@ -192,6 +206,8 @@ def _preset_values(preset: str) -> dict[str, Any]:
             "allow_workflow_management": True,
             "allow_skill_installation": False,
             "allow_app_mutation": False,
+            "allow_memory_garden": True,
+            "allow_dense_memory": False,
             "blocked_tools": (),
             "approval_required_tools": (),
         }
@@ -212,6 +228,8 @@ def _preset_values(preset: str) -> dict[str, Any]:
             "allow_workflow_management": True,
             "allow_skill_installation": False,
             "allow_app_mutation": False,
+            "allow_memory_garden": False,
+            "allow_dense_memory": False,
             "blocked_tools": (),
             "approval_required_tools": (),
         }
@@ -232,6 +250,8 @@ def _preset_values(preset: str) -> dict[str, Any]:
             "allow_workflow_management": True,
             "allow_skill_installation": False,
             "allow_app_mutation": True,
+            "allow_memory_garden": True,
+            "allow_dense_memory": False,
             "blocked_tools": (),
             "approval_required_tools": (),
         }
@@ -252,6 +272,8 @@ def _preset_values(preset: str) -> dict[str, Any]:
             "allow_workflow_management": True,
             "allow_skill_installation": True,
             "allow_app_mutation": True,
+            "allow_memory_garden": True,
+            "allow_dense_memory": False,
             "blocked_tools": (),
             "approval_required_tools": (),
         }
@@ -272,6 +294,8 @@ def _preset_values(preset: str) -> dict[str, Any]:
             "allow_workflow_management": True,
             "allow_skill_installation": True,
             "allow_app_mutation": True,
+            "allow_memory_garden": True,
+            "allow_dense_memory": False,
             "blocked_tools": (),
             "approval_required_tools": (),
         }
@@ -291,6 +315,8 @@ def _preset_values(preset: str) -> dict[str, Any]:
         "allow_workflow_management": False,
         "allow_skill_installation": False,
         "allow_app_mutation": False,
+        "allow_memory_garden": False,
+        "allow_dense_memory": False,
         "blocked_tools": (),
         "approval_required_tools": (),
     }

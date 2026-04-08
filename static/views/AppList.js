@@ -26,11 +26,37 @@ export default {
     const publishHubToken = ref(localStorage.getItem('pyhub_token') || '');
     const publishing = ref(false);
 
+    const showModeSwitch = ref(false);
+    const modeSwitchTarget = ref('');
+    const newMode = ref('static');
+    const rebuildTemplate = ref(false);
+    const switchingMode = ref(false);
+
     function openPublish(name) {
       publishTarget.value = name;
       publishVersion.value = '0.1.0';
       publishChangelog.value = '';
       showPublish.value = true;
+    }
+
+    function openModeSwitch(app) {
+      modeSwitchTarget.value = app.name;
+      newMode.value = app.mode || 'static';
+      rebuildTemplate.value = false;
+      showModeSwitch.value = true;
+    }
+
+    async function doSwitchMode() {
+      switchingMode.value = true;
+      try {
+        await API.switchAppMode(modeSwitchTarget.value, newMode.value, rebuildTemplate.value);
+        toast('Mode switched successfully', 'success');
+        showModeSwitch.value = false;
+        load();
+      } catch (e) {
+        toast('Switch failed: ' + e.message, 'error');
+      }
+      switchingMode.value = false;
     }
 
     async function doPublish() {
@@ -61,6 +87,7 @@ export default {
       showPublish, publishTarget, publishVersion, publishChangelog,
       publishHubUrl, publishHubToken, publishing,
       openPublish, doPublish, downloadZip,
+      showModeSwitch, modeSwitchTarget, newMode, rebuildTemplate, switchingMode, openModeSwitch, doSwitchMode,
     };
   },
   template: `
@@ -92,6 +119,9 @@ export default {
           @delete="remove(a.name)"
         >
           <template #actions>
+            <button class="mx-btn-icon" title="Switch Mode" @click.stop="openModeSwitch(a)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            </button>
             <a v-if="a.url" :href="a.url" target="_blank" class="mx-btn-icon" title="Open">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
             </a>
@@ -107,7 +137,7 @@ export default {
             <span class="mx-tag" :style="{ color: a.enabled !== false ? 'var(--success)' : 'var(--error)' }">
               {{ a.enabled !== false ? 'Enabled' : 'Disabled' }}
             </span>
-            <span v-if="a.mode && a.mode !== 'static'" class="mx-tag" style="color:var(--accent)">{{ a.mode }}</span>
+            <span class="mx-tag" style="color:var(--accent); cursor:pointer;" @click="openModeSwitch(a)">{{ a.mode || 'static' }}</span>
             <span v-for="t in (a.tags || [])" :key="t" class="mx-cap-tag">{{ t }}</span>
           </div>
         </EntityCard>
@@ -145,6 +175,41 @@ export default {
               <button class="mx-btn mx-btn--ghost" @click="showPublish = false">Cancel</button>
               <button class="mx-btn mx-btn--primary" @click="doPublish" :disabled="publishing">
                 {{ publishing ? 'Publishing...' : 'Publish' }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="showModeSwitch" class="mx-modal-overlay" @click.self="showModeSwitch = false">
+          <div class="mx-modal" style="max-width:400px;">
+            <div class="mx-modal-header">
+              <span>Switch Mode for "{{ modeSwitchTarget }}"</span>
+              <button class="mx-modal-close" @click="showModeSwitch = false">&times;</button>
+            </div>
+            <div class="mx-modal-body">
+              <div style="display:grid;gap:16px;">
+                <div>
+                  <label class="mx-label">New Mode</label>
+                  <select v-model="newMode" class="mx-input">
+                    <option value="static">Static</option>
+                    <option value="chat">Chat</option>
+                    <option value="workflow">Workflow</option>
+                    <option value="assistant">Assistant (AaaS)</option>
+                    <option value="rag">RAG</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="mx-label" style="display:flex;align-items:center;gap:8px;">
+                    <input type="checkbox" v-model="rebuildTemplate" />
+                    <span>Rebuild Template files (WARNING: Overwrites index.html, app.js, style.css)</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="mx-modal-footer">
+              <button class="mx-btn mx-btn--ghost" @click="showModeSwitch = false">Cancel</button>
+              <button class="mx-btn mx-btn--primary" @click="doSwitchMode" :disabled="switchingMode">
+                {{ switchingMode ? 'Switching...' : 'Confirm' }}
               </button>
             </div>
           </div>

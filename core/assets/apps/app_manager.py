@@ -738,6 +738,38 @@ except Exception as exc:
             )
         return {"success": True, "files": files}
 
+    def switch_app_mode(self, name: str, new_mode: str, rebuild_template: bool = False) -> dict[str, Any]:
+        """Switch the mode of an existing app. If rebuild_template is True, overwrites files with the new template."""
+        if not self._is_valid_app_name(name):
+            return {"success": False, "error": f"Invalid app name: {name}"}
+        
+        app_def = self.apps.get(name)
+        if not app_def:
+            return {"success": False, "error": f"App '{name}' not found"}
+            
+        old_mode = app_def.mode
+        app_def.mode = new_mode
+        self._persist_definition(app_def)
+        
+        if rebuild_template:
+            template = APP_TEMPLATES.get(new_mode)
+            app_dir = self._app_dir(name)
+            if template:
+                html_builder = template["html_builder"]
+                if new_mode == "workflow":
+                    html_content = html_builder(name, app_def.display_name or name, app_def.description, app_def.workflow_binding)
+                else:
+                    html_content = html_builder(name, app_def.display_name or name, app_def.description)
+    
+                html_content = html_content.replace('src="static/pybot-helpers.js"', f'src="static/pybot-helpers.js?v={_HELPERS_VERSION}"')
+                self._write_text(app_dir / APP_ENTRY_FILE, html_content)
+                self._write_text(self._static_dir(name) / "style.css", template["css"])
+                self._write_text(self._static_dir(name) / "app.js", template["js"])
+            else:
+                self._write_text(app_dir / APP_ENTRY_FILE, build_default_html(name, app_def.display_name or name, app_def.description))
+                
+        return {"success": True, "app_name": name, "old_mode": old_mode, "new_mode": new_mode, "rebuilt": rebuild_template}
+
     def delete_app(self, name: str) -> dict[str, Any]:
         if name not in self.apps:
             return {"success": False, "error": f"App '{name}' not found"}

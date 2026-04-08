@@ -11,10 +11,17 @@ from core.systems.runtime.config_impl import (
     get_llm_fallback_config,
     get_observability_config,
     get_openclaw_compat_config,
+    get_permission_config,
     get_rag_config,
+    get_settings_projection,
+    get_trusted_settings,
     reload_config,
     resolve_config_path,
+    resolve_project_config_path,
+    resolve_system_config_path,
     save_config,
+    save_project_config,
+    save_system_config,
 )
 from core.systems.runtime.cost_tracker import (
     CostSummary,
@@ -41,6 +48,16 @@ from core.systems.runtime.errors import (
     format_error,
     redact_sensitive_text,
 )
+from core.systems.runtime.model_resolver import (
+    ModelProviderError,
+    ResolvedModel,
+    _build_model_from_provider,
+    _check_provider_available,
+    _parse_spec,
+    list_all_providers,
+    list_available_providers,
+    resolve_model,
+)
 from core.systems.runtime.observability import (
     ObservabilityConfig,
     get_observability_config_from_dict,
@@ -63,14 +80,14 @@ from core.systems.runtime.pybot_bootstrap import (
 )
 from core.systems.runtime.pybot_streaming import stream_chat_events
 from core.systems.runtime.retry_policy import RetryAttemptInfo, RetryConfig, RetryPolicy, create_default_retry_policy
-from core.systems.runtime.session_kernel import SessionKernel, SessionSidechain
-from core.systems.runtime.session_memory_policy import (
+from core.systems.runtime.session.session_kernel import SessionKernel, SessionSidechain
+from core.systems.runtime.session.session_memory_policy import (
     SESSION_MEMORY_TYPE,
     SessionMemoryDecision,
     typed_memory_entry_payload,
     validate_session_memory,
 )
-from core.systems.runtime.session_runtime import SessionRecord, SessionRuntime
+from core.systems.runtime.session.session_runtime import SessionRecord, SessionRuntime
 from core.systems.runtime.context_budget import (
     PRESSURE_CRITICAL,
     PRESSURE_HIGH,
@@ -79,7 +96,7 @@ from core.systems.runtime.context_budget import (
     BudgetAssessment,
     ContextBudgetManager,
 )
-from core.systems.runtime.session_engine import (
+from core.systems.runtime.session.session_engine import (
     ModeTransition,
     PyBotSessionEngine,
     RunResult,
@@ -123,8 +140,10 @@ __all__ = [
     "DiagnosticsService",
     "LLMCallRecord",
     "MetricBucket",
+    "ModelProviderError",
     "ObservabilityConfig",
     "ProjectPaths",
+    "ResolvedModel",
     "RetryAttemptInfo",
     "RetryConfig",
     "RetryPolicy",

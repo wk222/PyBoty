@@ -72,6 +72,32 @@ class TodoState:
             lines.append(f"[{mark}] {t.id}: {t.content}")
         return "\n".join(lines)
 
+    def build_projection(self, *, limit: int = 8) -> dict[str, object] | None:
+        if not self.items:
+            return None
+        normalized = [
+            {
+                "id": item.id,
+                "content": item.content,
+                "status": item.status,
+            }
+            for item in self.items[-max(1, int(limit)) :]
+        ]
+        status_counts: dict[str, int] = {}
+        for item in self.items:
+            status_counts[item.status] = status_counts.get(item.status, 0) + 1
+        active = status_counts.get("pending", 0) + status_counts.get("in_progress", 0)
+        summary = (
+            f"活跃 {active} 项 / 完成 {status_counts.get('completed', 0)} 项"
+            if self.items
+            else ""
+        )
+        return {
+            "summary": summary,
+            "items": normalized,
+            "status_counts": status_counts,
+        }
+
 
 TODO_PROMPT = """## Task Management — write_todos
 
@@ -86,13 +112,17 @@ You have a `write_todos` tool for tracking multi-step tasks:
 class TodoListMiddleware(AgentMiddleware if _HAS_LC else object):  # type: ignore[misc]
     """Provide a ``write_todos`` tool and inject current todos into the prompt."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, task_runtime: Any | None = None) -> None:
         self._state = TodoState()
+        self._task_runtime = task_runtime
         self.tools: list[BaseTool] = [self._build_tool()]
 
     @property
     def name(self) -> str:
         return "TodoListMiddleware"
+
+    def export_projection(self) -> dict[str, object] | None:
+        return self._state.build_projection()
 
     def _build_tool(self) -> BaseTool:
         mw = self
@@ -104,7 +134,13 @@ class TodoListMiddleware(AgentMiddleware if _HAS_LC else object):  # type: ignor
                 todos: list of dicts with keys id, content, status.
                     status is one of: pending, in_progress, completed, cancelled.
             """
-            return mw._state.upsert(todos)
+            rendered = mw._state.upsert(todos)
+            if mw._task_runtime is not None and hasattr(mw._task_runtime, "upsert_tasks"):
+                try:
+                    mw._task_runtime.upsert_tasks(todos, source="write_todos")
+                except Exception:
+                    pass
+            return rendered
 
         return StructuredTool.from_function(
             name="write_todos",

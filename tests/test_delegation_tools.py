@@ -147,7 +147,7 @@ class TestDelegateEmitsEvents:
         storage = _make_storage_with_agent()
         tool = DelegateToAgentTool(agent_storage=storage)
 
-        with patch("core.agent_creator.delegate_agent_task") as mock_delegate:
+        with patch("core.assets.agents.agent_creator.delegate_agent_task") as mock_delegate:
             mock_delegate.return_value = {"success": True, "result": "done"}
             tool._run(agent_name="test_agent", task="do something")
 

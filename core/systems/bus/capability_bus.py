@@ -110,6 +110,24 @@ class CapabilityBus:
     def get_layer_graph(self) -> dict[str, Any]:
         return self.runtime.get_layer_graph()
 
+    def get_tree_projection(self) -> dict[str, Any]:
+        return self.runtime.get_tree_projection()
+
+    def get_route_projection(
+        self,
+        *,
+        query: str = "",
+        provides: str = "",
+        max_matches: int = 5,
+        projected_runtime_view: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return self.runtime.get_route_projection(
+            query=query,
+            provides=provides,
+            max_matches=max_matches,
+            projected_runtime_view=projected_runtime_view,
+        )
+
     def get_stats(self) -> dict[str, Any]:
         return self.runtime.get_stats()
 

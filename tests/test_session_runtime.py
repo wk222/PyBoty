@@ -20,13 +20,19 @@ def test_session_runtime_tracks_messages_and_memory(temp_paths):
     runtime.remember("thread-1", note="Keep responses concise")
 
     stored = runtime.get_session("thread-1")
+    kernel = runtime.get_kernel_snapshot("thread-1")
     assert stored is not None
+    assert kernel is not None
     assert stored["message_count"] == 2
     assert stored["last_user_message"] == "hello world"
     assert stored["last_assistant_message"] == "hi there"
     assert stored["working_summary"] == "User is greeting the assistant"
-    assert stored["context_notes"] == ["Keep responses concise"]
-    assert stored["memory_layers"]["session"]["summary"] == "User is greeting the assistant"
+    assert "runtime_view" not in stored["metadata"]
+    assert stored["runtime_view"]["hooks"]["notes"] == ["Keep responses concise"]
+    assert stored["runtime_view"]["session"]["summary"] == "User is greeting the assistant"
+    assert kernel["runtime_view"]["system_context"]["thread_id"] == "thread-1"
+    assert kernel["runtime_view"]["system_context"]["working_summary"] == "User is greeting the assistant"
+    assert kernel["runtime_view"]["session"]["session_notebook_summary"] == "Keep responses concise"
     events = runtime.get_event_log("thread-1")
     assert any(item["op"] == "message_recorded" for item in events)
 
@@ -44,7 +50,7 @@ def test_session_runtime_enforces_typed_durable_memory(temp_paths):
         verified=True,
     )
 
-    entries = stored["memory_layers"]["workspace"]["entries"]
+    entries = stored["runtime_view"]["workspace"]["entries"]
     assert entries[-1]["memory_type"] == "user"
     assert entries[-1]["durable"] is True
 
@@ -159,10 +165,10 @@ def test_session_runtime_builds_timeline_and_compacts_context(temp_paths):
     assert stored is not None
     assert len(stored["timeline"]) == 2
     assert stored["timeline"][-1]["kind"] == "delegated_subagent"
-    assert stored["compaction_state"]["compacted_timeline_events"] >= 1
-    assert stored["compaction_state"]["notebook_entries"] >= 1
-    assert "compaction" in stored["memory_layers"]["session"]
-    assert "notebook" in stored["memory_layers"]["session"]
+    assert stored["runtime_view"]["context_hygiene"]["compacted_timeline_events"] >= 1
+    assert stored["runtime_view"]["context_hygiene"]["notebook_entries"] >= 1
+    assert "compaction" in stored["runtime_view"]["session"]
+    assert "notebook" in stored["runtime_view"]["session"]
 
 
 def test_session_runtime_syncs_workflow_runs_into_session_overview(temp_paths):
@@ -229,7 +235,7 @@ def test_session_runtime_resume_scrubber_repairs_incomplete_runs(temp_paths):
     assert stored is not None
     assert stored["latest_run"]["status"] == "interrupted"
     assert stored["timeline"][-1]["status"] == "interrupted"
-    assert stored["compaction_state"]["resume_scrubbed_events"] >= 1
+    assert stored["runtime_view"]["context_hygiene"]["resume_scrubbed_events"] >= 1
     events = restored.get_event_log("thread-resume", op="resume_scrubbed")
     assert events
 
@@ -255,7 +261,7 @@ def test_session_runtime_replays_from_event_log_even_if_snapshot_is_stale(temp_p
     assert stored is not None
     assert stored["message_count"] == 1
     assert stored["working_summary"] == "Ledger summary"
-    assert stored["memory_layers"]["workspace"]["entries"][-1]["memory_type"] == "user"
+    assert stored["runtime_view"]["workspace"]["entries"][-1]["memory_type"] == "user"
 
 
 def test_session_runtime_ignores_snapshot_without_event_ledger(temp_paths):
@@ -294,8 +300,26 @@ def test_session_runtime_records_external_compaction_boundaries(temp_paths):
     )
 
     assert stored["timeline"][-1]["kind"] == "conversation_compaction"
-    assert stored["compaction_state"]["boundaries"]
-    assert stored["compaction_state"]["boundaries"][-1]["source"] == "middleware.summarization"
+    assert stored["runtime_view"]["context_hygiene"]["boundaries"]
+    assert stored["runtime_view"]["context_hygiene"]["boundaries"][-1]["source"] == "middleware.summarization"
+
+
+def test_session_runtime_keeps_working_summary_out_of_session_notebook(temp_paths):
+    runtime = SessionRuntime(temp_paths.sessions_file)
+    runtime.ensure_thread_session("thread-summary-only", title="Summary only")
+    runtime.update_summary("thread-summary-only", summary="Canonical runtime view owns this working summary")
+
+    stored = runtime.get_session("thread-summary-only")
+    artifacts = runtime.get_compiled_runtime_view("thread-summary-only")
+    kernel = runtime.get_kernel_snapshot("thread-summary-only")
+
+    assert stored is not None
+    assert artifacts is not None
+    assert kernel is not None
+    assert stored["runtime_view"]["system_context"]["working_summary"] == "Canonical runtime view owns this working summary"
+    assert stored["runtime_view"]["session"]["session_notebook_summary"] == ""
+    assert artifacts["projected_runtime_view"]["session"]["session_notebook_summary"] == ""
+    assert kernel["runtime_view"]["session"]["session_notebook_summary"] == ""
 
 
 def test_session_runtime_compacts_tool_transcript_and_file_views(temp_paths):
@@ -327,12 +351,12 @@ def test_session_runtime_compacts_tool_transcript_and_file_views(temp_paths):
     stored = runtime.get_session("thread-tools")
 
     assert stored is not None
-    assert stored["compaction_state"]["compacted_tool_events"] >= 1
-    assert stored["compaction_state"]["compacted_file_views"] >= 1
-    assert stored["compaction_state"]["tool_notebook_entries"] >= 1
-    assert stored["compaction_state"]["file_view_notebook_entries"] >= 1
-    assert stored["memory_layers"]["session"]["tool_transcript"]["entries"]
-    assert stored["memory_layers"]["workspace"]["file_views"]["notebook"]["entries"]
+    assert stored["runtime_view"]["context_hygiene"]["compacted_tool_events"] >= 1
+    assert stored["runtime_view"]["context_hygiene"]["compacted_file_views"] >= 1
+    assert stored["runtime_view"]["context_hygiene"]["tool_notebook_entries"] >= 1
+    assert stored["runtime_view"]["context_hygiene"]["file_view_notebook_entries"] >= 1
+    assert stored["runtime_view"]["session"]["tool_transcript"]["entries"]
+    assert stored["runtime_view"]["workspace"]["file_view_notebook"]["entries"]
     assert any(item["kind"] == "file_view" for item in stored["timeline"])
 
 
@@ -349,25 +373,83 @@ def test_session_runtime_compiled_artifacts_invalidate_with_prompt_injection(tem
         is_partial_view=True,
     )
 
-    first = runtime.get_compiled_artifacts("thread-artifacts")
-    second = runtime.get_compiled_artifacts("thread-artifacts")
+    first = runtime.get_compiled_runtime_view("thread-artifacts")
+    second = runtime.get_compiled_runtime_view("thread-artifacts")
 
     assert first is not None
     assert second is not None
     assert first["artifact_version"] >= 1
     assert second["artifact_version"] == first["artifact_version"]
-    assert first["file_view_projection"]["recent_views"][-1]["view_kind"] == "partial"
-    assert first["file_view_projection"]["view_hashes"]
+    assert first["projected_runtime_view"]["workspace"]["recent_views"][-1]["view_kind"] == "partial"
+    assert first["projected_runtime_view"]["workspace"]["view_hashes"]
 
     runtime.set_prompt_injection("thread-artifacts", prompt_injection="Prefer terse operational summaries.")
-    after = runtime.get_compiled_artifacts("thread-artifacts")
+    after = runtime.get_compiled_runtime_view("thread-artifacts")
     kernel = runtime.get_kernel_snapshot("thread-artifacts")
 
     assert after is not None
     assert kernel is not None
     assert after["artifact_version"] > first["artifact_version"]
     assert after["system_context"]["prompt_injection"] == "Prefer terse operational summaries."
-    assert kernel["mutable_artifacts"]["prompt_injection"] == "Prefer terse operational summaries."
+    assert kernel["runtime_view"]["system_context"]["prompt_injection"] == "Prefer terse operational summaries."
+
+
+def test_session_runtime_persists_runtime_view_for_resume(temp_paths):
+    runtime = SessionRuntime(temp_paths.sessions_file)
+    runtime.ensure_thread_session("thread-bookkeeping", title="Bookkeeping")
+
+    runtime.update_runtime_view(
+        thread_id="thread-bookkeeping",
+        source="runtime.artifacts",
+        projected_runtime_view={
+            "settings": {"summary": "trusted settings: user -> project", "permission_mode": "plan"},
+            "context_hygiene": {"summary_active": True, "history_snip_count": 2},
+            "hooks": {"summary": "5 hooks across 3 active phases", "session_tags": ["permission:plan"]},
+            "route": {"recommended": {"slot": "workspace_view", "top_level": "workspace_view"}},
+            "isolation": {"summary": "root runtime uses the project workspace", "multi_agent_ready": True},
+        },
+    )
+
+    artifacts = runtime.get_compiled_runtime_view("thread-bookkeeping")
+    assert artifacts is not None
+    assert artifacts["system_context"]["thread_id"] == "thread-bookkeeping"
+    assert artifacts["projected_runtime_view"]["settings"]["permission_mode"] == "plan"
+    assert artifacts["projected_runtime_view"]["context_hygiene"]["history_snip_count"] == 2
+    assert artifacts["projected_runtime_view"]["hooks"]["session_tags"] == ["permission:plan"]
+    assert artifacts["projected_runtime_view"]["route"]["recommended"]["slot"] == "workspace_view"
+    assert artifacts["projected_runtime_view"]["isolation"]["multi_agent_ready"] is True
+
+    restored = SessionRuntime(temp_paths.sessions_file)
+    restored_artifacts = restored.get_compiled_runtime_view("thread-bookkeeping")
+    assert restored_artifacts is not None
+    assert restored_artifacts["projected_runtime_view"]["settings"]["permission_mode"] == "plan"
+    assert restored_artifacts["projected_runtime_view"]["route"]["recommended"]["slot"] == "workspace_view"
+
+
+def test_session_runtime_rehydrates_canonical_bookkeeping_from_event_log(temp_paths):
+    runtime = SessionRuntime(temp_paths.sessions_file)
+    runtime.ensure_thread_session("thread-canonical", title="Canonical")
+    runtime.record_message(thread_id="thread-canonical", role="user", content="summarize current progress")
+    runtime.remember("thread-canonical", note="Keep summaries operator-facing")
+    runtime.record_file_view(
+        thread_id="thread-canonical",
+        path="/repo/plan.md",
+        preview="# plan\n- tighten canonical bookkeeping\n",
+        offset=0,
+        limit=120,
+        is_partial_view=True,
+    )
+
+    restored = SessionRuntime(temp_paths.sessions_file)
+    kernel = restored.get_kernel_snapshot("thread-canonical")
+    artifacts = restored.get_compiled_runtime_view("thread-canonical")
+
+    assert kernel is not None
+    assert artifacts is not None
+    assert kernel["runtime_view"]["system_context"]["thread_id"] == "thread-canonical"
+    assert kernel["runtime_view"]["session"]["session_notebook_summary"] == "Keep summaries operator-facing"
+    assert kernel["runtime_view"]["workspace"]["recent_views"][-1]["path"] == "/repo/plan.md"
+    assert artifacts["projected_runtime_view"]["workspace"]["recent_views"][-1]["path"] == "/repo/plan.md"
 
 
 def test_session_runtime_rebuilds_checkpoint_and_tracks_sidechains(temp_paths):

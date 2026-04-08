@@ -12,7 +12,7 @@ from core.assets.apps.app_manager import AppManager
 from core.assets.skills.skill_marketplace import SkillMarketplace
 from core.assets.skills.skill_registry import SkillRegistry
 from core.assets.tools import ToolChainExecutor
-from core.assets.workflows import PyFlowEngine, TaskScheduler
+from core.assets.workflows import workflow_orchestration, workflow_runtime
 from core.systems.bus import CapabilityBus, CapabilityRegistry
 from core.systems.context.context_manager import ContextConfig, ContextWindowManager
 from core.systems.eval.eval_framework import EvalFramework
@@ -27,7 +27,7 @@ class CapabilityRuntimeBundle:
     """Shared workflow/capability services used by the root runtime."""
 
     approval_queue: ApprovalQueue
-    pyflow_engine: PyFlowEngine
+    pyflow_engine: Any
     tool_chain: ToolChainExecutor
     eval_framework: EvalFramework
     context_manager: ContextWindowManager
@@ -57,7 +57,7 @@ def build_capability_runtime_bundle(
     """Assemble workflow/capability services with one shared wiring path."""
 
     resolved_approval_queue = approval_queue or ApprovalQueue(storage_path=paths.approvals_file)
-    pyflow_engine = PyFlowEngine(
+    pyflow_engine = workflow_runtime.engine_class(
         str(paths.workspace_dir),
         approval_queue=resolved_approval_queue,
         session_runtime=session_runtime,

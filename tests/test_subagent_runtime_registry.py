@@ -49,12 +49,18 @@ def _runtime(*, graph_result, registry: SubagentRegistry) -> SubAgentRuntime:
             description="General helper",
             system_prompt="Help.",
         ),
+        tools=[],
         tool_names=["search_notes"],
         control_policy=AgentControlPolicy(),
         sandbox=_sandbox(),
         checkpoint_bundle=_CheckpointBundle(),
         approval_queue=ApprovalQueue(),
         registry=registry,
+        runtime_context={
+            "session_key": "session-main",
+            "owner_thread_id": "root-thread",
+            "team_key": "session-main",
+        },
     )
 
 
@@ -71,7 +77,10 @@ def test_subagent_runtime_marks_completed_runs_in_registry():
 
     assert result["status"] == "completed"
     assert registry.get_active(agent_name="helper", thread_id="thread-1") is None
-    assert registry.get_latest(agent_name="helper", thread_id="thread-1").status == "completed"
+    latest = registry.get_latest(agent_name="helper", thread_id="thread-1")
+    assert latest.status == "completed"
+    assert latest.team_key == "session-main"
+    assert latest.owner_session_key == "session-main"
 
 
 def test_subagent_runtime_waiting_approval_can_be_aborted_without_resume(monkeypatch):

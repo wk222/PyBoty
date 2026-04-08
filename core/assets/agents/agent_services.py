@@ -123,6 +123,10 @@ def invoke_persisted_agent(
     parent_thread_id: str | None = None,
     parent_depth: int = 0,
     stream: bool = False,
+    cwd: str | None = None,
+    worktree_dir: str | None = None,
+    remote_target: str | None = None,
+    capability_override: dict[str, Any] | str | None = None,
 ) -> dict[str, Any] | Any:
     """Invoke a persisted subagent and return its structured runtime payload."""
     if control_policy is not None and not control_policy.allow_agent_delegation:
@@ -147,6 +151,10 @@ def invoke_persisted_agent(
         approval_queue=approval_queue,
         project_paths=project_paths,
         registry=subagent_registry,
+        cwd=cwd,
+        worktree_dir=worktree_dir,
+        remote_target=remote_target,
+        capability_override=capability_override,
     )
     resolved_thread_id = thread_id or f"delegate_{agent_name}_{int(time.time())}"
     try:
@@ -204,6 +212,7 @@ def delegate_agent_task(
     agent_name: str,
     task: str,
     context: str = "",
+    thread_id: str | None = None,
     control_policy: AgentControlPolicy | None = None,
     global_tool_storage: ToolStorage | None = None,
     approval_queue: ApprovalQueue | None = None,
@@ -214,6 +223,10 @@ def delegate_agent_task(
     parent_thread_id: str | None = None,
     parent_depth: int = 0,
     stream: bool = False,
+    cwd: str | None = None,
+    worktree_dir: str | None = None,
+    remote_target: str | None = None,
+    capability_override: dict[str, Any] | str | None = None,
 ) -> dict[str, Any] | Any:
     """Invoke a persisted subagent and return a parent-agent friendly payload."""
     result = invoke_persisted_agent(
@@ -222,6 +235,7 @@ def delegate_agent_task(
         agent_name=agent_name,
         task=task,
         context=context,
+        thread_id=thread_id,
         control_policy=control_policy,
         global_tool_storage=global_tool_storage,
         approval_queue=approval_queue,
@@ -232,6 +246,10 @@ def delegate_agent_task(
         parent_thread_id=parent_thread_id,
         parent_depth=parent_depth,
         stream=stream,
+        cwd=cwd,
+        worktree_dir=worktree_dir,
+        remote_target=remote_target,
+        capability_override=capability_override,
     )
     if stream:
         return result

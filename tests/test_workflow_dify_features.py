@@ -167,7 +167,7 @@ class TestParameterExtractor:
 
 
 class TestHttpRequest:
-    @patch("core.workflow_nodes_extended.urlopen")
+    @patch("core.assets.workflows.workflow_nodes_extended.urlopen")
     def test_get_json(self, mock_urlopen):
         mock_response = MagicMock()
         mock_response.read.return_value = b'{"key": "value"}'

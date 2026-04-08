@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from core.systems.middleware.todo_middleware import TodoItem, TodoListMiddleware, TodoState
+from core.systems.runtime.task_runtime import TaskRuntimeService
 
 
 class TestTodoState:
@@ -89,3 +90,21 @@ class TestTodoMiddleware:
     def test_name_property(self):
         mw = TodoListMiddleware()
         assert mw.name == "TodoListMiddleware"
+
+    def test_write_todos_syncs_task_runtime(self):
+        task_runtime = TaskRuntimeService()
+        mw = TodoListMiddleware(task_runtime=task_runtime)
+        tool = mw.tools[0]
+
+        tool.invoke(
+            {
+                "todos": [
+                    {"id": "1", "content": "stabilize trunk", "status": "in_progress"},
+                ]
+            }
+        )
+
+        projection = task_runtime.build_projection()
+        assert projection is not None
+        assert projection["tasks"][0]["id"] == "1"
+        assert projection["tasks"][0]["content"] == "stabilize trunk"

@@ -175,6 +175,115 @@ class TestSummarization:
         assert payloads[-1]["thread_id"] == "thread-callback"
         assert payloads[-1]["summary"] == "callback summary result"
 
+    def test_summary_prefers_resume_bundle_over_session_notes(self):
+        config = SummarizationConfig(keep_recent_messages=2)
+
+        class DummySessionExtractor:
+            def get_notes(self):
+                return "legacy session notes"
+
+        mw = SummarizationMiddleware(
+            summarize_fn=lambda prompt: "LLM summary result",
+            config=config,
+            session_memory_extractor=DummySessionExtractor(),
+            runtime_view_provider=lambda: {
+                "system_context": {"thread_id": "thread-1", "primary_mode": "assistant"},
+                "session": {},
+                "workspace": {},
+                "tasks": {
+                    "summary": "1 active task, 0 completed, 1 recent activities",
+                    "tasks": [{"id": "t1", "content": "stabilize trunk", "status": "in_progress"}],
+                    "activities": [
+                        {"activity_id": "run-1", "kind": "tool_run", "title": "read_file", "status": "completed"}
+                    ],
+                },
+                "permission": {},
+                "settings": {},
+                "capability": {},
+                "context_hygiene": {},
+                "hooks": {},
+                "route": {},
+                "isolation": {},
+            },
+        )
+        messages = [_human(f"msg {i}") for i in range(6)]
+
+        count = mw._do_summarize(messages)
+
+        assert count == 4
+        assert mw._summary_message is not None
+        content = mw._summary_message.content
+        assert "Resume bundle" in content
+        assert "## Task Runtime" in content
+        assert "## Recent Activity" in content
+        assert "legacy session notes" not in content
+
+    def test_cutoff_index_advances_without_duplicating_boundary_message(self):
+        config = SummarizationConfig(keep_recent_messages=20, mid_tier_messages=14)
+        mw = SummarizationMiddleware(
+            summarize_fn=lambda prompt: "LLM summary result",
+            config=config,
+        )
+        messages = [_human(f"msg {i}") for i in range(30)]
+
+        count = mw._do_summarize(messages)
+        effective = mw._get_effective_messages(messages)
+
+        assert count == 10
+        assert mw._cutoff_index == 10
+        assert len(effective) == 21
+        assert effective[0].content.startswith("[Previous conversation summarized]")
+        assert effective[1].content == "msg 10"
+
+        more_messages = messages + [_human(f"msg {i}") for i in range(30, 40)]
+        next_count = mw._do_summarize(mw._get_effective_messages(more_messages))
+        next_effective = mw._get_effective_messages(more_messages)
+
+        assert next_count == 11
+        assert mw._cutoff_index == 20
+        assert len(next_effective) == 21
+        assert next_effective[1].content == "msg 20"
+
+
+class TestSessionExtractorTicks:
+    class DummySessionExtractor:
+        def __init__(self) -> None:
+            self.deltas: list[int] = []
+
+        def tick(self, messages, tool_call_delta: int = 0, current_token_count: int = 0) -> None:
+            self.deltas.append(tool_call_delta)
+
+        def get_notes(self):
+            return None
+
+    def test_tool_call_delta_survives_compacted_effective_view(self):
+        extractor = self.DummySessionExtractor()
+        mw = SummarizationMiddleware(session_memory_extractor=extractor)
+
+        raw_messages = [
+            _ai("", tool_calls=[{"id": "tc1", "name": "read_file", "args": {"path": "a.py"}}]),
+            _human("first"),
+            _ai("", tool_calls=[{"id": "tc2", "name": "grep_files", "args": {"pattern": "TODO"}}]),
+        ]
+        effective_messages = [
+            _human("[Previous conversation summarized]"),
+            raw_messages[-1],
+        ]
+
+        mw._tick_session_extractor(raw_messages, effective_messages, total_tokens=100)
+
+        raw_messages_2 = raw_messages + [
+            _ai("", tool_calls=[{"id": "tc3", "name": "write_file", "args": {"path": "b.py"}}]),
+        ]
+        effective_messages_2 = [
+            _human("[Previous conversation summarized]"),
+            raw_messages_2[-1],
+        ]
+
+        mw._tick_session_extractor(raw_messages_2, effective_messages_2, total_tokens=140)
+
+        assert extractor.deltas == [2, 1]
+
 
 class TestOffload:
     def test_offload_creates_file(self, tmp_path):
@@ -243,3 +352,42 @@ class TestCompactTool:
         mw._last_messages = [_human("hi")]
         result = mw._run_compact()
         assert "Nothing" in result or "short" in result
+
+    def test_microcompact_stub_preserves_tool_invocation_preview(self):
+        config = SummarizationConfig(keep_recent_messages=2, microcompact_age=2)
+        mw = SummarizationMiddleware(config=config)
+        messages = [
+            _ai("", tool_calls=[{"id": "tc-read", "name": "read_file", "args": {"path": "src/app.py"}}]),
+            ToolMessage(content=("line\n" * 300), tool_call_id="tc-read", name="read_file"),
+            _human("step 1"),
+            _human("step 2"),
+            _human("step 3"),
+        ]
+
+        compacted = mw._microcompact(messages)
+
+        assert compacted[1].content.startswith("[microcompact]")
+        assert "read_file(path=src/app.py)" in compacted[1].content
+
+    def test_compact_callback_receives_microcompact_count(self):
+        payloads: list[dict] = []
+        config = SummarizationConfig(keep_recent_messages=2, microcompact_age=2)
+        mw = SummarizationMiddleware(
+            summarize_fn=lambda prompt: "compacted summary",
+            config=config,
+            compaction_callback=payloads.append,
+        )
+        mw._last_messages = [
+            _ai("", tool_calls=[{"id": "tc-read", "name": "read_file", "args": {"path": "src/app.py"}}]),
+            ToolMessage(content=("line\n" * 300), tool_call_id="tc-read", name="read_file"),
+            _human("step 1"),
+            _human("step 2"),
+            _human("step 3"),
+            _human("step 4"),
+        ]
+
+        result = mw._run_compact()
+
+        assert "Compacted 4 messages into a summary." == result
+        assert payloads
+        assert payloads[-1]["microcompact_count"] == 1

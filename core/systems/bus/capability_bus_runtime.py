@@ -13,6 +13,11 @@ from typing import Any
 
 from .capability_execution import CapabilityInvocation
 from .capability_bus_models import BusEvent, Capability, CapabilityLayer, EventType
+from .capability_tree import (
+    annotate_capability_tree_metadata,
+    build_capability_route_projection,
+    build_capability_tree_projection,
+)
 
 
 class CapabilityBusRuntime:
@@ -262,6 +267,31 @@ class CapabilityBusRuntime:
             "total_capabilities": len(self._capabilities),
         }
 
+    def get_tree_projection(self) -> dict[str, Any]:
+        return build_capability_tree_projection(self.list_capabilities())
+
+    def get_route_projection(
+        self,
+        *,
+        query: str = "",
+        provides: str = "",
+        max_matches: int = 5,
+        projected_runtime_view: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        effective_view = projected_runtime_view
+        if effective_view is None:
+            shared = self.get_context("projected_runtime_view")
+            if isinstance(shared, dict):
+                effective_view = shared
+        return build_capability_route_projection(
+            self.list_capabilities(),
+            query=query,
+            provides=provides,
+            tree_projection=self.get_tree_projection(),
+            projected_runtime_view=effective_view,
+            max_matches=max_matches,
+        )
+
     def get_stats(self) -> dict[str, Any]:
         by_layer: defaultdict[str, dict[str, int]] = defaultdict(lambda: {"count": 0, "invocations": 0, "successes": 0})
         for capability in self._capabilities.values():
@@ -330,8 +360,17 @@ class CapabilityBusRuntime:
         for tool in tools:
             name = getattr(tool, "name", str(tool))
             description = str(getattr(tool, "description", ""))[:200]
-            if name not in self._capabilities:
-                self.register(name, CapabilityLayer.TOOL, description=description)
+            self.register(
+                name,
+                CapabilityLayer.TOOL,
+                description=description,
+                metadata=annotate_capability_tree_metadata(
+                    name=name,
+                    layer=CapabilityLayer.TOOL,
+                    description=description,
+                ),
+                registered_by="auto_register_tools",
+            )
 
     def auto_register_skills(self, skill_registry: Any) -> None:
         for skill_name, skill_def in getattr(skill_registry, "skills", {}).items():
@@ -345,53 +384,149 @@ class CapabilityBusRuntime:
                     tool_names.append(tool.get("name", str(tool)))
                 else:
                     tool_names.append(str(tool))
+            skill_tags = list(getattr(skill_def, "tags", []))
+            metadata = annotate_capability_tree_metadata(
+                name=skill_name,
+                layer=CapabilityLayer.SKILL,
+                description=description,
+                tags=skill_tags,
+                dependencies=tool_names,
+                provides=tool_names,
+                metadata={
+                    "source_name": getattr(skill_def, "source_name", ""),
+                    "enabled": bool(getattr(skill_def, "enabled", True)),
+                    "tool_count": len(tool_names),
+                    "capabilities": list(getattr(skill_def, "capabilities", [])),
+                },
+            )
             self.register(
                 skill_name,
                 CapabilityLayer.SKILL,
                 description=description,
+                dependencies=tool_names,
                 provides=tool_names,
-                tags=getattr(skill_def, "tags", []),
+                tags=skill_tags,
+                metadata=metadata,
+                registered_by="auto_register_skills",
             )
 
     def auto_register_agents(self, agent_storage: Any) -> None:
         agents_dict = getattr(agent_storage, "agents", {})
         for agent_name, agent_def in agents_dict.items():
             description = ""
+            dependencies: list[str] = []
+            metadata: dict[str, Any] = {}
             if hasattr(agent_def, "role"):
                 description = agent_def.role
+                dependencies.extend(getattr(agent_def, "tools", []) or [])
+                dependencies.extend(getattr(agent_def, "workflows", []) or [])
+                metadata = {
+                    "team_role": getattr(agent_def, "team_role", "worker"),
+                    "tool_count": len(getattr(agent_def, "tools", []) or []),
+                    "workflow_count": len(getattr(agent_def, "workflows", []) or []),
+                    "knowledge_enabled": bool(getattr(getattr(agent_def, "knowledge", None), "enabled", False)),
+                    "capabilities": list(getattr(agent_def, "capabilities", []) or []),
+                }
             elif isinstance(agent_def, dict):
                 description = agent_def.get("role", "")
+                dependencies.extend(agent_def.get("tools", []) or [])
+                dependencies.extend(agent_def.get("workflows", []) or [])
+                metadata = {
+                    "team_role": agent_def.get("team_role", "worker"),
+                    "tool_count": len(agent_def.get("tools", []) or []),
+                    "workflow_count": len(agent_def.get("workflows", []) or []),
+                    "knowledge_enabled": bool((agent_def.get("knowledge") or {}).get("enabled", False)),
+                    "capabilities": list(agent_def.get("capabilities", []) or []),
+                }
+            metadata = annotate_capability_tree_metadata(
+                name=agent_name,
+                layer=CapabilityLayer.AGENT,
+                description=description,
+                dependencies=dependencies,
+                tags=["sub-agent"],
+                metadata=metadata,
+            )
             self.register(
                 agent_name,
                 CapabilityLayer.AGENT,
                 description=description,
+                dependencies=_dedupe_strings(dependencies),
                 tags=["sub-agent"],
+                metadata=metadata,
+                registered_by="auto_register_agents",
             )
 
     def auto_register_apps(self, app_manager: Any) -> None:
         for app_name in getattr(app_manager, "apps", {}):
             app_def = app_manager.apps[app_name]
+            dependencies = _dedupe_strings(
+                [
+                    getattr(app_def, "agent_binding", ""),
+                    getattr(app_def, "workflow_binding", ""),
+                ]
+            )
+            base_metadata = {
+                "api_enabled": bool(getattr(app_def, "api_enabled", False)),
+                "require_auth": bool(getattr(app_def, "require_auth", False)),
+                "mode": getattr(app_def, "mode", "static"),
+                "exports": list(getattr(app_def, "exports", [])),
+                "shared_datastores": list(getattr(app_def, "shared_datastores", [])),
+                "data_contracts": [dict(item) for item in getattr(app_def, "data_contracts", [])],
+                "agent_binding": getattr(app_def, "agent_binding", ""),
+                "workflow_binding": getattr(app_def, "workflow_binding", ""),
+                "knowledge_collections": list(getattr(app_def, "knowledge_collections", [])),
+                "allowed_tools": list(getattr(app_def, "allowed_tools", [])),
+            }
             self.register(
                 app_name,
                 CapabilityLayer.APP,
                 description=getattr(app_def, "description", ""),
+                dependencies=dependencies,
                 provides=list(getattr(app_def, "exports", [])),
                 tags=getattr(app_def, "tags", []),
-                metadata={
-                    "api_enabled": bool(getattr(app_def, "api_enabled", False)),
-                    "require_auth": bool(getattr(app_def, "require_auth", False)),
-                    "mode": getattr(app_def, "mode", "static"),
-                    "exports": list(getattr(app_def, "exports", [])),
-                    "shared_datastores": list(getattr(app_def, "shared_datastores", [])),
-                    "data_contracts": [dict(item) for item in getattr(app_def, "data_contracts", [])],
-                },
+                metadata=annotate_capability_tree_metadata(
+                    name=app_name,
+                    layer=CapabilityLayer.APP,
+                    description=getattr(app_def, "description", ""),
+                    tags=list(getattr(app_def, "tags", [])),
+                    dependencies=dependencies,
+                    provides=list(getattr(app_def, "exports", [])),
+                    metadata=base_metadata,
+                ),
+                registered_by="auto_register_apps",
             )
 
     def auto_register_workflows(self, pyflow_engine: Any) -> None:
         for workflow in pyflow_engine.list_workflow_files():
+            description = workflow.get("description", "")
+            tags = workflow.get("tags", [])
             self.register(
                 workflow["name"],
                 CapabilityLayer.WORKFLOW,
-                description=workflow.get("description", ""),
-                tags=workflow.get("tags", []),
+                description=description,
+                tags=tags,
+                metadata=annotate_capability_tree_metadata(
+                    name=workflow["name"],
+                    layer=CapabilityLayer.WORKFLOW,
+                    description=description,
+                    tags=tags,
+                    metadata={
+                        "nodes_count": int(workflow.get("nodes_count", 0) or 0),
+                        "schedule": workflow.get("schedule"),
+                        "format": workflow.get("format", ""),
+                    },
+                ),
+                registered_by="auto_register_workflows",
             )
+
+
+def _dedupe_strings(values: list[Any]) -> list[str]:
+    seen: set[str] = set()
+    results: list[str] = []
+    for value in values:
+        item = str(value).strip()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        results.append(item)
+    return results
