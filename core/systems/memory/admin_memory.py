@@ -210,3 +210,8 @@ class AdminMemoryManager:
             return compacted
         rendered = str(value)
         return rendered if len(rendered) <= limit else rendered[:limit] + "...(truncated)"
+
+
+# Keep old name but prefer shorter one for public API
+AdminMemory = AdminMemoryManager
+

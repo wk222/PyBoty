@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
-from core.assets.agents.agent_as_tool import AgentTool, TeamTool, create_agent_tool, create_team_tool
+from core.modes.agents.agent_as_tool import AgentTool, TeamTool, create_agent_tool, create_team_tool
 from core.systems.runtime.event_bus import EventType, event_bus
 
 
@@ -203,3 +203,4 @@ class TestFactoryFunctions:
         )
         assert isinstance(tool, TeamTool)
         assert tool.name == "team_squad"
+

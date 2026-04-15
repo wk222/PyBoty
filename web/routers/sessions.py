@@ -152,6 +152,32 @@ async def get_session_sidechains(
     }
 
 
+@router.get("/api/sessions/{session_key}/swarm")
+async def get_session_swarm_status(
+    session_key: str,
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> dict[str, Any]:
+    """Get active subagents and team memory for the current session."""
+    # Build team memory projection
+    team_memory = services.subagent_registry.build_team_memory_projection(
+        team_key=session_key
+    )
+    
+    # Get all active runs for this session (team)
+    with services.subagent_registry._lock:
+        active_runs = [
+            record.to_dict() 
+            for record in services.subagent_registry._records.values()
+            if record.team_key == session_key
+        ]
+        
+    return {
+        "session_key": session_key,
+        "team_memory": team_memory,
+        "runs": active_runs
+    }
+
+
 @router.get("/api/sessions/{session_key}/artifacts")
 async def get_session_artifacts(
     session_key: str,

@@ -6,7 +6,7 @@ import concurrent.futures
 from collections.abc import Callable
 from typing import Any
 
-from core.assets.agents.delegation_payload import normalize_delegation_payload
+from core.modes.agents.delegation_payload import normalize_delegation_payload
 
 from .workflow_models import FlowNode, NodeType, WorkflowDef
 from .workflow_pause_state import apply_waiting_approvals, normalize_pending_approvals
@@ -145,7 +145,7 @@ class WorkflowCollaborationRuntime:
                     "response": payload["response"],
                 }
 
-            history += f"【{speaker}】:\n{payload['response']}\n\n"
+            history += f"【{speaker}】：\n{payload['response']}\n\n"
             transcript.append(self._transcript_entry(agent=speaker, payload=payload))
             step_index += 1
 
@@ -409,13 +409,13 @@ class WorkflowCollaborationRuntime:
             err = f"子智能体 '{agent_name}' 执行超时 ({timeout}s)"
             self._log_event(workflow, node.id, "agent_timeout", err)
             if retry_on_fail and self.agent_callback:
-                result = self.agent_callback(f"[代替超时的 {agent_name}] {task}\n\n上下文：{context}")
+                result = self.agent_callback(f"[代替超时子智能体 {agent_name}] {task}\n\n上下文：{context}")
                 return {"agent_name": agent_name, "response": result, "fallback": True, "success": True, "warning": err}
             raise RuntimeError(err) from exc
         except Exception as exc:
             self._log_event(workflow, node.id, "agent_error", str(exc))
             if retry_on_fail and self.agent_callback:
-                result = self.agent_callback(f"[代替失败的 {agent_name}] {task}\n\n上下文：{context}")
+                result = self.agent_callback(f"[代替失败子智能体 {agent_name}] {task}\n\n上下文：{context}")
                 return {
                     "agent_name": agent_name,
                     "response": result,

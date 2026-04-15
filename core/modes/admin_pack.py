@@ -86,6 +86,7 @@ def _initialize_persistent_runtime_if_needed(host: Any) -> None:
         poll_interval=host._admin_poll_interval,
         max_workers=host._admin_workers,
         step_executor=host._admin_step_executor,
+        subagent_registry=getattr(host, "subagent_registry", None),
     )
 
     # Subscribe to telemetry reports to self-evolve

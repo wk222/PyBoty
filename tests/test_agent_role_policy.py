@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from core.assets.agents.agent_role_policy import (
+from core.modes.agents.agent_role_policy import (
     AgentRole,
     AgentRolePolicy,
     ROLE_POLICIES,
     apply_role_defaults,
     get_policy,
 )
-from core.assets.agents.agent_storage import AgentDefinition
-from core.assets.agents.agent_tool_inventory import build_effective_profiles
+from core.modes.agents.agent_storage import AgentDefinition
+from core.modes.agents.agent_tool_inventory import build_effective_profiles
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +153,7 @@ class TestGetPolicy:
 
 
 # ---------------------------------------------------------------------------
-# apply_role_defaults â€” merging behavior
+# apply_role_defaults â€?merging behavior
 # ---------------------------------------------------------------------------
 
 class TestApplyRoleDefaults:
@@ -265,3 +265,4 @@ class TestBuildEffectiveProfiles:
         cap, mid = build_effective_profiles(agent)
         assert cap["read_only_tools_only"] is True
         assert mid["structured_output_required"] is True
+

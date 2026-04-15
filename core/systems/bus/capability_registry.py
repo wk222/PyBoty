@@ -5,13 +5,17 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from langchain.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.assets.skills.skill_marketplace import SkillMarketplace
-from core.assets.tools.unified_tool_inventory import UnifiedAssetInventory
+if TYPE_CHECKING:
+    from core.systems.runtime.backend_protocol import (
+        SkillMarketplaceProtocol,
+        UnifiedAssetInventoryProtocol,
+    )
+
 from core.systems.integration.pyhub_client import PyHubClient
 from core.systems.runtime.event_bus import event_bus
 
@@ -28,7 +32,7 @@ class CapabilityRegistry:
         *,
         workspace_dir: str | Path,
         capability_bus: CapabilityBus,
-        skill_marketplace: SkillMarketplace,
+        skill_marketplace: SkillMarketplaceProtocol,
         skill_registry: Any | None = None,
         app_manager: Any | None = None,
         agent_storage: Any | None = None,
@@ -62,7 +66,7 @@ class CapabilityRegistry:
         self,
         *,
         tools: list[Any] | None = None,
-        unified_inventory: UnifiedAssetInventory | None = None,
+        unified_inventory: UnifiedAssetInventoryProtocol | None = None,
         save: bool = True,
     ) -> dict[str, Any]:
         return self.catalog_runtime.refresh_local_index(
@@ -210,7 +214,10 @@ class CapabilityRegistry:
 
 class CapabilityRegistryInput(BaseModel):
     action: str = Field(
-        description="registry action: snapshot / discover / route / providers / contract / publish_skill / install_skill"
+        description=(
+            "registry action: snapshot / discover / route / providers / contract"
+            " / publish_skill / install_skill / issue_grant / list_grants / invoke"
+        )
     )
     query: str = Field(default="", description="search query for discovery")
     layer: str = Field(default="", description="filter layer: tool/skill/agent/workflow/app")
@@ -228,13 +235,24 @@ class CapabilityRegistryInput(BaseModel):
     publish_to_hub: bool = Field(default=False, description="publish packaged skill to remote hub")
     hub_url: str = Field(default="", description="remote hub URL")
     hub_token: str = Field(default="", description="remote hub token")
+    # grant / invoke fields
+    caller_app: str = Field(default="", description="calling app name for grant operations")
+    target_app: str = Field(default="", description="target/provider app name for grant")
+    grant_token: str = Field(default="", description="grant token for invoke")
+    invoke_action: str = Field(default="", description="action to invoke on provider app")
+    invoke_payload: str = Field(default="{}", description="JSON-encoded payload for invoke action")
+    ttl_seconds: int = Field(default=3600, description="grant TTL in seconds")
+    requested_quota: int = Field(default=1, description="quota units to request")
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class CapabilityRegistryTool(BaseTool):
     name: str = "capability_registry"
     description: str = (
-        "统一查询和管理 PyBot 能力生态：发现本地能力、查看标准化契约、查询能力提供者，并把技能打包/发布到能力市场。"
+        "统一查询和管理 PyBot 能力生态：发现本地能力、查看标准化契约、查询能力提供者，"
+        "把技能打包/发布到能力市场，以及通过 zero-trust grant 机制完成 APP-to-APP 能力授权和调用。"
+        " action 枚举：snapshot / discover / route / providers / contract"
+        " / publish_skill / install_skill / issue_grant / list_grants / invoke"
     )
     args_schema: type[BaseModel] = CapabilityRegistryInput
     registry: Any = Field(default=None, exclude=True)
@@ -259,6 +277,13 @@ class CapabilityRegistryTool(BaseTool):
         publish_to_hub: bool = False,
         hub_url: str = "",
         hub_token: str = "",
+        caller_app: str = "",
+        target_app: str = "",
+        grant_token: str = "",
+        invoke_action: str = "",
+        invoke_payload: str = "{}",
+        ttl_seconds: int = 3600,
+        requested_quota: int = 1,
     ) -> str:
         if action == "snapshot":
             payload = self.registry.get_registry_snapshot()
@@ -303,6 +328,33 @@ class CapabilityRegistryTool(BaseTool):
                 version=version,
                 hub_url=hub_url,
                 hub_token=hub_token,
+            )
+        elif action == "issue_grant":
+            payload = self.registry.issue_app_grant(
+                caller_app=caller_app,
+                target_app=target_app,
+                capability_name=name,
+                provides=provides,
+                requested_quota=requested_quota,
+                ttl_seconds=ttl_seconds,
+            )
+        elif action == "list_grants":
+            payload = {
+                "grants": self.registry.list_grants(
+                    caller_app=caller_app,
+                    provider_app=target_app,
+                )
+            }
+        elif action == "invoke":
+            try:
+                parsed_payload = json.loads(invoke_payload or "{}")
+            except (json.JSONDecodeError, ValueError):
+                parsed_payload = {}
+            payload = self.registry.invoke_app_capability(
+                caller_app=caller_app,
+                grant_token=grant_token,
+                action=invoke_action,
+                payload=parsed_payload,
             )
         else:
             payload = {"error": f"unknown action: {action}"}

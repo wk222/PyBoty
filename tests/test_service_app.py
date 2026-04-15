@@ -5,7 +5,7 @@ from pathlib import Path
 
 from fastapi.middleware.cors import CORSMiddleware
 
-from core.assets.apps.app_manager import AppManager
+from core.modes.apps.app_manager import AppManager
 from core.systems.integration.channel_manager import ChannelManager
 from core.assets.skills.skill_backends import InMemorySkillBackend
 from core.assets.skills.skill_http_backend import HttpSkillBackend
@@ -412,7 +412,7 @@ def test_uv_env_detail_route_returns_404_for_missing_env(client):
 
 def test_update_agent_capability_profile(client):
     system_agent = client.app.state.services.system_agent()
-    from core.assets.agents.agent_storage import AgentDefinition
+    from core.modes.agents.agent_storage import AgentDefinition
 
     system_agent.agent_storage.add_agent(
         AgentDefinition(name="helper", role="helper", description="helper", system_prompt="help")
@@ -1002,7 +1002,7 @@ def test_app_matrix_node_metadata_route_updates_contracts(client):
 
 def test_agent_detail_includes_governance_snapshot(client):
     system_agent = client.app.state.services.system_agent()
-    from core.assets.agents.agent_storage import AgentDefinition
+    from core.modes.agents.agent_storage import AgentDefinition
 
     system_agent.agent_storage.add_agent(
         AgentDefinition(
@@ -1027,7 +1027,7 @@ def test_agent_detail_includes_governance_snapshot(client):
 
 def test_agent_tools_endpoint_separates_assigned_and_local_tools(client):
     system_agent = client.app.state.services.system_agent()
-    from core.assets.agents.agent_storage import AgentDefinition
+    from core.modes.agents.agent_storage import AgentDefinition
 
     system_agent.agent_storage.add_agent(
         AgentDefinition(
@@ -1078,7 +1078,7 @@ def test_agent_tools_endpoint_separates_assigned_and_local_tools(client):
 
 def test_sync_local_agent_tool_to_global_library(client):
     system_agent = client.app.state.services.system_agent()
-    from core.assets.agents.agent_storage import AgentDefinition
+    from core.modes.agents.agent_storage import AgentDefinition
     from core.assets.tools.tool_storage import ToolStorage
 
     system_agent.agent_storage.add_agent(
@@ -1110,7 +1110,7 @@ def test_sync_local_agent_tool_to_global_library(client):
 
 def test_sync_global_tool_to_local_agent_library(client):
     system_agent = client.app.state.services.system_agent()
-    from core.assets.agents.agent_storage import AgentDefinition
+    from core.modes.agents.agent_storage import AgentDefinition
     from core.assets.tools.tool_storage import ToolStorage
 
     system_agent.agent_storage.add_agent(
@@ -1149,7 +1149,7 @@ def test_sync_global_tool_to_local_agent_library(client):
 
 def test_sync_global_tool_to_local_requires_overwrite_for_conflicts(client):
     system_agent = client.app.state.services.system_agent()
-    from core.assets.agents.agent_storage import AgentDefinition
+    from core.modes.agents.agent_storage import AgentDefinition
     from core.assets.tools.tool_storage import ToolStorage
 
     system_agent.agent_storage.add_agent(

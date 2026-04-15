@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from types import SimpleNamespace
 
-from core.systems.context.workspace_view import WorkspaceViewService
+from core.systems.context import WorkspaceViewService
 from core.systems.runtime import pybot_bootstrap
 from core.systems.runtime.pybot_bootstrap import ToolAssembly, assemble_primary_tools, create_root_agent
 from core.systems.runtime.hooks_runtime import create_default_hooks_runtime
@@ -117,8 +117,8 @@ def test_create_root_agent_uses_runtime_metadata_for_session_context(tmp_path, m
         def __init__(self, **kwargs):
             captured["governance_kwargs"] = kwargs
 
-    monkeypatch.setattr(pybot_bootstrap, "build_root_langchain_middleware", fake_build_root_langchain_middleware)
-    monkeypatch.setattr(pybot_bootstrap, "create_agent", fake_create_agent)
+    monkeypatch.setattr("core.systems.middleware.agent_middleware_factory.build_root_langchain_middleware", fake_build_root_langchain_middleware)
+    monkeypatch.setattr("langchain.agents.create_agent", fake_create_agent)
     monkeypatch.setattr(
         "core.systems.governance.approval_callback.GovernanceApprovalCallback",
         DummyGovernanceApprovalCallback,
@@ -130,6 +130,7 @@ def test_create_root_agent_uses_runtime_metadata_for_session_context(tmp_path, m
         conversation_offload_dir=str(tmp_path),
         root_mode="admin",
         workspace_view=WorkspaceViewService(),
+        workspace=SimpleNamespace(root_dir=str(tmp_path)),
         context_manager=SimpleNamespace(config=SimpleNamespace(summarize_callback=lambda prompt: "summary")),
         session_runtime=None,
         llm=_DummyLLM(),
@@ -219,33 +220,37 @@ def test_assemble_primary_tools_passes_runtime_workspace_view(tmp_path, monkeypa
     captured: dict[str, object] = {}
     marker = object()
 
-    monkeypatch.setattr(pybot_bootstrap, "get_tool_creator_tools", lambda **kwargs: [])
-    monkeypatch.setattr(pybot_bootstrap, "get_clarification_tools", lambda: [])
-    monkeypatch.setattr(pybot_bootstrap, "get_marketplace_tools", lambda *_args, **_kwargs: [])
-    monkeypatch.setattr(pybot_bootstrap, "get_execution_loop_tools", lambda *_args, **_kwargs: [])
-    monkeypatch.setattr(pybot_bootstrap, "get_tool_chain_tools", lambda *_args, **_kwargs: [])
-    monkeypatch.setattr(pybot_bootstrap, "get_eval_tools", lambda *_args, **_kwargs: [])
-    monkeypatch.setattr(pybot_bootstrap, "get_capability_bus_tools", lambda *_args, **_kwargs: [])
-    monkeypatch.setattr(pybot_bootstrap, "get_capability_registry_tools", lambda *_args, **_kwargs: [])
-    monkeypatch.setattr(pybot_bootstrap, "get_memory_tools", lambda *_args, **_kwargs: [])
-    monkeypatch.setattr(pybot_bootstrap, "get_dynamic_tools", lambda *_args, **_kwargs: [])
-    monkeypatch.setattr(pybot_bootstrap, "build_static_system_prompt", lambda **_kwargs: "system prompt")
+    # The implementation uses local imports, so we must patch the actual sources
+    monkeypatch.setattr("core.assets.tools.tool_creator.get_tool_creator_tools", lambda **kwargs: [])
+    monkeypatch.setattr("core.assets.tools.clarification_tool.get_clarification_tools", lambda: [])
+    monkeypatch.setattr("core.assets.skills.skill_marketplace.get_marketplace_tools", lambda *_args, **_kwargs: [])
+
+    def fake_get_execution_loop_tools(workspace_dir):
+        captured["workspace_dir"] = workspace_dir
+        return []
+    monkeypatch.setattr("core.systems.execution.execution_loop.get_execution_loop_tools", fake_get_execution_loop_tools)
+
+    monkeypatch.setattr("core.assets.tools.tool_chain.get_tool_chain_tools", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr("core.systems.eval.eval_framework.get_eval_tools", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr("core.systems.bus.capability_bus.get_capability_bus_tools", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr("core.systems.bus.capability_registry.get_capability_registry_tools", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr("core.systems.memory.memory_tools.get_memory_tools", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr("core.systems.runtime.prompts.build_static_system_prompt", lambda **_kwargs: "system prompt")
+    
+    # These are namespaces imported in factories.py
     monkeypatch.setattr(
-        pybot_bootstrap,
-        "app_runtime",
+        "core.modes.apps.app_runtime",
         SimpleNamespace(
             creator_tools_factory=lambda **kwargs: [],
             verifier_tools_factory=lambda: [],
         ),
     )
     monkeypatch.setattr(
-        pybot_bootstrap,
-        "workflow_runtime",
+        "core.assets.workflows.workflow_runtime",
         SimpleNamespace(tools_factory=lambda *_args, **_kwargs: []),
     )
     monkeypatch.setattr(
-        pybot_bootstrap,
-        "app_orchestration",
+        "core.modes.apps.app_orchestration",
         SimpleNamespace(
             marketplace_tools_factory=lambda: [],
             orchestration_tools_factory=lambda *_args, **_kwargs: [],
@@ -282,7 +287,7 @@ def test_assemble_primary_tools_passes_runtime_workspace_view(tmp_path, monkeypa
     monkeypatch.setattr("core.assets.skills.markdown_loader.MarkdownSkillLoader", DummyMarkdownLoader)
 
     runtime = SimpleNamespace(
-        storage=object(),
+        storage=SimpleNamespace(tools={}),
         agent_storage=object(),
         control_policy=object(),
         approval_queue=None,
@@ -317,5 +322,4 @@ def test_assemble_primary_tools_passes_runtime_workspace_view(tmp_path, monkeypa
     )
 
     assert isinstance(result, ToolAssembly)
-    assert captured["fs_kwargs"]["workspace_view"] is marker
-    assert captured["fs_kwargs"]["allowed_root"] == str(tmp_path)
+    assert captured["workspace_dir"] == str(tmp_path)

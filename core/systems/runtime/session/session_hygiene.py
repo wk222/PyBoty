@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from core.systems.runtime.session import (
+from core.systems.runtime.session.session_record import (
     SessionRecord,
     _preview_text,
 )
@@ -106,11 +106,22 @@ class SessionHygieneMixin:
             trimmed_notes=trimmed_notes,
             trimmed_events=trimmed_events,
         )
+        
+        # Automatically suggest garden inclusion if we compacted significant notebook entries
+        # or a large number of tool events/files.
+        garden_suggested = (
+            notebook["entries"] > 0 
+            or tool_transcript["entries"] > 0 
+            or file_views["entries"] > 0
+            or len(trimmed_events) > 10
+        )
+        
         boundary = create_compaction_boundary(
             source="session_runtime",
             reason=reason,
             summary=summary,
             notebook_summary=notebook["summary"],
+            garden_suggested=garden_suggested,
             source_event_range={
                 "compacted_tool_events": tool_transcript["events"],
                 "compacted_file_views": file_views["views"],

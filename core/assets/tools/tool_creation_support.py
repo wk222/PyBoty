@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from core.assets.agents.agent_storage import AgentStorage
+from core.modes.agents.agent_storage import AgentStorage
 
 from .tool_storage import ToolStorage
 
@@ -68,8 +68,39 @@ def parse_parameter_definitions(parameters: str | list[dict[str, Any]]) -> list[
         except json.JSONDecodeError as exc:
             raise ToolCreationError(f"参数定义格式错误: {exc}") from exc
 
+    if isinstance(parsed, dict):
+        if not parsed:
+            parsed = []
+        elif "properties" in parsed or parsed.get("type") == "object":
+            # Auto-convert JSON schema to array format
+            props = parsed.get("properties", {})
+            required_keys = parsed.get("required", [])
+            if not isinstance(required_keys, list):
+                required_keys = []
+            
+            array_format = []
+            for k, v in props.items():
+                if isinstance(v, dict):
+                    item = {"name": k, "type": v.get("type", "str"), "description": v.get("description", "")}
+                    if "default" in v:
+                        item["default"] = v["default"]
+                    if k in required_keys:
+                        item["required"] = True
+                    array_format.append(item)
+            parsed = array_format
+        else:
+            # Fallback if they just passed a dict mapping names to types/descriptions
+            array_format = []
+            for k, v in parsed.items():
+                if isinstance(v, dict):
+                    item = {"name": k, "type": v.get("type", "str"), "description": v.get("description", "")}
+                    if "default" in v:
+                        item["default"] = v["default"]
+                    array_format.append(item)
+            parsed = array_format
+
     if not isinstance(parsed, list):
-        raise ToolCreationError("参数定义必须是数组")
+        raise ToolCreationError("参数定义必须是数组或 JSON Schema 对象")
 
     normalized: list[dict[str, Any]] = []
     for index, item in enumerate(parsed, 1):

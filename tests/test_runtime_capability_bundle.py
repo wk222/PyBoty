@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from core.assets.agents.agent_storage import AgentStorage
-from core.assets.apps.app_manager import AppManager
+from core.modes.agents.agent_storage import AgentStorage
+from core.modes.apps.app_manager import AppManager
 from core.assets.skills.skill_marketplace import SkillMarketplace
 from core.assets.skills.skill_registry import SkillRegistry
 from core.systems.runtime.runtime_capability_bundle import build_capability_runtime_bundle
@@ -34,3 +34,4 @@ def test_build_capability_runtime_bundle_wires_shared_services(temp_paths):
     assert bundle.eval_framework.runtime._agent_callback is not None
     assert bundle.context_manager.config.thread_id == "thread-1"
     assert bundle.middleware_stack.layers == []
+

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 
-from core.assets.apps.app_matrix_planner import AppMatrixPlanner, fallback_app_matrix_plan
+from core.modes.apps.app_matrix_planner import AppMatrixPlanner, fallback_app_matrix_plan
 
 
 def test_app_matrix_planner_returns_structured_topology_plan():

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from core.assets.agents.agent_capability_profile import AgentCapabilityProfile
-from core.assets.agents.subagent_governance import build_delegation_chain, format_delegation_tree
+from core.modes.agents.agent_capability_profile import AgentCapabilityProfile
+from core.modes.agents.subagent_governance import build_delegation_chain, format_delegation_tree
 from core.systems.governance.subagent_sandbox import list_sandbox_adapters
 
 
@@ -90,3 +90,4 @@ class TestDockerSandboxAdapter:
         assert "docker" in names
         docker_adapter = next(a for a in adapters if a["name"] == "docker")
         assert docker_adapter["backend"] == "docker"
+

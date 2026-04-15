@@ -6,6 +6,34 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import BaseModel, Field
+
+
+class SkillDescriptorSchema(BaseModel):
+    """Strict schema for validating parsed skill descriptors."""
+    name: str = Field(..., min_length=1)
+    description: str = Field(default="")
+    version: str = Field(default="1.0.0")
+    author: str = Field(default="system")
+    homepage: str = Field(default="")
+    skill_format: str = Field(default="pybot")
+    capabilities: list[str] = Field(default_factory=list)
+    tools: list[dict[str, Any]] = Field(default_factory=list)
+    system_prompt_extension: str = Field(default="")
+    enabled: bool = Field(default=True)
+    user_invocable: bool = Field(default=False)
+    uv_dependencies: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    openclaw_metadata: dict[str, Any] = Field(default_factory=dict)
+    requires_bins: list[str] = Field(default_factory=list)
+    requires_config: list[str] = Field(default_factory=list)
+    primary_env: str = Field(default="")
+
+
+def validate_skill_descriptor(data: dict[str, Any]) -> dict[str, Any]:
+    """Validate and normalize a raw skill descriptor dict through a strict schema."""
+    return SkillDescriptorSchema(**data).model_dump()
+
 
 @dataclass
 class SkillDefinition:

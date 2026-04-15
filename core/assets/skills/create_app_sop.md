@@ -57,3 +57,9 @@ description: 创建和开发子应用的指南与最佳实践
 4. **重要**：始终编写测试接口（例如在 `api.py` 中写 `test` action，或在 `app.js` 中写 `window.runSelfTest()`）。
 5. 使用 `verify_app` 验证整体质量，并使用 `test_app_api` 验证后端逻辑是否正常工作。
 6. 如验证失败，继续 `read_app_file / update_app_file / verify_app` 直到通过。
+
+## 4. 常见误区 (Common Mistakes)
+- **误区：通过 `create_custom_tool` 来实现 APP 的后端**
+  - **纠正**：APP 的后端逻辑应该写在 `api.py` 中，通过 `update_app_file` 工具写入。`create_custom_tool` 是用来扩展 PyBot 自身的工具库的，不属于特定 APP。
+- **误区：在 `build_app_iteratively` 过程中去创建新工具**
+  - **纠正**：`build_app_iteratively` 的子智能体 (app_generator) 并没有创建工具的权限。它只能使用已有的文件工具来构建应用。如果你需要特殊的数据抓取能力，应该直接在 `api.py` 中使用 `requests` 等库实现。

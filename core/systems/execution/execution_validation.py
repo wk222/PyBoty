@@ -1,4 +1,4 @@
-"""Iterative application validation service for execution-loop tools."""
+"""Iterative resource validation service for execution-loop tools."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 
 
-class IterativeAppValidator:
-    """Run lightweight structural and syntax checks for generated apps."""
+class IterativeResourceValidator:
+    """Run lightweight structural and syntax checks for generated resources (apps, agents, etc.)."""
 
     def __init__(self, workspace_dir: str = "workspace"):
         self.workspace_dir = Path(workspace_dir)
@@ -16,21 +16,22 @@ class IterativeAppValidator:
     def validate(
         self,
         *,
-        app_name: str,
+        resource_path: str,
         test_command: str = "",
         max_iterations: int = 3,
     ) -> dict[str, Any]:
-        app_dir = self.workspace_dir / "apps" / app_name
-        if not app_dir.exists():
-            return {"success": False, "error": f"应用 '{app_name}' 不存在"}
+        """Validate a resource at the given relative path within the workspace."""
+        full_dir = self.workspace_dir / resource_path.lstrip("/")
+        if not full_dir.exists():
+            return {"success": False, "error": f"路径 '{resource_path}' 不存在"}
 
         results: list[dict[str, Any]] = []
-        results.extend(self._check_html(app_dir))
-        results.extend(self._check_javascript(app_dir))
-        results.extend(self._check_api(app_dir))
+        results.extend(self._check_html(full_dir))
+        results.extend(self._check_javascript(full_dir))
+        results.extend(self._check_api(full_dir))
 
         if test_command:
-            results.append(self._run_custom_test(app_dir=app_dir, test_command=test_command))
+            results.append(self._run_custom_test(resource_dir=full_dir, test_command=test_command))
 
         passed = sum(1 for result in results if result["status"] == "pass")
         failed = sum(1 for result in results if result["status"] == "fail")
@@ -39,7 +40,7 @@ class IterativeAppValidator:
         )
         return {
             "success": True,
-            "app_name": app_name,
+            "resource_path": resource_path,
             "verdict": "PASS" if failed == 0 else "FAIL",
             "passed": passed,
             "failed": failed,
@@ -49,8 +50,8 @@ class IterativeAppValidator:
         }
 
     @staticmethod
-    def _check_html(app_dir: Path) -> list[dict[str, Any]]:
-        html_path = app_dir / "index.html"
+    def _check_html(resource_dir: Path) -> list[dict[str, Any]]:
+        html_path = resource_dir / "index.html"
         if not html_path.exists():
             return []
 
@@ -60,8 +61,8 @@ class IterativeAppValidator:
         return [{"check": "html_exists", "status": "pass"}]
 
     @staticmethod
-    def _check_javascript(app_dir: Path) -> list[dict[str, Any]]:
-        js_path = app_dir / "static" / "app.js"
+    def _check_javascript(resource_dir: Path) -> list[dict[str, Any]]:
+        js_path = resource_dir / "static" / "app.js"
         if not js_path.exists():
             return []
 
@@ -87,8 +88,8 @@ class IterativeAppValidator:
             return [{"check": "js_syntax", "status": "skip", "message": "Node.js 不可用"}]
 
     @staticmethod
-    def _check_api(app_dir: Path) -> list[dict[str, Any]]:
-        api_path = app_dir / "api.py"
+    def _check_api(resource_dir: Path) -> list[dict[str, Any]]:
+        api_path = resource_dir / "api.py"
         if not api_path.exists():
             return []
 
@@ -107,7 +108,7 @@ class IterativeAppValidator:
             ]
 
     @staticmethod
-    def _run_custom_test(*, app_dir: Path, test_command: str) -> dict[str, Any]:
+    def _run_custom_test(*, resource_dir: Path, test_command: str) -> dict[str, Any]:
         try:
             result = subprocess.run(
                 test_command,
@@ -115,7 +116,7 @@ class IterativeAppValidator:
                 capture_output=True,
                 text=False,
                 timeout=15,
-                cwd=str(app_dir),
+                cwd=str(resource_dir),
             )
             stdout_str = result.stdout.decode("utf-8", errors="replace") if result.stdout else ""
             stderr_str = result.stderr.decode("utf-8", errors="replace") if result.stderr else ""
@@ -127,3 +128,4 @@ class IterativeAppValidator:
             }
         except subprocess.TimeoutExpired:
             return {"check": "custom_test", "status": "fail", "error": "测试超时"}
+

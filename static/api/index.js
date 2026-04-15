@@ -155,6 +155,7 @@ export const API = {
   deleteApp: (name) => request(`/api/apps/${encodeURIComponent(name)}`, { method: 'DELETE' }),
 
   getStatus: (threadId) => request(`/api/status/${threadId}`),
+  getTrace: (threadId) => request(`/api/conversations/${encodeURIComponent(threadId)}/trace`),
 
   listWorkspaceFiles: () => request('/api/workspace/files'),
   getWorkspaceFile: (name) => request(`/api/workspace/${encodeURIComponent(name)}`),
@@ -277,4 +278,5 @@ export const API = {
   switchSessionMode: (sessionKey, mode) => request(`/api/sessions/${encodeURIComponent(sessionKey)}/mode`, {
     method: 'POST', body: JSON.stringify({ mode }),
   }),
+  getSwarmStatus: (sessionKey) => request(`/api/sessions/${encodeURIComponent(sessionKey)}/swarm`),
 };

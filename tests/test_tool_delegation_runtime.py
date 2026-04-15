@@ -6,7 +6,7 @@ from langchain_core.messages import ToolMessage
 
 from core.systems.governance.approval_queue import ApprovalQueue
 from core.assets.tools import tool_delegation_runtime
-from core.assets.tools.tool_delegation_runtime import DelegatedToolApprovalRuntime
+from core.assets.tools import DelegatedToolApprovalRuntime
 
 
 def test_delegated_tool_approval_runtime_returns_resolved_payload(monkeypatch):

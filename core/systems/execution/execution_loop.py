@@ -8,11 +8,11 @@ from typing import Any
 from langchain.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.assets.tools.todo_write import TodoWriteTool
+from core.assets.tools import TodoWriteTool
 
 from .execution_runtime import ExecutionRuntime
 from .execution_scanner import ProjectScanner
-from .execution_validation import IterativeAppValidator
+from .execution_validation import IterativeResourceValidator
 
 
 class ExecCodeInput(BaseModel):
@@ -81,33 +81,34 @@ class ScanProjectTool(BaseTool):
 
 
 class IterativeFixInput(BaseModel):
-    app_name: str = Field(description="应用名称")
-    test_command: str = Field(description="测试命令(会在应用目录下执行)", default="")
-    max_iterations: int = Field(description="最大迭代次数", default=3)
+    resource_path: str = Field(description="Resource path relative to workspace (e.g. 'apps/my-app')")
+    test_command: str = Field(description="Command to run within the resource directory", default="")
+    max_iterations: int = Field(description="Maximum number of repair iterations", default=3)
 
 
 class IterativeFixTool(BaseTool):
     name: str = "iterative_test"
-    description: str = """对子应用执行迭代测试循环。
+    description: str = """Run an iterative test-and-repair loop for a generated resource.
 
-**工作流**: 
-1. 运行测试命令或基础验证
-2. 收集错误信息
-3. 返回错误分析和修复建议
-4. Agent 根据建议修复后再次调用
+**Workflow**: 
+1. Run structural checks and/or custom test command.
+2. Collect error messages and stack traces.
+3. Return error analysis and fix suggestions.
+4. Agent repairs code and calls this again.
 
-这是实现"生成→执行→看到错误→修复→再测试"闭环的核心工具。
-配合 verify_app + update_app_file 使用效果最佳。
+This tool is the core of the "generate -> execute -> observe -> fix -> repeat" loop.
 """
     args_schema: type[BaseModel] = IterativeFixInput
     workspace_dir: str = Field(default="workspace")
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    def _run(self, app_name: str, test_command: str = "", max_iterations: int = 3) -> str:
-        validator = IterativeAppValidator(workspace_dir=self.workspace_dir)
+    def _run(self, resource_path: str, test_command: str = "", max_iterations: int = 3) -> str:
+        from .execution_validation import IterativeResourceValidator
+        
+        validator = IterativeResourceValidator(workspace_dir=self.workspace_dir)
         return json.dumps(
             validator.validate(
-                app_name=app_name,
+                resource_path=resource_path,
                 test_command=test_command,
                 max_iterations=max_iterations,
             ),

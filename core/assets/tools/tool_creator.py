@@ -8,7 +8,7 @@ from typing import Any
 from langchain.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.assets.agents.agent_storage import AgentStorage
+from core.modes.agents.agent_storage import AgentStorage
 from core.systems.runtime.project_paths import ProjectPaths
 
 from .tool_creation_support import (
@@ -40,13 +40,13 @@ class ToolCreatorInput(BaseModel):
     description: str = Field(description="工具功能描述，清晰说明工具的作用")
     parameters: str = Field(description="参数定义（JSON格式），详细格式请参考 create_tool_sop 技能")
     dependencies: list[str] = Field(
-        description="需要的第三方Python包列表（如 ['requests']）。",
+        description="需要的第三方Python包列表（如 ['requests']）",
         default_factory=list,
     )
     code: str = Field(description="Python执行代码，详细编写规范请参考 create_tool_sop 技能")
     usage_guide: str = Field(description="使用指南，说明何时使用此工具", default="")
     target_agent: str | None = Field(
-        description="目标智能体名称（可选）。如果指定，工具将创建在该智能体的专属工具库中（即该智能体的文件夹内）。",
+        description="目标智能体名称（可选）。如果指定，工具将创建在该智能体的专属工具库中（即该智能体的文件夹内）",
         default=None,
     )
 
@@ -55,7 +55,7 @@ class TemplateToolInput(BaseModel):
     """Input schema for template-based tool creation."""
 
     template_name: str = Field(description="模板名称，如 http_get, web_scraper, web_search, calculator 等")
-    custom_name: str = Field(description="自定义工具名称(英文+下划线)", default="")
+    custom_name: str = Field(description="自定义工具名称（英文+下划线）", default="")
     target_agent: str | None = Field(description="目标智能体名称（可选）", default=None)
 
 
@@ -64,9 +64,9 @@ class TemplateToolCreator(BaseTool):
 
     name: str = "create_tool_from_template"
     description: str = """
-📋 模板工具安装器 — 从预制模板一键创建经过验证的工具
+📋 模板工具安装器 - 从预制模板一键创建经过验证的工具
 
-如果需要查看所有可用模板列表和使用指南，请参考 `create_tool_sop` 技能。
+如果需要查看所有可用模板列表和使用指南，请参考 `create_tool_sop` 技能库。
 使用方式: 直接指定 template_name 即可创建
 """
     args_schema: type[BaseModel] = TemplateToolInput
@@ -119,7 +119,7 @@ class TemplateToolCreator(BaseTool):
             {
                 "success": True,
                 "tool_name": tool_name,
-                "message": f"✅ 模板工具 '{tool_name}' 已从模板 '{template_name}' 创建到 {target.location}！",
+                "message": f"✅ 模板工具 '{tool_name}' 已从模板 '{template_name}' 创建到 {target.location}。",
                 "location": target.location,
                 "template": template_name,
                 "parameters": [parameter["name"] for parameter in template["parameters"]],
@@ -131,7 +131,7 @@ class TemplateToolCreator(BaseTool):
 class ListTemplatesInput(BaseModel):
     """Input schema for listing templates."""
 
-    category: str = Field(description="筛选分类(可选)", default="")
+    category: str = Field(description="筛选分类（可选）", default="")
 
 
 class ListTemplatesTool(BaseTool):
@@ -201,10 +201,10 @@ class ToolCreatorTool(BaseTool):
 🛠️ 工具制造器 - 创建自定义工具供后续使用
 
 **核心能力**：
-- ✅ 动态创建新工具
-- ✅ 工具持久化保存
-- ✅ 可以创建到全局工具库
-- ✅ 也可以创建到指定智能体的专属工具库
+- 🚀 动态创建新工具
+- 💾 工具持久化保存
+- 🌍 可以创建到全局工具库
+- 🤖 也可以创建到指定智能体的专属工具库
 
 **适用场景**：
 1. 发现某个操作需要重复执行
@@ -269,9 +269,9 @@ class ToolCreatorTool(BaseTool):
             {
                 "success": True,
                 "tool_name": tool_name,
-                "message": f"✅ 工具 '{tool_name}' 已成功创建到 {target.location}！",
+                "message": f"✅ 工具 '{tool_name}' 已成功创建到 {target.location}。",
                 "location": target.location,
-                "usage": f"现在可以在相关上下文中使用 {tool_name} 工具了",
+                "usage": f"现在可以在相关上下文中使用 {tool_name} 工具了。",
                 "details": {
                     "description": description,
                     "parameters": [parameter["name"] for parameter in parsed_parameters],

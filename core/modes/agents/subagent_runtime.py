@@ -11,8 +11,8 @@ from typing import Any, Callable
 
 from langchain_core.language_models import BaseChatModel
 
-from core.assets.tools.tool_middleware import DynamicToolMiddleware
-from core.assets.tools.tool_storage import ToolStorage
+from core.assets.tools import DynamicToolMiddleware
+from core.assets.tools import ToolStorage
 from core.systems.governance.agent_control import AgentControlPolicy
 from core.systems.governance.approval_queue import ApprovalQueue
 from core.systems.governance.subagent_checkpointing import SubagentCheckpointBundle, build_subagent_checkpointer
@@ -27,7 +27,7 @@ from core.systems.governance.tool_approval_runtime import (
     create_tool_approval_request,
     extract_tool_approval_interrupts,
 )
-from core.systems.middleware.agent_middleware_factory import build_subagent_langchain_middleware
+from core.modes.factories import build_subagent_langchain_middleware
 from core.systems.runtime.private_state import get_private_keys
 from core.systems.runtime.project_paths import ProjectPaths
 from core.systems.runtime.subagent_isolation import (
@@ -702,6 +702,7 @@ def create_sub_agent_instance(
     worktree_dir: str | None = None,
     remote_target: str | None = None,
     capability_override: dict[str, Any] | str | None = None,
+    policy_override: dict[str, Any] | str | None = None,
 ) -> SubAgentRuntime:
     """Create an isolated subagent runtime with its own checkpoint scope."""
     from langchain.agents import create_agent
@@ -725,6 +726,10 @@ def create_sub_agent_instance(
 
     middleware_profile = AgentMiddlewareProfile.from_value(agent_def.middleware_profile)
     subagent_policy = derive_subagent_control_policy(base_policy=control_policy, capability_profile=profile)
+    
+    if policy_override:
+        subagent_policy = subagent_policy.merge_with_override(policy_override)
+
     llm = (
         llm_factory(model=agent_def.model, temperature=agent_def.temperature)
         if llm_factory

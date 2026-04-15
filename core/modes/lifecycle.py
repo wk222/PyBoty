@@ -116,4 +116,5 @@ def _legacy_initialize_persistent_runtime(host_agent: Any) -> None:
         poll_interval=host_agent._admin_poll_interval,
         max_workers=host_agent._admin_workers,
         step_executor=host_agent._admin_step_executor,
+        subagent_registry=getattr(host_agent, "subagent_registry", None),
     )

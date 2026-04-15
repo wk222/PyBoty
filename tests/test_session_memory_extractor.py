@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 
 from core.systems.memory.session_memory_extractor import SessionMemoryExtractor
-from core.systems.context.workspace_view import WorkspaceViewService
+from core.systems.context import WorkspaceViewService
 
 
 class _Msg:

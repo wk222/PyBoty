@@ -72,13 +72,22 @@ class WorkflowDelegationRuntime:
             )
 
         if pause_mode in {"debate", "consensus"} and resume_collaboration_node is not None:
-            continued_result = resume_collaboration_node(
-                node,
-                workflow,
-                waiting_payload,
-                resolved_payload,
-                resolved_approval_id,
-            )
+            try:
+                continued_result = resume_collaboration_node(
+                    node,
+                    workflow,
+                    waiting_payload,
+                    resolved_payload,
+                    resolved_approval_id,
+                )
+            except Exception as exc:
+                node.status = NodeStatus.FAILED
+                node.error = str(exc)
+                workflow.status = WorkflowStatus.FAILED
+                workflow.resume_token = None
+                self._save_workflow(workflow)
+                return {"status": "failed", "error": f"协作节点恢复失败: {exc}"}
+
             if continued_result is None:
                 return {"success": False, "error": f"工作流节点 '{node.id}' 无法恢复委派状态"}
             if (

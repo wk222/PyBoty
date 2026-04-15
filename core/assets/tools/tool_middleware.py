@@ -251,6 +251,7 @@ class DynamicToolMiddleware(AgentMiddleware if LANGCHAIN_1_AVAILABLE else object
                 "Switch back to `default` or `bypass` if this mutation is intentionally allowed."
             ),
             tool_call_id=tool_call_id,
+            name=tool_name,
             status="error",
         )
 
@@ -258,6 +259,7 @@ class DynamicToolMiddleware(AgentMiddleware if LANGCHAIN_1_AVAILABLE else object
         return ToolMessage(
             content=f"User rejected approval for `{tool_name}`. The tool call was canceled.",
             tool_call_id=tool_call_id,
+            name=tool_name,
             status="error",
         )
 

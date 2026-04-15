@@ -494,3 +494,43 @@ def test_session_runtime_rebuilds_checkpoint_and_tracks_sidechains(temp_paths):
     assert any(item["purpose"] == "context_compaction" for item in sidechains)
     assert file_views[-1]["content_hash"]
     assert file_views[-1]["view_hash"]
+
+
+def test_session_recorder_invariants():
+    import pytest
+    from core.systems.runtime.session.session_record import SessionRecord
+    
+    # 1. Event Ordering Invariant
+    record = SessionRecord(
+        session_key="session-inv",
+        thread_id="thread-inv",
+    )
+    record.timeline.append({"timestamp": 10.0, "kind": "chat", "title": "First"})
+    record.timeline.append({"timestamp": 5.0, "kind": "chat", "title": "Second"}) # out of order
+    record.updated_at = 15.0
+    
+    with pytest.raises(ValueError, match="Event ordering invariant violated"):
+        record.verify_invariants()
+        
+    # Fix order
+    record.timeline[1]["timestamp"] = 20.0
+    record.updated_at = 15.0 # now updated_at < last event
+
+    # 2. Replay Safety Invariant
+    with pytest.raises(ValueError, match="Replay safety invariant violated"):
+        record.verify_invariants()
+        
+    # Fix replay safety
+    record.updated_at = 25.0
+    record.verify_invariants() # Should pass now
+    
+    # 3. Compaction Boundaries Invariant
+    record.timeline.append({"timestamp": 30.0, "kind": "compaction", "title": "Compaction"})
+    record.updated_at = 35.0
+    record.metadata["compiled_artifacts"] = {"context_hygiene": {"history_snip_count": 0}}
+    
+    with pytest.raises(ValueError, match="Compaction boundary invariant violated"):
+        record.verify_invariants()
+        
+    record.metadata["compiled_artifacts"]["context_hygiene"]["history_snip_count"] = 1
+    record.verify_invariants() # Should pass now

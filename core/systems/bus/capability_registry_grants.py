@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 import uuid
 from dataclasses import dataclass
@@ -14,6 +15,8 @@ from core.systems.runtime.event_bus import Event, EventType, event_bus
 from .capability_bus import CapabilityBus
 from .capability_bus_models import CapabilityLayer
 from .capability_reporting import CapabilityBusReporter
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -118,9 +121,11 @@ class CapabilityGrantRuntime:
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if self.app_manager is None:
+            logger.error("Grant issuance failed: App manager unavailable")
             return {"success": False, "error": "App manager unavailable"}
         caller = self.app_manager.get_app(caller_app)
         if caller is None:
+            logger.warning("Grant issuance failed: Caller app '%s' not found", caller_app)
             return {"success": False, "error": f"Caller app '{caller_app}' not found"}
         resolved = self._resolve_app_provider(
             target_app=target_app,
@@ -128,6 +133,7 @@ class CapabilityGrantRuntime:
             provides=provides,
         )
         if not resolved.get("success"):
+            logger.warning("Grant issuance failed for caller '%s': %s", caller_app, resolved.get("error"))
             return resolved
         grant = CapabilityGrant(
             grant_id=uuid.uuid4().hex,
@@ -147,6 +153,11 @@ class CapabilityGrantRuntime:
         )
         self._grants[grant.token] = grant
         self._save_grants()
+        logger.info(
+            "Capability grant issued: caller=%s provider=%s capability=%s quota=%d ttl=%ds",
+            caller_app, grant.provider_app, grant.capability_name, requested_quota, ttl_seconds,
+            extra={"grant_id": grant.grant_id}
+        )
         event_bus.emit(
             Event(
                 type=EventType.CAPABILITY_GRANTED,
@@ -372,9 +383,25 @@ class CapabilityGrantRuntime:
     ) -> dict[str, Any]:
         duration_ms = (time.perf_counter() - started_at) * 1000
         payload_size = len(json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8"))
+        success = bool(response.get("success"))
+        error_msg = str(response.get("error", ""))
+
+        if not success:
+            logger.warning(
+                "Capability invocation failed: caller=%s provider=%s capability=%s action=%s error=%s",
+                caller_app, grant.provider_app, grant.capability_name, action, error_msg,
+                extra={"grant_id": grant.grant_id, "duration_ms": duration_ms}
+            )
+        else:
+            logger.info(
+                "Capability invocation succeeded: caller=%s provider=%s capability=%s action=%s",
+                caller_app, grant.provider_app, grant.capability_name, action,
+                extra={"grant_id": grant.grant_id, "duration_ms": duration_ms}
+            )
+
         self._reporter.record_capability_invocation(
             name=grant.provider_app,
-            success=bool(response.get("success")),
+            success=success,
             duration_ms=duration_ms,
             source="capability_registry",
             layer=CapabilityLayer.APP.value,
@@ -385,7 +412,7 @@ class CapabilityGrantRuntime:
                 "capability_name": grant.capability_name,
                 "quota_remaining": grant.quota_remaining,
                 "payload_bytes": payload_size,
-                "error": str(response.get("error", "")),
+                "error": error_msg,
             },
         )
         return response

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tempfile
 
-from core.assets.agents.persistent_agent_runner import (
+from core.modes.agents.persistent_agent_runner import (
     PersistentAgentRunner,
     PersistentTask,
     PersistentTaskStatus,

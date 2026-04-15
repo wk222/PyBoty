@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.assets.tools.tool_storage import ToolStorage
+from core.assets.tools import ToolStorage
 
 from .agent_role_policy import apply_role_defaults, get_policy
 from .agent_storage import AgentDefinition

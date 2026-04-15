@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
-from core.assets.tools.tool_model_runtime import ToolModelHookRuntime
+from core.assets.tools import ToolModelHookRuntime
 
 
 class _ControlRuntimeStub:

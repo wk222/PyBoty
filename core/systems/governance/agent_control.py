@@ -59,6 +59,8 @@ class AgentControlPolicy:
     max_recent_tool_calls: int = 20
     stuck_loop_warning_threshold: int = 3
     stuck_loop_kill_threshold: int = 6
+    arg_regex_patterns: dict[str, dict[str, str]] = field(default_factory=dict)
+    tool_budgets: dict[str, int] = field(default_factory=dict)
 
     @classmethod
     def from_config(cls, config: dict[str, Any] | None = None) -> AgentControlPolicy:
@@ -97,6 +99,84 @@ class AgentControlPolicy:
                 raw.get("stuck_loop_warning_threshold", preset["stuck_loop_warning_threshold"])
             ),
             stuck_loop_kill_threshold=int(raw.get("stuck_loop_kill_threshold", preset["stuck_loop_kill_threshold"])),
+            arg_regex_patterns=raw.get("arg_regex_patterns", preset.get("arg_regex_patterns", {})),
+            tool_budgets=raw.get("tool_budgets", preset.get("tool_budgets", {})),
+        )
+
+    def merge_with_override(self, override: dict[str, Any] | str | None) -> AgentControlPolicy:
+        """Merge this policy with an override, ensuring the result is never more permissive than self."""
+        if not override:
+            return self
+            
+        ov = {}
+        if isinstance(override, str):
+            import json
+            try:
+                parsed = json.loads(override)
+                if isinstance(parsed, dict):
+                    ov = parsed
+            except Exception:
+                pass
+        elif isinstance(override, dict):
+            ov = override
+            
+        if not ov:
+            return self
+
+        # 1. Boolean flags: can only be turned off by override, never turned on if base is off
+        def _intersect_bool(base_val: bool, key: str) -> bool:
+            if key in ov:
+                return base_val and bool(ov[key])
+            return base_val
+
+        # 2. Lists (blocked/approval): override can add items, but cannot remove items that base has
+        def _union_sets(base_set: frozenset[str], key: str) -> frozenset[str]:
+            if key in ov:
+                override_set = _merge_names(ov[key])
+                return frozenset(base_set | set(override_set))
+            return base_set
+
+        # 3. Budgets: override can lower the budget, but cannot increase it beyond base
+        merged_budgets = dict(self.tool_budgets)
+        if "tool_budgets" in ov and isinstance(ov["tool_budgets"], dict):
+            for t_name, t_budget in ov["tool_budgets"].items():
+                if isinstance(t_budget, (int, float)):
+                    if t_name in merged_budgets:
+                        merged_budgets[t_name] = min(merged_budgets[t_name], int(t_budget))
+                    else:
+                        merged_budgets[t_name] = int(t_budget)
+
+        # 4. Regex patterns: override can add new patterns or restrict existing ones
+        merged_regex = {k: dict(v) for k, v in self.arg_regex_patterns.items()}
+        if "arg_regex_patterns" in ov and isinstance(ov["arg_regex_patterns"], dict):
+            for t_name, patterns in ov["arg_regex_patterns"].items():
+                if not isinstance(patterns, dict):
+                    continue
+                if t_name not in merged_regex:
+                    merged_regex[t_name] = {}
+                for arg_name, pattern in patterns.items():
+                    if isinstance(pattern, str):
+                        merged_regex[t_name][arg_name] = pattern
+
+        return AgentControlPolicy(
+            mode=self.mode, # Mode inherited
+            blocked_tools=_union_sets(self.blocked_tools, "blocked_tools"),
+            blocked_dynamic_tools=_union_sets(self.blocked_dynamic_tools, "blocked_dynamic_tools"),
+            risky_tools=_union_sets(self.risky_tools, "risky_tools"),
+            approval_required_tools=_union_sets(self.approval_required_tools, "approval_required_tools"),
+            approval_required_dynamic_tools=_union_sets(self.approval_required_dynamic_tools, "approval_required_dynamic_tools"),
+            allow_dynamic_tools=_intersect_bool(self.allow_dynamic_tools, "allow_dynamic_tools"),
+            allow_tool_mutation=_intersect_bool(self.allow_tool_mutation, "allow_tool_mutation"),
+            allow_agent_mutation=_intersect_bool(self.allow_agent_mutation, "allow_agent_mutation"),
+            allow_agent_delegation=_intersect_bool(self.allow_agent_delegation, "allow_agent_delegation"),
+            max_subagent_depth=min(self.max_subagent_depth, int(ov.get("max_subagent_depth", self.max_subagent_depth))),
+            max_concurrent_subagents=min(self.max_concurrent_subagents, int(ov.get("max_concurrent_subagents", self.max_concurrent_subagents))),
+            subagent_timeout_seconds=min(self.subagent_timeout_seconds, float(ov.get("subagent_timeout_seconds", self.subagent_timeout_seconds))),
+            max_recent_tool_calls=self.max_recent_tool_calls,
+            stuck_loop_warning_threshold=self.stuck_loop_warning_threshold,
+            stuck_loop_kill_threshold=self.stuck_loop_kill_threshold,
+            arg_regex_patterns=merged_regex,
+            tool_budgets=merged_budgets,
         )
 
     def evaluate_tool_call(self, tool_name: str, *, is_dynamic: bool = False) -> ToolControlDecision:

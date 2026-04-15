@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.assets.agents.speaker_selection import (
+from core.modes.agents.speaker_selection import (
     ChatMessage,
     LLMSelector,
     Participant,
@@ -170,3 +170,4 @@ class TestLLMSelector:
         assert "Alice" in call_args
         assert "Bob" in call_args
         assert "researcher" in call_args
+

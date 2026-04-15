@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-import core.assets.agents.subagent_registry as registry_module
-from core.assets.agents import (
+import core.modes.agents.subagent_registry as registry_module
+from core.modes.agents import (
     SubagentConcurrencyLimitError,
     SubagentDepthLimitError,
     SubagentRegistry,
@@ -132,4 +132,5 @@ def test_subagent_registry_builds_team_memory_projection_from_context_notes():
     assert "coordinator" in projection["participant_agents"]
     assert projection["note_count"] == 3
     assert projection["recent_notes"][-1]["note"] == "Worker finished successfully, proceeding to next task."
+
 

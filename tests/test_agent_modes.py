@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from agent import AdminPyBot, AppMatrixPyBot, PyBot, create_admin_agent, create_app_matrix_agent
@@ -41,11 +43,11 @@ def test_create_app_matrix_agent_uses_app_matrix_mode(monkeypatch, tmp_path):
 
 def test_plan_app_matrix_topology_falls_back_without_llm():
     agent = object.__new__(PyBot)
+    agent.runtime = SimpleNamespace(llm=None)
     agent.mode_profile = resolve_mode_profile("app_matrix")
     agent._attach_admin_runtime = True
     agent.admin = None
     agent.app_matrix = None
-    agent.llm = None
 
     plan = agent.plan_app_matrix_topology(
         goal_name="shared_goal",
@@ -58,6 +60,7 @@ def test_plan_app_matrix_topology_falls_back_without_llm():
 
 def test_update_app_matrix_node_metadata_delegates_to_runtime():
     agent = object.__new__(PyBot)
+    agent.runtime = SimpleNamespace()
     agent.mode_profile = resolve_mode_profile("app_matrix")
     agent._attach_admin_runtime = True
     agent.admin = None
@@ -80,6 +83,7 @@ def test_update_app_matrix_node_metadata_delegates_to_runtime():
 
 def test_get_mode_profile_returns_modular_capability_flags():
     agent = object.__new__(PyBot)
+    agent.runtime = SimpleNamespace()
     agent.mode_profile = resolve_mode_profile("app_matrix")
     agent._attach_admin_runtime = True
     agent.admin = None
@@ -94,17 +98,19 @@ def test_get_mode_profile_returns_modular_capability_flags():
 
 def test_assistant_mode_blocks_app_matrix_surfaces():
     agent = object.__new__(PyBot)
+    agent.runtime = SimpleNamespace()
     agent.mode_profile = resolve_mode_profile("assistant")
     agent._attach_admin_runtime = False
     agent.admin = None
     agent.app_matrix = None
 
-    with pytest.raises(RuntimeError, match="APP 编排运行时"):
+    with pytest.raises(RuntimeError, match="未启用能力"):
         agent.sync_app_matrix_registry()
 
 
 def test_explicit_runtime_override_enables_durable_goal_capability():
     agent = object.__new__(PyBot)
+    agent.runtime = SimpleNamespace()
     agent.mode_profile = resolve_mode_profile("assistant")
     agent._attach_admin_runtime = True
     agent.admin = None
@@ -115,6 +121,7 @@ def test_explicit_runtime_override_enables_durable_goal_capability():
 
 def test_app_matrix_mode_exposes_capability_gap_management():
     agent = object.__new__(PyBot)
+    agent.runtime = SimpleNamespace()
     agent.mode_profile = resolve_mode_profile("app_matrix")
     agent._attach_admin_runtime = True
 

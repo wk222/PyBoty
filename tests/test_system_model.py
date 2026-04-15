@@ -40,9 +40,9 @@ def test_system_model_exposes_canonical_layers():
         "core/modes/",
         "core/assets/tools/",
         "core/assets/skills/",
-        "core/assets/agents/",
+        "core/modes/agents/",
         "core/assets/workflows/",
-        "core/assets/apps/",
+        "core/modes/apps/",
         "core/systems/runtime/",
         "core/systems/memory/",
         "core/systems/governance/",
@@ -54,11 +54,12 @@ def test_system_model_exposes_canonical_layers():
 
 
 def test_asset_packages_expose_apps_and_workflows_entrypoints():
-    from core.assets.agents import AgentStorage
-    from core.assets.apps.app_manager import AppManager
-    from core.assets.apps.app_matrix_runtime import AppMatrixRuntime
+    from core.modes.agents.agent_storage import AgentStorage
+    from core.modes.apps.app_manager import AppManager
+    from core.modes.apps.app_matrix_runtime import AppMatrixRuntime
+
     from core.assets.tools import ToolStorage
-    from core.assets.workflows.engine import PyFlowEngine
+    from core.assets.workflows.pyflow_engine import PyFlowEngine
     from core.assets.workflows.execution import WorkflowExecutionRuntime
     from core.assets.workflows.scheduling import ScheduledTask, TaskQueue
     from core.systems.governance import ApprovalQueue

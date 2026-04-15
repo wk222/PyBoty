@@ -343,7 +343,7 @@ class ToolCallRuntime:
                         result = ToolMessage(
                             content=new_content,
                             tool_call_id=result.tool_call_id,
-                            name=getattr(result, "name", None),
+                            name=getattr(result, "name", None) or tool_name,
                             status=getattr(result, "status", "success") or "success",
                         )
                 except Exception as exc:
@@ -398,7 +398,7 @@ class ToolCallRuntime:
         )
 
         if isinstance(result, ToolMessage) and result.status != "error" and self._inventory.is_return_direct(tool_name):
-            return Command(goto="end", update={"messages": [result]})
+            return Command(goto="__end__", update={"messages": [result]})
 
         return result
 
@@ -541,7 +541,7 @@ class ToolCallRuntime:
             {"error": error_msg + retry_hint, "tool": tool_name, "recoverable": bool(retry_hint)},
             ensure_ascii=False,
         )
-        return ToolMessage(content=content, tool_call_id=tool_call_id, status="error")
+        return ToolMessage(content=content, tool_call_id=tool_call_id, name=tool_name, status="error")
 
     def _emit_dynamic_tool_semantic_failure(self, tool_name: str, payload: dict[str, Any]) -> None:
         """Feed Admin / telemetry when a dynamic tool returns success=false in-band."""
@@ -617,6 +617,7 @@ class ToolCallRuntime:
                 ensure_ascii=False,
             ),
             tool_call_id=tool_call_id,
+            name=tool_name,
             status="error",
         )
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-from core.assets.agents.agent_creator import AskAgentTool, DelegateToAgentTool, get_agent_creator_tools
-from core.assets.agents.agent_storage import AgentDefinition, AgentModelConfig, AgentStorage
+from core.modes.agents.agent_creator import AskAgentTool, DelegateToAgentTool, get_agent_creator_tools
+from core.modes.agents.agent_storage import AgentDefinition, AgentModelConfig, AgentStorage
 from core.systems.runtime.event_bus import EventType, event_bus
 
 
@@ -147,7 +147,7 @@ class TestDelegateEmitsEvents:
         storage = _make_storage_with_agent()
         tool = DelegateToAgentTool(agent_storage=storage)
 
-        with patch("core.assets.agents.agent_creator.delegate_agent_task") as mock_delegate:
+        with patch("core.modes.agents.agent_creator.delegate_agent_task") as mock_delegate:
             mock_delegate.return_value = {"success": True, "result": "done"}
             tool._run(agent_name="test_agent", task="do something")
 
@@ -167,7 +167,7 @@ class TestDelegateEmitsEvents:
             },
         )
 
-        with patch("core.assets.agents.agent_creator.delegate_agent_task") as mock_delegate:
+        with patch("core.modes.agents.agent_creator.delegate_agent_task") as mock_delegate:
             mock_delegate.return_value = {"success": True, "result": "done"}
             tool._run(agent_name="test_agent", task="do something")
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from core.assets.apps.app_manager import AppManager
+from core.modes.apps.app_manager import AppManager
 from core.assets.skills import SkillRegistry
 from core.assets.skills.skill_marketplace import SkillMarketplace
 from core.systems.bus.capability_bus import CapabilityBus, CapabilityLayer
@@ -241,3 +241,169 @@ def test_capability_registry_tool_supports_route_action(temp_paths):
     assert route["recommended"]["top_level"] == "workflow_apps"
     assert route["top_matches"][0]["name"] == "run_workflow"
     assert "workflow" in [item["topic"] for item in route["route_hints"]]
+
+
+def test_capability_registry_tool_supports_discover_action(temp_paths):
+    bus = CapabilityBus(str(temp_paths.workspace_dir))
+    bus.register("my_awesome_tool", CapabilityLayer.TOOL, description="Does awesome things")
+    registry = CapabilityRegistry(
+        workspace_dir=temp_paths.workspace_dir,
+        capability_bus=bus,
+        skill_marketplace=SkillMarketplace(str(temp_paths.workspace_dir)),
+    )
+    tool = get_capability_registry_tools(registry)[0]
+
+    discovery = json.loads(tool._run(action="discover", query="awesome"))
+
+    assert discovery["query"] == "awesome"
+    assert any(item["name"] == "my_awesome_tool" for item in discovery["local"])
+
+
+def test_capability_registry_tool_supports_issue_grant_and_list_grants_action(temp_paths):
+    app_manager = AppManager(str(temp_paths.apps_dir), project_paths=temp_paths)
+    app_manager.create_app("provider_app", description="Provides capabilities", exports=["super_power"])
+    app_manager.create_app("caller_app", description="Calls capabilities")
+    app_manager.reload_apps()
+
+    marketplace = SkillMarketplace(str(temp_paths.workspace_dir))
+    bus = CapabilityBus(str(temp_paths.workspace_dir))
+    registry = CapabilityRegistry(
+        workspace_dir=temp_paths.workspace_dir,
+        capability_bus=bus,
+        skill_marketplace=marketplace,
+        app_manager=app_manager,
+    )
+    registry.refresh_local_index(save=True)
+    tool = get_capability_registry_tools(registry)[0]
+
+    # Issue grant
+    grant_res = json.loads(tool._run(
+        action="issue_grant",
+        caller_app="caller_app",
+        target_app="provider_app",
+        provides="super_power"
+    ))
+
+    assert grant_res["success"] is True
+    assert "grant" in grant_res
+    assert "token" in grant_res["grant"]
+
+    assert "token" in grant_res["grant"]
+
+    # List grants
+    list_res = json.loads(tool._run(
+        action="list_grants",
+        caller_app="caller_app"
+    ))
+    
+    assert "grants" in list_res
+    assert len(list_res["grants"]) == 1
+    assert list_res["grants"][0]["capability_name"] == "super_power"
+
+
+def test_capability_registry_tool_supports_invoke_action(temp_paths):
+    app_manager = AppManager(str(temp_paths.apps_dir), project_paths=temp_paths)
+    # create provider app with an api that just returns the payload
+    app_manager.create_app(
+        "provider_app", 
+        description="Provides capabilities", 
+        exports=["super_power"]
+    )
+    app_dir = temp_paths.apps_dir / "provider_app"
+    app_dir.joinpath("api.py").write_text(
+        "def super_power(payload, **kwargs):\n    return {'echo': payload}\n",
+        encoding="utf-8"
+    )
+    
+    app_manager.create_app("caller_app", description="Calls capabilities")
+    app_manager.reload_apps()
+
+    marketplace = SkillMarketplace(str(temp_paths.workspace_dir))
+    bus = CapabilityBus(str(temp_paths.workspace_dir))
+    registry = CapabilityRegistry(
+        workspace_dir=temp_paths.workspace_dir,
+        capability_bus=bus,
+        skill_marketplace=marketplace,
+        app_manager=app_manager,
+    )
+    registry.refresh_local_index(save=True)
+    
+    grant = registry.issue_app_grant(caller_app="caller_app", provides="super_power")
+    assert grant["success"] is True
+
+    tool = get_capability_registry_tools(registry)[0]
+
+    # Invoke action
+    invoke_res = json.loads(tool._run(
+        action="invoke",
+        caller_app="caller_app",
+        grant_token=grant["grant"]["token"],
+        invoke_action="super_power",
+        invoke_payload='{"msg": "hello"}'
+    ))
+    
+    assert invoke_res["success"] is True
+    assert invoke_res["result"]["echo"]["msg"] == "hello"
+
+
+def test_capability_registry_grant_quota_exhaustion_and_ttl_expiry(temp_paths):
+    import time
+    app_manager = AppManager(str(temp_paths.apps_dir), project_paths=temp_paths)
+    app_manager.create_app("provider_app", description="Provides capabilities", exports=["super_power"])
+    app_manager.create_app("caller_app", description="Calls capabilities")
+    app_manager.reload_apps()
+
+    marketplace = SkillMarketplace(str(temp_paths.workspace_dir))
+    bus = CapabilityBus(str(temp_paths.workspace_dir))
+    registry = CapabilityRegistry(
+        workspace_dir=temp_paths.workspace_dir,
+        capability_bus=bus,
+        skill_marketplace=marketplace,
+        app_manager=app_manager,
+    )
+    registry.refresh_local_index(save=True)
+
+    # 1. Test Quota exhaustion
+    grant_quota = registry.issue_app_grant(
+        caller_app="caller_app", 
+        provides="super_power", 
+        requested_quota=1
+    )
+    assert grant_quota["success"] is True
+    
+    # First invocation should succeed
+    res1 = registry.invoke_app_capability(
+        caller_app="caller_app",
+        grant_token=grant_quota["grant"]["token"],
+        action="super_power",
+        payload={}
+    )
+    assert res1["success"] is True
+    
+    # Second invocation should fail due to quota
+    res2 = registry.invoke_app_capability(
+        caller_app="caller_app",
+        grant_token=grant_quota["grant"]["token"],
+        action="super_power",
+        payload={}
+    )
+    assert res2["success"] is False
+    assert "quota exhausted" in res2["error"].lower()
+
+    # 2. Test TTL Expiry
+    # issue a grant with a very short TTL, or we can mock time
+    grant_ttl = registry.issue_app_grant(
+        caller_app="caller_app", 
+        provides="super_power", 
+        ttl_seconds=-10  # already expired
+    )
+    assert grant_ttl["success"] is True
+    
+    res3 = registry.invoke_app_capability(
+        caller_app="caller_app",
+        grant_token=grant_ttl["grant"]["token"],
+        action="super_power",
+        payload={}
+    )
+    assert res3["success"] is False
+    assert "expired" in res3["error"].lower()

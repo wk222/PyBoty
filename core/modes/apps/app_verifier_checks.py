@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import json
 import base64
+import re
+import subprocess
+from collections import Counter
+from pathlib import Path
+from typing import Any
 
 def check_visual_ui(app_dir: Path, llm: Any = None) -> list[dict[str, str]]:
     """Use Playwright and a Vision-capable LLM to verify the app's visual layout."""

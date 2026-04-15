@@ -11,7 +11,7 @@ from core.systems.runtime.projected_runtime_view import (
     merge_projected_runtime_views,
 )
 from core.systems.runtime.session.session_memory_policy import SESSION_MEMORY_TYPE
-from core.systems.runtime.session import (
+from core.systems.runtime.session.session_record import (
     SessionRecord,
     _append_unique,
     _normalize_runtime_view_payload,

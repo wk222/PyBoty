@@ -16,7 +16,7 @@ from core.systems.governance.tool_approval_runtime import (
     create_tool_approval_request,
     extract_tool_approval_interrupts,
 )
-from core.assets.tools.tool_middleware import DynamicToolMiddleware
+from core.assets.tools import DynamicToolMiddleware
 from core.systems.runtime.hooks_runtime import HookPhase, HooksRuntime
 from core.systems.runtime.projected_runtime_view import build_projected_runtime_view
 from core.systems.runtime.trusted_settings import build_trusted_settings_bundle

@@ -33,16 +33,17 @@ from core.systems.integration.plugin_manifest import (
     PluginRegistry,
     discover_plugins,
     get_plugin_registry,
+    parse_manifest,
     reset_plugin_registry,
 )
 
-__all__ = [
+__all__ = sorted([
     "BaseChannel",
     "ChannelConfig",
     "ChannelManager",
-    "GatewayNodeRegistry",
     "GatewayNodeCommand",
     "GatewayNodeCommandRegistry",
+    "GatewayNodeRegistry",
     "GatewayPairingRegistry",
     "GatewayPresenceEntry",
     "GatewayPresenceRegistry",
@@ -62,6 +63,7 @@ __all__ = [
     "build_openresponses_payload",
     "discover_plugins",
     "get_plugin_registry",
+    "parse_manifest",
     "prepare_gateway_request",
     "reset_plugin_registry",
-]
+])

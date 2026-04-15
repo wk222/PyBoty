@@ -41,8 +41,8 @@ Physical layout (post-migration):
     core/systems/bus/          — capability bus runtime
     core/assets/tools/         — tool creation, runtime, storage, templates
     core/assets/skills/        — skill loading, registry, HTTP backends
-    core/assets/agents/        — agent definition, delegation, profiles
-    core/assets/apps/          — app manager, brain planner, orchestration
+    core/modes/agents/        — agent definition, delegation, profiles
+    core/modes/apps/          — app manager, brain planner, orchestration
     core/assets/workflows/     — DAG execution, scheduling, pause/resume
     core/modes/                — root mode profiles and admin runtime
     web/                       — FastAPI surfaces (consumer layer)
@@ -198,6 +198,138 @@ class EcosystemFamilyDescriptor:
         }
 
 
+@dataclass(frozen=True)
+class ArchitecturalLayerDescriptor:
+    """One layer in PyBot's four-level dependency tree.
+
+    The hierarchy enforces a strict rule: each layer may only import from
+    layers at the same level or below, never upward.
+    """
+
+    name: str
+    label: str
+    level: int
+    purpose: str
+    packages: tuple[str, ...]
+    public_api_module: str
+    depends_on_layers: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "label": self.label,
+            "level": self.level,
+            "purpose": self.purpose,
+            "packages": list(self.packages),
+            "public_api_module": self.public_api_module,
+            "depends_on_layers": list(self.depends_on_layers),
+        }
+
+
+_ARCHITECTURAL_LAYERS: tuple[ArchitecturalLayerDescriptor, ...] = (
+    ArchitecturalLayerDescriptor(
+        name="root",
+        label="Layer 0 — Root (Runtime Foundation)",
+        level=0,
+        purpose=(
+            "Config, paths, errors, event bus, model resolution, bootstrap, "
+            "session spine, workspace view, and context engine. "
+            "This is the tree trunk that all other capabilities grow from."
+        ),
+        packages=(
+            "core/systems/runtime/",
+            "core/systems/runtime/session/",
+            "core/systems/context/",
+        ),
+        public_api_module="core.systems.runtime",
+        depends_on_layers=(),
+    ),
+    ArchitecturalLayerDescriptor(
+        name="core_systems",
+        label="Layer 1 — First Branches (Core Systems)",
+        level=1,
+        purpose=(
+            "Cross-cutting infrastructure that strengthens the five product concepts: "
+            "governance and safety, memory and knowledge, capability bus, and middleware."
+        ),
+        packages=(
+            "core/systems/governance/",
+            "core/systems/memory/",
+            "core/systems/knowledge/",
+            "core/systems/bus/",
+            "core/systems/middleware/",
+            "core/systems/execution/",
+            "core/systems/eval/",
+            "core/systems/integration/",
+        ),
+        public_api_module="core.systems",
+        depends_on_layers=("root",),
+    ),
+    ArchitecturalLayerDescriptor(
+        name="asset_domains",
+        label="Layer 2 — Second Branches (Asset Domains)",
+        level=2,
+        purpose=(
+            "Atomic capability components: tools, skills, and workflows. "
+            "These are the building blocks used to construct agents and apps."
+        ),
+        packages=(
+            "core/assets/tools/",
+            "core/assets/skills/",
+            "core/assets/workflows/",
+        ),
+        public_api_module="core.assets",
+        depends_on_layers=("root", "core_systems"),
+    ),
+    ArchitecturalLayerDescriptor(
+        name="product_modes",
+        label="Layer 3 — Crown (Product Modes)",
+        level=3,
+        purpose=(
+            "Autonomous entities and operating modes: agents, apps, and mode packs. "
+            "This layer assembles L2 assets into functional, user-facing products."
+        ),
+        packages=(
+            "core/modes/agents/",
+            "core/modes/apps/",
+            "core/modes/",
+        ),
+        public_api_module="core.modes",
+        depends_on_layers=("root", "core_systems", "asset_domains"),
+    ),
+)
+
+
+def list_architectural_layers() -> list[dict[str, Any]]:
+    return [layer.to_dict() for layer in _ARCHITECTURAL_LAYERS]
+
+
+def get_architectural_layer(name: str) -> ArchitecturalLayerDescriptor | None:
+    for layer in _ARCHITECTURAL_LAYERS:
+        if layer.name == name:
+            return layer
+    return None
+
+
+def build_architectural_tree() -> dict[str, Any]:
+    """Return the four-layer dependency tree as a structured dict."""
+    return {
+        "rule": (
+            "Each layer may only import from layers at the same level or below. "
+            "Never introduce upward dependencies."
+        ),
+        "layers": list_architectural_layers(),
+        "layer_count": len(_ARCHITECTURAL_LAYERS),
+        "dependency_direction": "root -> core_systems -> asset_domains -> product_modes",
+        "tree_metaphor": (
+            "Layer 0 (runtime, session, context) is the trunk. "
+            "Layer 1 (governance, memory, bus) are the first branches. "
+            "Layer 2 (tools, skills, agents, workflows) are the second branches. "
+            "Layer 3 (apps, modes) is the crown."
+        ),
+    }
+
+
 _ROOT_MODES: tuple[RootModeDescriptor, ...] = (
     RootModeDescriptor(
         name="assistant",
@@ -283,7 +415,7 @@ _PRODUCT_CONCEPTS: tuple[ProductConceptDescriptor, ...] = (
         question="谁来承担任务与角色？",
         responsibility="承载 persona、记忆、工具访问、委派关系和治理边界。",
         capability_examples=("root agents", "subagents", "agent profiles", "delegation"),
-        typical_modules=("core/assets/agents/",),
+        typical_modules=("core/modes/agents/",),
     ),
     ProductConceptDescriptor(
         name="workflows",
@@ -299,7 +431,7 @@ _PRODUCT_CONCEPTS: tuple[ProductConceptDescriptor, ...] = (
         question="最终如何面向用户交付？",
         responsibility="承载 Web 控制台、工作区应用、交付入口和应用级协作表面。",
         capability_examples=("workspace apps", "web console", "API/CLI surfaces", "app brain topology"),
-        typical_modules=("core/assets/apps/", "web/", "static/"),
+        typical_modules=("core/modes/apps/", "web/", "static/"),
     ),
 )
 
@@ -449,7 +581,7 @@ _INTERNAL_DOMAINS: tuple[InternalDomainDescriptor, ...] = (
         name="agents",
         label="Agents",
         purpose="根智能体、子智能体、能力画像和委派运行时。",
-        examples=("core/assets/agents/",),
+        examples=("core/modes/agents/",),
     ),
     InternalDomainDescriptor(
         name="orchestration",
@@ -467,7 +599,7 @@ _INTERNAL_DOMAINS: tuple[InternalDomainDescriptor, ...] = (
         name="surfaces",
         label="Surfaces",
         purpose="应用、通道、评估和用户交付面。",
-        examples=("core/assets/apps/", "web/", "static/", "core/systems/integration/", "core/systems/eval/"),
+        examples=("core/modes/apps/", "web/", "static/", "core/systems/integration/", "core/systems/eval/"),
     ),
 )
 
@@ -496,7 +628,7 @@ _PACKAGE_TARGETS: tuple[PackageTargetDescriptor, ...] = (
     PackageTargetDescriptor(
         name="assets_agents",
         label="Assets / Agents",
-        path="core/assets/agents/",
+        path="core/modes/agents/",
         purpose="智能体资产的定义、存储、委派、画像、治理桥接和子智能体运行时。",
         migration_scope=("agent_*", "subagent_*", "society_of_mind.py"),
     ),
@@ -510,7 +642,7 @@ _PACKAGE_TARGETS: tuple[PackageTargetDescriptor, ...] = (
     PackageTargetDescriptor(
         name="assets_apps",
         label="Assets / Apps",
-        path="core/assets/apps/",
+        path="core/modes/apps/",
         purpose="应用资产的定义、编排、打包、验证与 APP Brain 绑定。",
         migration_scope=("app_*",),
     ),
@@ -698,6 +830,7 @@ def build_system_model() -> dict[str, Any]:
         "supporting_systems": list_supporting_systems(),
         "internal_domains": list_internal_domains(),
         "package_targets": list_package_targets(),
+        "architectural_tree": build_architectural_tree(),
         "not_product_concepts": list(_NOT_PRODUCT_CONCEPTS),
         "anti_sprawl_questions": list(_ANTI_SPRAWL_QUESTIONS),
         "canonical_rules": [
@@ -706,8 +839,9 @@ def build_system_model() -> dict[str, Any]:
             "用户可见产品概念只有五种：tools / skills / agents / workflows / apps。",
             "MCP、RAG、approvals、middleware、observability 等属于横切支撑系统，不应再讲成额外平台层。",
             (
-                "core 内部可以按 foundation / capabilities / agents / orchestration / governance / "
-                "surfaces 分域，但这些不是新的产品层。"
+                "代码按四层树形组织：root (runtime/session/context) -> core_systems (governance/memory/bus) "
+                "-> asset_domains (tools/skills/agents/workflows) -> product_modes (apps/modes)。"
+                "每层只依赖同层或更低层，绝不反向。"
             ),
         ],
         "summary": build_system_summary(),

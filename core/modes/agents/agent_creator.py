@@ -11,7 +11,7 @@ from typing import Any
 from langchain.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.assets.tools.tool_storage import ToolStorage
+from core.assets.tools import ToolStorage
 from core.systems.governance.agent_control import AgentControlPolicy
 from core.systems.governance.approval_queue import ApprovalQueue
 from core.systems.runtime.event_bus import Event, EventType, event_bus
@@ -126,6 +126,10 @@ class DelegateToAgentInput(BaseModel):
         description="能力画像覆盖（可选，JSON格式）。例如：{\"allow_code_execution\": false}",
         default=None,
     )
+    policy_override: str | None = Field(
+        description="控制策略覆盖（可选，JSON格式）。用于父智能体向子智能体做细粒度的权限控制（如 tool_budgets, blocked_tools）。",
+        default=None,
+    )
     stream: bool = Field(description="是否以流式返回结果", default=False)
 
 
@@ -138,12 +142,10 @@ class DelegateToAgentTool(BaseTool):
 并只把最终结果和受控状态更新返回给主智能体。
 
 你可以指定 execution options (cwd, worktree_dir, remote_target) 和
-capability_override 来动态控制子智能体的隔离环境与权限。
+capability_override / policy_override 来动态控制子智能体的隔离环境与细粒度权限。
 
-路由原则：
-- 先判断 Single-Agent + trunk 工具是否已经足够
-- 只有任务可独立拆分、且专门角色能明显提升效果时再委派
-- 不要把平台级闭环（如 app runtime / workflow runtime）直接退化成纯 delegation
+例如，使用 policy_override: {"blocked_tools": ["delete_file"], "tool_budgets": {"web_search": 5}}
+来严格限制子智能体的行为边界。
 """
     args_schema: type[BaseModel] = DelegateToAgentInput
     agent_storage: Any = Field(default=None, exclude=True)
@@ -193,6 +195,7 @@ capability_override 来动态控制子智能体的隔离环境与权限。
         worktree_dir: str | None = None,
         remote_target: str | None = None,
         capability_override: str | None = None,
+        policy_override: str | None = None,
         stream: bool = False,
     ) -> str | Any:
         event_bus.emit(
@@ -204,6 +207,7 @@ capability_override 来动态控制子智能体的隔离环境与权限。
         )
         try:
             runtime_context = self.runtime_context or {"current_agent_name": "root", "depth": 0}
+            from core.modes.agents.agent_services import delegate_agent_task
             result = delegate_agent_task(
                 agent_storage=self.agent_storage,
                 llm_factory=self.llm_factory,
@@ -224,6 +228,7 @@ capability_override 来动态控制子智能体的隔离环境与权限。
                 worktree_dir=worktree_dir,
                 remote_target=remote_target,
                 capability_override=capability_override,
+                policy_override=policy_override,
             )
             if stream:
                 return result
@@ -249,6 +254,7 @@ class SpawnSubagentInput(BaseModel):
     context: str = Field(description="任务上下文信息（可选）", default="")
     cwd: str | None = Field(description="执行工作目录", default=None)
     capability_override: str | None = Field(description="能力画像覆盖 (JSON)", default=None)
+    policy_override: str | None = Field(description="控制策略覆盖 (JSON)", default=None)
 
 
 class SpawnSubagentTool(BaseTool):
@@ -257,6 +263,7 @@ class SpawnSubagentTool(BaseTool):
 🚀 异步任务启动器 - 在后台启动一个子智能体任务并立即返回 run_id。
 适用于启动多个并行任务（Swarm 模式）。启动后，你可以继续执行其它操作，
 稍后使用 `wait_subagent` 工具来同步结果。
+你可以通过 policy_override (JSON) 给子智能体传递更细粒度的控制策略。
 """
     args_schema: type[BaseModel] = SpawnSubagentInput
     agent_storage: Any = Field(default=None, exclude=True)
@@ -270,8 +277,8 @@ class SpawnSubagentTool(BaseTool):
     runtime_context: Any = Field(default=None, exclude=True)
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    def _run(self, agent_name: str, task: str, context: str = "", cwd: str | None = None, capability_override: str | None = None) -> str:
-        from .agent_services import delegate_agent_task
+    def _run(self, agent_name: str, task: str, context: str = "", cwd: str | None = None, capability_override: str | None = None, policy_override: str | None = None) -> str:
+        from core.modes.agents.agent_services import delegate_agent_task
         
         target_thread_id = f"swarm_{agent_name}_{uuid.uuid4().hex[:8]}"
         
@@ -290,6 +297,7 @@ class SpawnSubagentTool(BaseTool):
                     subagent_registry=self.subagent_registry,
                     cwd=cwd,
                     capability_override=capability_override,
+                    policy_override=policy_override,
                     parent_agent_name=self.runtime_context.get("current_agent_name"),
                     parent_run_id=self.runtime_context.get("run_id"),
                     parent_thread_id=self.runtime_context.get("thread_id"),
@@ -330,18 +338,36 @@ class WaitSubagentTool(BaseTool):
         finished = self.subagent_registry.wait(run_id, timeout=timeout)
         record = self.subagent_registry.get(run_id)
         if not record:
-            return f"错误：找不到任务 {run_id}"
+            return f"❌ 错误：找不到任务 ID 为 {run_id} 的运行记录。"
             
         if not finished:
-            return f"等待超时（{timeout}s），任务 {run_id} 仍在运行中。"
+            return f"⏳ 等待超时（已等待 {timeout}s）。任务 {run_id} (智能体: {record.agent_name}) 仍在后台运行中。你可以稍后再次调用 `wait_subagent`。"
             
-        return json.dumps({
-            "status": record.status,
-            "response": record.last_response,
-            "error": record.error,
-            "error_context": record.error_context,
-            "notes": record.context_notes
-        }, ensure_ascii=False, indent=2)
+        if record.status == "completed":
+            return json.dumps({
+                "status": record.status,
+                "agent_name": record.agent_name,
+                "response": record.last_response,
+                "notes": record.context_notes
+            }, ensure_ascii=False, indent=2)
+            
+        # Handle failures with rich context
+        error_msg = [f"⚠️ 任务执行失败 (状态: {record.status})"]
+        error_msg.append(f"智能体: {record.agent_name}")
+        error_msg.append(f"错误信息: {record.error or '未知错误'}")
+        
+        if record.error_context:
+            error_msg.append("\n错误上下文 (Traceback):")
+            error_msg.append("```python")
+            error_msg.append(record.error_context)
+            error_msg.append("```")
+            
+        if record.context_notes:
+            error_msg.append("\n执行期间笔记:")
+            for note in record.context_notes:
+                error_msg.append(f"- {note}")
+                
+        return "\n".join(error_msg)
 
 
 class AskAgentInput(BaseModel):

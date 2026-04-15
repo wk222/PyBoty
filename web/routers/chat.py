@@ -183,6 +183,30 @@ async def chat(
         raise HTTPException(status_code=500, detail="处理对话请求时发生内部错误") from exc
 
 
+@router.get("/api/conversations/{thread_id}/trace")
+async def get_trace(
+    thread_id: str,
+    limit: int = 100,
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> dict[str, Any]:
+    from core.systems.runtime.event_bus import event_bus
+    
+    events = event_bus.persistent_history(limit=limit, session_id=thread_id)
+    return {
+        "thread_id": thread_id,
+        "events": [
+            {
+                "id": i,
+                "type": e.type.value,
+                "source": e.source,
+                "payload": e.payload,
+                "timestamp": e.timestamp,
+            }
+            for i, e in enumerate(events)
+        ]
+    }
+
+
 @router.get("/api/status/{thread_id}")
 async def get_status(
     thread_id: str,

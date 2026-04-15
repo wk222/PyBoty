@@ -13,15 +13,15 @@ from __future__ import annotations
 import pytest
 from langchain.tools import BaseTool
 
-from core.assets.agents.agent_creator import (
+from core.modes.agents.agent_creator import (
     AgentCreatorTool,
     AskAgentTool,
     DelegateToAgentTool,
     ListAgentsTool,
     RemoveAgentTool,
 )
-from core.assets.apps.app_creator import get_app_creator_tools
-from core.assets.apps.app_verifier import get_app_verifier_tools
+from core.modes.apps.app_creator import get_app_creator_tools
+from core.modes.apps.app_verifier import get_app_verifier_tools
 from core.systems.bus.capability_bus import CapBusTool
 from core.assets.tools.clarification_tool import AnalyzeRequirementTool, AskClarificationTool
 from core.systems.eval.eval_framework import EvalResponseTool, RunTestsTool

@@ -14,9 +14,20 @@ import os
 import logging
 from pathlib import Path
 from datetime import datetime
+from dataclasses import dataclass
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
+
+@dataclass
+class GardenNote:
+    """A single note in the memory garden."""
+    path: str
+    content: str
+    title: str = ""
+    summary: str = ""
+    last_updated: str = ""
+
 
 class MarkdownGardenManager:
     """Manages a collection of Markdown files acting as long-term memory."""
@@ -176,3 +187,25 @@ class MarkdownGardenManager:
                     "snippet": f"...{snippet}..."
                 })
         return results
+
+    def delete_note(self, note_path: str) -> bool:
+        """Delete a note from the garden."""
+        full_path = self.garden_root / note_path.lstrip("/")
+        if full_path.exists() and full_path.is_file():
+            full_path.unlink()
+            return True
+        return False
+
+    def move_note(self, src_path: str, dst_path: str) -> bool:
+        """Move or rename a note in the garden."""
+        src = self.garden_root / src_path.lstrip("/")
+        dst = self.garden_root / dst_path.lstrip("/")
+        if src.exists() and src.is_file():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            src.rename(dst)
+            return True
+        return False
+
+
+# Keep old name but prefer shorter one for public API
+MarkdownGarden = MarkdownGardenManager

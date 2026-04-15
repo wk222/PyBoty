@@ -5,10 +5,10 @@ from dataclasses import dataclass
 from langchain_core.messages import AIMessage
 
 from core.systems.governance.agent_control import AgentControlPolicy
-from core.assets.agents.agent_storage import AgentDefinition
+from core.modes.agents.agent_storage import AgentDefinition
 from core.systems.governance.approval_queue import ApprovalQueue
-from core.assets.agents.subagent_registry import SubagentRegistry
-from core.assets.agents.subagent_runtime import SubAgentRuntime
+from core.modes.agents.subagent_registry import SubagentRegistry
+from core.modes.agents.subagent_runtime import SubAgentRuntime
 from core.systems.governance.subagent_sandbox import SubagentSandbox
 
 
@@ -112,3 +112,4 @@ def test_subagent_runtime_waiting_approval_can_be_aborted_without_resume(monkeyp
 
     assert aborted["status"] == "aborted"
     assert resumed["status"] == "aborted"
+

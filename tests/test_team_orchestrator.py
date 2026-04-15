@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from core.assets.agents.agent_storage import AgentDefinition
+from core.modes.agents.agent_storage import AgentDefinition
 from core.assets.workflows.task_definition import TaskDefinition
-from core.assets.agents.team_orchestrator import HierarchicalTeam, SequentialTeam, TeamResult
+from core.modes.agents.team_orchestrator import HierarchicalTeam, SequentialTeam, TeamResult
 
 
 def _make_agent(name: str, role: str, goal: str = "") -> AgentDefinition:

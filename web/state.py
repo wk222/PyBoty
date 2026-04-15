@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Any
 
 from agent import create_admin_agent, create_app_matrix_agent, create_tool_creator_agent
-from core.assets.apps.app_manager import AppManager
-from core.assets.apps.app_orchestration import AppOrchestrationRegistry
-from core.assets.apps.app_matrix_runtime import AppMatrixRuntime
+from core.modes.apps.app_manager import AppManager
+from core.modes.apps.app_orchestration import AppOrchestrationRegistry
+from core.modes.apps.app_matrix_runtime import AppMatrixRuntime
 from core.assets.skills import SkillMarketplace, SkillRegistry
 from core.assets.workflows.scheduling import TaskQueue, TaskScheduler
 from core.modes import resolve_mode_profile
@@ -33,6 +33,7 @@ from core.systems.runtime import (
     reload_config,
 )
 from core.systems.runtime.event_bus import event_bus
+from core.modes.agents.subagent_registry import SubagentRegistry, get_global_subagent_registry
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,7 @@ class ConversationStore:
             now = time.time()
             metadata = {
                 "title": title or f"新会话 {len(self._conversations) + 1}",
+
                 "created_at": now,
                 "last_message_at": now,
                 "message_count": 0,
@@ -98,7 +100,7 @@ class ConversationStore:
             if thread_id in self._conversations:
                 return
             now = time.time()
-            title = title_hint or f"新会话 {len(self._conversations) + 1}"
+            title = title_hint or f"新会�?{len(self._conversations) + 1}"
             self._conversations[thread_id] = {
                 "title": title[:30] + ("..." if len(title) > 30 else ""),
                 "created_at": now,
@@ -260,6 +262,7 @@ class WebServices:
     uv_env_mgr: UvEnvManager
     app_manager: AppManager
     gateway_runtime: GatewayRuntime
+    subagent_registry: SubagentRegistry
 
     @staticmethod
     def _build_skill_registry(resolved_paths: ProjectPaths) -> SkillRegistry:
@@ -324,6 +327,7 @@ class WebServices:
             uv_env_mgr=UvEnvManager(str(resolved_paths.uv_envs_dir)),
             app_manager=AppManager(str(resolved_paths.apps_dir), project_paths=resolved_paths),
             gateway_runtime=GatewayRuntime(resolved_paths.workspace_data_dir),
+            subagent_registry=get_global_subagent_registry(),
         )
         services.capability_registry = CapabilityRegistry(
             workspace_dir=resolved_paths.workspace_dir,
@@ -429,3 +433,4 @@ class WebServices:
     def shutdown(self) -> None:
         self.task_scheduler.stop()
         self.task_queue.shutdown(wait=False)
+

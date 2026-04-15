@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from core.assets.agents import AgentStorage
+from core.modes.agents import AgentStorage
 from core.assets.tools import ToolStorage
 from core.systems.runtime import (
     DEFAULT_API_PORT,
@@ -137,3 +137,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

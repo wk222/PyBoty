@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 import time
 
-from core.assets.tools.tool_cache import ToolCache, cached_tool_call
+from core.assets.tools import ToolCache, cached_tool_call
 
 
 class TestToolCache:

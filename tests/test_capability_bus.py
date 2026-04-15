@@ -150,7 +150,7 @@ def test_capability_bus_tree_projection_groups_trunk_and_branch_capabilities(tem
 
 
 def test_capability_bus_auto_register_agents_and_apps_capture_tree_dependencies(temp_paths):
-    from core.assets.apps.app_manager import AppManager
+    from core.modes.apps.app_manager import AppManager
 
     bus = CapabilityBus(str(temp_paths.workspace_dir))
     bus.register("triage_flow", CapabilityLayer.WORKFLOW, description="workflow runtime")

@@ -18,6 +18,10 @@ from typing import Any
 from .systems.runtime.version import get_pybot_version
 
 _EXPORTS: dict[str, tuple[str, str]] = {
+    "assets": (".assets", ""),
+    "systems": (".systems", ""),
+    "modes": (".modes", ""),
+    "PyBot": ("agent", "PyBot"),
     # ── Domain 1: Infrastructure ─────────────────────────────────────
     "get_config": (".systems.runtime.config_impl", "get_config"),
     "get_agent_control_config": (".systems.runtime.config_impl", "get_agent_control_config"),
@@ -138,6 +142,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "TaskStatus": (".assets.workflows.task_queue", "TaskStatus"),
     "TaskInfo": (".assets.workflows.task_queue", "TaskInfo"),
     "PersistentAdminRuntime": (".modes.admin_runtime", "PersistentAdminRuntime"),
+    "admin_runtime": (".modes.admin_runtime", ""),
     "build_admin_step_prompt": (".modes.admin_runtime", "build_admin_step_prompt"),
     "AdminPlan": (".modes.admin_planner", "AdminPlan"),
     "AdminPlanner": (".modes.admin_planner", "AdminPlanner"),
@@ -148,6 +153,8 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "BatchCheckpointStore": (".systems.runtime.batch_processor", "BatchCheckpointStore"),
     "BatchResult": (".systems.runtime.batch_processor", "BatchResult"),
     "BatchCheckpoint": (".systems.runtime.batch_processor", "BatchCheckpoint"),
+    "model_failover": (".systems.runtime.model_failover", ""),
+    "model_resolver": (".systems.runtime.model_resolver", ""),
     "SpeakerSelector": (".assets.agents.speaker_selection", "SpeakerSelector"),
     "RoundRobinSelector": (".assets.agents.speaker_selection", "RoundRobinSelector"),
     "LLMSelector": (".assets.agents.speaker_selection", "LLMSelector"),
@@ -285,7 +292,10 @@ __patent__ = "一种具有自主工具创建和智能体创建能力的智能体
 
 
 def __getattr__(name: str) -> Any:
-    """Resolve legacy exports lazily on first access."""
+    """Resolve legacy exports and core submodules lazily on first access."""
+    if name in {"assets", "systems", "modes"}:
+        return import_module(f".{name}", __name__)
+
     if name not in _EXPORTS:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

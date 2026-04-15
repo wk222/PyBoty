@@ -10,7 +10,7 @@ from typing import Optional, Type
 from langchain.tools import BaseTool
 from pydantic import BaseModel, Field, PrivateAttr
 
-from core.systems.context.workspace_view import WorkspaceViewEntry, WorkspaceViewService
+from core.systems.context import WorkspaceViewEntry, WorkspaceViewService
 
 _FILE_UNCHANGED_STUB = (
     "[FILE_UNCHANGED] 文件自上次读取后未修改 (mtime + size 一致)。"

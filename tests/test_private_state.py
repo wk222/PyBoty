@@ -8,7 +8,7 @@ from core.systems.runtime.private_state import (
     get_private_keys_by_owner,
     register_private_keys,
 )
-from core.assets.agents.subagent_runtime import EXCLUDED_SUBAGENT_STATE_KEYS, filter_subagent_state
+from core.modes.agents.subagent_runtime import EXCLUDED_SUBAGENT_STATE_KEYS, filter_subagent_state
 
 
 class TestPrivateStateRegistry:
@@ -80,3 +80,4 @@ class TestSubagentStateFiltering:
         filtered = filter_subagent_state(state)
         assert "_dynamic_test_key" not in filtered
         assert filtered["public"] == "visible"
+

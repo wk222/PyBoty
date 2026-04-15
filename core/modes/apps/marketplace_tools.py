@@ -7,7 +7,7 @@ import json
 from langchain.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.assets.apps.app_manager_registry import get_shared_app_manager
+from core.modes.apps.app_manager_registry import get_shared_app_manager
 
 
 class DiscoverCapabilitiesInput(BaseModel):

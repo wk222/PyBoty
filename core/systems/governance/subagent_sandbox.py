@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from core.assets.agents.agent_capability_profile import AgentCapabilityProfile
+from core.modes.agents.agent_capability_profile import AgentCapabilityProfile
 from core.systems.runtime.backend_protocol import LocalSandboxBackend, SandboxBackendProtocol
 from core.systems.execution.execution_loop import ExecCodeTool, IterativeFixTool, ScanProjectTool
 from core.systems.runtime.project_paths import ProjectPaths
@@ -182,3 +182,4 @@ def list_sandbox_adapters() -> list[dict[str, str]]:
             "description": "Docker container sandbox for isolated code execution. Requires Docker.",
         },
     ]
+

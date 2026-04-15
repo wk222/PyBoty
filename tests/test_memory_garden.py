@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import pytest
 from pathlib import Path
-from core.assets.agents import (
+from core.modes.agents import (
     AgentStorage,
     AgentDefinition,
     SubagentRegistry,
@@ -97,4 +97,5 @@ def test_recursive_summarization(temp_paths):
     archive_note = next(n for n in notes if "_archive_" in n)
     archive_content = mgr.read_note(archive_note)
     assert "A" * 200 in archive_content
+
 

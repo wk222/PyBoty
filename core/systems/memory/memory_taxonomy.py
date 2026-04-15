@@ -131,7 +131,28 @@ LAYER_DESCRIPTORS: dict[str, MemoryLayerDescriptor] = {
 }
 
 
-def normalize_memory_type(memory_type: str = "") -> str:
+class MemoryTaxonomy:
+    """Canonical taxonomy for PyBot's memory system."""
+    SESSION_MEMORY_TYPE = SESSION_MEMORY_TYPE
+    ALL_MEMORY_TYPES = ALL_MEMORY_TYPES
+    ALL_LAYERS = ALL_LAYERS
+    LAYER_DESCRIPTORS = LAYER_DESCRIPTORS
+
+    @staticmethod
+    def normalize_type(memory_type: str) -> str:
+        return normalize_memory_type(memory_type)
+
+    @staticmethod
+    def get_layer(memory_type: str) -> str:
+        return default_layer_for_type(memory_type)
+
+    @staticmethod
+    def get_section(memory_type: str) -> str:
+        return section_for_memory_type(memory_type)
+
+
+def normalize_memory_type(memory_type: str) -> str:
+
     normalized = str(memory_type).strip().lower()
     return normalized if normalized in _DURABLE_TYPES else SESSION_MEMORY_TYPE
 

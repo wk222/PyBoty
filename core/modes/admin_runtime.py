@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from core.systems.memory.admin_memory import AdminMemoryManager, create_llm_summarizer
-from core.assets.agents.persistent_agent_runner import PersistentAgentRunner, PersistentTask, PersistentTaskStatus, PersistentTaskStep
+from core.modes.agents.persistent_agent_runner import PersistentAgentRunner, PersistentTask, PersistentTaskStatus, PersistentTaskStep
 from core.systems.governance.approval_queue import ApprovalQueue
 from core.systems.runtime.event_bus import Event, EventType, event_bus
 from core.assets.workflows.task_queue import TaskQueue
@@ -38,7 +38,7 @@ def build_admin_step_prompt(
     normalized_mode = normalize_root_mode(root_mode)
     if normalized_mode == "app_matrix":
         identity = (
-            "你正在作为 PyBot 的 应用矩阵执行一个持久的应用级协作任务。\n\n"
+            "你正在作为 PyBot 的应用矩阵执行一个持久的应用级协作任务。\n\n"
             "你的重点是串联 APP、工作流、子智能体与共享能力，"
             "把跨应用的动作组织成可持续推进的调度链路。"
         )
@@ -53,7 +53,9 @@ def build_admin_step_prompt(
         f"成功标准: {success_criteria}\n"
         f"已知上下文: {context}\n\n"
         "请完成当前步骤。你可以直接分析、创建工具、委派子智能体、编排工作流、串联 APP，"
-        "或为后续步骤沉淀长期能力。输出本步结果，并尽量让结果可供后续步骤复用。"
+        "或为后续步骤沉淀长期能力。输出本步结果，并尽量让结果可供后续步骤复用。\n\n"
+        "如果你使用了 `spawn_subagent` 启动了异步专家任务，请在后续步骤中记得使用 "
+        "`wait_subagent` 来获取结果。你可以同时启动多个专家以并行加速任务。"
     )
 
 
@@ -71,6 +73,7 @@ class PersistentAdminRuntime:
         goal_planner: Callable[[str, str, dict[str, Any]], AdminPlan | dict[str, Any] | list[str]] | None = None,
         summarize_fn: Callable[[str], str] | None = None,
         approval_queue: ApprovalQueue | None = None,
+        subagent_registry: Any | None = None,
     ) -> None:
         self.host_agent = host_agent
         self.storage_dir = Path(storage_dir)
@@ -87,11 +90,87 @@ class PersistentAdminRuntime:
         self._goal_planner = goal_planner
         self._planner: AdminPlanner | None = None
         self._approval_queue = approval_queue or getattr(host_agent, "approval_queue", None)
+        self._subagent_registry = subagent_registry or getattr(host_agent, "subagent_registry", None)
         resolved_summarize_fn = summarize_fn or create_llm_summarizer(getattr(host_agent, "llm", None))
         self._memory = AdminMemoryManager(summarize_fn=resolved_summarize_fn)
         self._capability_gap_path = self.storage_dir / "capability_gap_candidates.json"
         self._capability_gap_candidates: dict[str, CapabilityGapCandidate] = self._load_capability_gap_candidates()
         event_bus.subscribe(EventType.CAPABILITY_GAP_DETECTED, self._on_capability_gap_detected)
+        event_bus.subscribe(EventType.APP_RUNTIME_ERROR, self._on_app_runtime_error)
+
+    def _on_app_runtime_error(self, event: Event) -> None:
+        payload = event.payload
+        app_name = payload.get("app_name")
+        action = payload.get("action")
+        error_msg = payload.get("error")
+        stderr = payload.get("stderr", "")
+
+        if not app_name or not error_msg:
+            return
+
+        # Avoid creating duplicate repair tasks for the same app
+        for task in self.runner.list_tasks():
+            if task.status in (PersistentTaskStatus.PENDING, PersistentTaskStatus.RUNNING) and task.name == f"repair_app_{app_name}":
+                return
+
+        description = (
+            f"The application '{app_name}' encountered a runtime error during API action '{action}'.\n"
+            f"Error details: {error_msg}\n"
+            f"Stderr: {stderr}\n\n"
+            "Please use `build_app_iteratively` to automatically verify and repair the application."
+        )
+        self.submit_goal(
+            name=f"repair_app_{app_name}",
+            description=description,
+            steps=[
+                f"Analyze the error logs for app {app_name}",
+                f"Use build_app_iteratively to test and fix the code",
+                "Verify the app functions correctly again",
+            ],
+            auto_start=True,
+            auto_plan=False,
+        )
+
+    def spawn_subagent(
+        self,
+        *,
+        agent_name: str,
+        task: str,
+        context: str = "",
+        timeout_seconds: float | None = None,
+    ) -> str:
+        """Helper to spawn a subagent from the admin runtime using the scheduler."""
+        if not hasattr(self.host_agent.runtime, "swarm_scheduler"):
+            raise RuntimeError("Swarm scheduler not available in runtime")
+            
+        scheduler = self.host_agent.runtime.swarm_scheduler
+        from core.systems.runtime.pybot_bootstrap import invoke_sub_agent
+        
+        return scheduler.spawn_managed(
+            agent_name=agent_name,
+            task=task,
+            invoke_fn=invoke_sub_agent,
+            invoke_kwargs={
+                "agent_storage": self.host_agent.agent_storage,
+                "global_tool_storage": self.host_agent.tool_storage,
+                "llm_factory": self.host_agent._create_llm,
+                "control_policy": self.host_agent.control_policy,
+                "approval_queue": self.host_agent.approval_queue,
+                "project_paths": self.host_agent.project_paths,
+                "context": context,
+                "thread_id": self.host_agent.thread_id,
+            },
+            parent_agent_name="admin_runtime",
+            timeout_seconds=timeout_seconds,
+        )
+
+    def wait_subagent(self, run_id: str, timeout: float = 60.0) -> dict[str, Any]:
+        """Wait for a subagent and return results using the scheduler."""
+        if not hasattr(self.host_agent.runtime, "swarm_scheduler"):
+            raise RuntimeError("Swarm scheduler not available in runtime")
+            
+        scheduler = self.host_agent.runtime.swarm_scheduler
+        return scheduler.wait_for_task(run_id, timeout=timeout)
 
     def submit_goal(
         self,
@@ -142,6 +221,15 @@ class PersistentAdminRuntime:
     ) -> AdminPlan:
         """Build a structured plan for a durable admin goal."""
         resolved_context = dict(context or {})
+        
+        if self.host_agent is not None:
+            from core.systems.runtime.projected_runtime_view import ProjectedRuntimeView
+            try:
+                view = ProjectedRuntimeView.compile(runtime=self.host_agent)
+                resolved_context["projected_runtime_view"] = view.to_payload()
+            except Exception:
+                pass
+
         if self._goal_planner is not None:
             try:
                 return self._normalize_plan_output(

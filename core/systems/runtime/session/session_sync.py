@@ -192,7 +192,7 @@ class SessionSyncMixin:
                 timestamp=timestamp,
             )
             if event_type == "tool_result":
-                from core.systems.runtime.session import _extract_file_view_from_tool_payload
+                from core.systems.runtime.session.session_record import _extract_file_view_from_tool_payload
 
                 file_view = _extract_file_view_from_tool_payload(str(payload.get("tool_name", "")), payload)
                 if file_view is not None:

@@ -78,8 +78,6 @@ class UnifiedAssetInventory:
 
         if self._skill_registry:
             for skill_name, skill in self._skill_registry.skills.items():
-                if not skill.enabled:
-                    continue
                 for tool_def in skill.tools:
                     if str(tool_def.get("name", "")) == name:
                         return UnifiedToolInfo.from_skill_tool_def(

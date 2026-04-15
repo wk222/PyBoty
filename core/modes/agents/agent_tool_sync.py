@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from core.assets.tools.tool_storage import ToolStorage
+from core.assets.tools import ToolStorage
 
 from .agent_storage import AgentStorage
 from .agent_tool_inventory import build_agent_tool_inventory

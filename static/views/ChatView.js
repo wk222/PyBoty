@@ -2,6 +2,7 @@ import { ref, reactive, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { API } from '/static/api/index.js';
 import { toast } from '/static/stores/global.js';
 import { t } from '/static/i18n.js';
+import SwarmPanel from '/static/components/SwarmPanel.js';
 
 function escapeHtml(str) {
   if (!str) return '';
@@ -73,6 +74,10 @@ export default {
     const messagesEl = ref(null);
     const inputEl = ref(null);
     const fileInput = ref(null);
+    const swarmPanelVisible = ref(false);
+    const traceVisible = ref(false);
+    const traceEvents = ref([]);
+    const traceLoading = ref(false);
     let statusPollTimer = null;
 
     const filteredConversations = () => {
@@ -80,6 +85,18 @@ export default {
       const q = convSearch.value.toLowerCase();
       return conversations.value.filter(c => (c.title || '').toLowerCase().includes(q));
     };
+
+    async function loadTrace() {
+      if (!currentThreadId.value) return;
+      traceLoading.value = true;
+      try {
+        const data = await API.getTrace(currentThreadId.value);
+        traceEvents.value = data.events || [];
+      } catch (e) { console.error(e); }
+      finally { traceLoading.value = false; }
+    }
+
+    watch(traceVisible, (v) => { if (v) loadTrace(); });
 
     async function loadConversations() {
       try {
@@ -319,8 +336,11 @@ export default {
       currentMode, currentBudgetLevel, modeMeta, budgetMeta,
       MODE_META, BUDGET_META,
       formatTime, escapeHtml, formatBytes, t,
+      swarmPanelVisible,
+      traceVisible, traceEvents, traceLoading, loadTrace,
     };
   },
+  components: { SwarmPanel },
   template: `
     <div class="chat-layout">
       <!-- Sidebar: Conversations -->
@@ -362,7 +382,26 @@ export default {
           </div>
 
           <!-- Session Spine Bar -->
-          <div v-if="currentSessionKey" class="session-spine-bar" style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+          <div v-if="currentSessionKey" class="session-spine-bar" style="display:flex;align-items:center;gap:12px;flex-shrink:0;">
+
+            <!-- Trace Log Toggle -->
+            <button class="mx-btn-icon" @click="traceVisible = !traceVisible"
+                    :class="{'active': traceVisible}" title="Execution Trace"
+                    style="color: var(--text-muted);">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>
+              </svg>
+            </button>
+
+            <!-- Swarm Toggle -->
+            <button class="mx-btn-icon" @click="swarmPanelVisible = !swarmPanelVisible" 
+                    :class="{'active': swarmPanelVisible}" title="Swarm Observability"
+                    style="color: var(--text-muted);">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" :style="{color: swarmPanelVisible ? 'var(--accent)' : 'inherit'}">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+              </svg>
+            </button>
 
             <!-- Budget indicator -->
             <div :title="'Context: ' + currentBudgetLevel() + (sessionStatus?.budget ? ' (' + Math.round((sessionStatus.budget.utilization || 0) * 100) + '%)' : '')"
@@ -498,6 +537,32 @@ export default {
           </div>
         </div>
       </main>
+      <SwarmPanel :session-key="currentSessionKey" :visible="swarmPanelVisible" />
+
+      <!-- Trace Overlay -->
+      <div v-if="traceVisible" class="trace-overlay">
+        <div class="trace-modal">
+          <div class="trace-header">
+            <h3>Execution Trace Log</h3>
+            <div style="display:flex;gap:8px;">
+              <button class="mx-btn mx-btn--ghost mx-btn--sm" @click="loadTrace">Refresh</button>
+              <button class="mx-btn mx-btn--ghost mx-btn--sm" @click="traceVisible = false">&times;</button>
+            </div>
+          </div>
+          <div class="trace-body">
+            <div v-if="traceLoading" class="mx-loading">Loading trace...</div>
+            <div v-else-if="traceEvents.length === 0" class="trace-empty">No events found for this session.</div>
+            <div v-for="e in traceEvents" :key="e.id" class="trace-event">
+              <div class="trace-event-header">
+                <span class="trace-event-type" :class="e.type">{{ e.type }}</span>
+                <span class="trace-event-source">{{ e.source }}</span>
+                <span class="trace-event-time">{{ formatTime(e.timestamp) }}</span>
+              </div>
+              <pre class="trace-event-payload"><code>{{ JSON.stringify(e.payload, null, 2) }}</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   `
 };

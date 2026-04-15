@@ -404,7 +404,7 @@ class TestSSRFProtection:
         def _unexpected_getaddrinfo(*args, **kwargs):
             raise AssertionError("public host fast-path should avoid DNS lookup")
 
-        monkeypatch.setattr("core.link_safety.socket.getaddrinfo", _unexpected_getaddrinfo)
+        monkeypatch.setattr("core.systems.integration.link_safety.socket.getaddrinfo", _unexpected_getaddrinfo)
 
         assert is_blocked_host("site123.example.com") is False
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core.assets.agents.agent_capability_profile import AgentCapabilityProfile
+from core.modes.agents.agent_capability_profile import AgentCapabilityProfile
 from core.systems.runtime.backend_protocol import LocalSandboxBackend, SandboxBackendProtocol
 from core.systems.governance.subagent_sandbox import (
     SubagentSandbox,
@@ -174,3 +174,4 @@ def test_capability_profile_from_preset_string():
     profile = AgentCapabilityProfile.from_value("specialist")
     assert profile.preset == "specialist"
     assert profile.allow_code_execution is False
+

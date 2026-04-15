@@ -80,14 +80,14 @@ from core.systems.runtime.pybot_bootstrap import (
 )
 from core.systems.runtime.pybot_streaming import stream_chat_events
 from core.systems.runtime.retry_policy import RetryAttemptInfo, RetryConfig, RetryPolicy, create_default_retry_policy
-from core.systems.runtime.session.session_kernel import SessionKernel, SessionSidechain
+from core.systems.runtime.session import SessionKernel, SessionSidechain
 from core.systems.runtime.session.session_memory_policy import (
     SESSION_MEMORY_TYPE,
     SessionMemoryDecision,
     typed_memory_entry_payload,
     validate_session_memory,
 )
-from core.systems.runtime.session.session_runtime import SessionRecord, SessionRuntime
+from core.systems.runtime.session import SessionRecord, SessionRuntime
 from core.systems.runtime.context_budget import (
     PRESSURE_CRITICAL,
     PRESSURE_HIGH,

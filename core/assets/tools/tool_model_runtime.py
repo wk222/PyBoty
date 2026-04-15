@@ -73,7 +73,7 @@ class ToolModelHookRuntime:
 
         for tool_call in tool_calls:
             tool_name = ToolCallRuntime.tool_name(tool_call)
+            print(f"[DynamicToolMiddleware] 检测到 {tool_name} 调用")
             if tool_name in _TOOL_MUTATION_NAMES:
-                print(f"[DynamicToolMiddleware] 检测到 {tool_name} 调用")
-                break
+                pass # Already printed above, keeping this for logic if needed
         return None

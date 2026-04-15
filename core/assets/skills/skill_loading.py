@@ -229,24 +229,34 @@ def parse_skill_markdown(
             tools = []
 
     local_dir = source.backend.local_path(skill_path)
+    from .skill_models import validate_skill_descriptor
+    
+    try:
+        validated_data = validate_skill_descriptor({
+            "name": name,
+            "description": description,
+            "version": version,
+            "author": author,
+            "homepage": homepage,
+            "skill_format": skill_format,
+            "capabilities": capabilities,
+            "tools": tools,
+            "system_prompt_extension": system_prompt_extension,
+            "enabled": enabled,
+            "user_invocable": user_invocable,
+            "uv_dependencies": uv_dependencies,
+            "metadata": metadata,
+            "openclaw_metadata": openclaw_meta,
+            "requires_bins": list(dict.fromkeys(requires_bins)),
+            "requires_config": list(dict.fromkeys(requires_config)),
+            "primary_env": primary_env,
+        })
+    except Exception as e:
+        print(f"⚠️ [SkillLoading] Validation failed for skill '{name}': {e}")
+        return None
+
     return SkillDefinition(
-        name=name,
-        description=description,
-        version=version,
-        author=author,
-        homepage=homepage,
-        skill_format=skill_format,
-        capabilities=capabilities,
-        tools=tools,
-        system_prompt_extension=system_prompt_extension,
-        enabled=enabled,
-        user_invocable=user_invocable,
-        uv_dependencies=uv_dependencies,
-        metadata=metadata,
-        openclaw_metadata=openclaw_meta,
-        requires_bins=list(dict.fromkeys(requires_bins)),
-        requires_config=list(dict.fromkeys(requires_config)),
-        primary_env=primary_env,
+        **validated_data,
         source_name=source.name,
         source_backend=source.backend.backend_name,
         source_path=str(source.path),

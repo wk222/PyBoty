@@ -51,10 +51,12 @@ description: 创建工具的指南与最佳实践（包含模板使用和自定�
 **代码示例:**
 ```python
 import requests
-import math
+## 3. 与创建应用 (App) 的区别
+- **工具 (Tool)** 是 PyBot 自身的能力扩展（如：`web_search`, `read_file`）。
+- **应用 (App)** 是独立的 Web 界面和后端（如：`travel_planner`, `bili-hot-analyzer`）。
+- **千万不要** 在创建 App 的过程中尝试使用 `create_custom_tool` 来实现 App 的业务逻辑。App 的业务逻辑应写在 App 目录下的 `api.py` 中。
 
-# 业务逻辑
-area = math.pi * (radius ** 2)
-result = f"计算结果: {area} {unit}^2"
-print(result)
-```
+## 4. 修复与更新已有工具
+- 如果你需要修复或更新一个已经存在的自定义工具，**请务必使用原有的工具名称 (tool_name) 重新调用 `create_custom_tool`**。系统会自动覆盖更新原有工具。
+- **严禁** 在原名称后添加 `_fixed` 或 `_v2` 等后缀来创建新工具。这会导致工具库冗余并引起同能工具冲突。如果确实改了名字，必须调用 `remove_custom_tool` 删除旧工具。
+

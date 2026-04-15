@@ -576,3 +576,54 @@ def _complete_node(node: FlowNode, output):
     node.status = NodeStatus.COMPLETED
     node.output = output
     return output
+
+
+def test_workflow_execution_runtime_plugin_node_resume_failure_recovery():
+    queue = ApprovalQueue()
+    request = queue.create_request(
+        kind="tool_call",
+        scope="plugin",
+        summary="plugin approval",
+        prompt="approve?",
+    )
+    workflow = WorkflowDef(
+        id="wf_plugin_resume",
+        name="plugin-resume-demo",
+        status=WorkflowStatus.PAUSED,
+        resume_token="resume-plugin",
+        nodes={
+            "plugin1": FlowNode(
+                id="plugin1",
+                type=NodeType.AGENT,
+                status=NodeStatus.WAITING,
+                output={
+                    "status": "waiting_approval",
+                    "approval_id": request.approval_id,
+                    "workflow_pause_kind": "delegated_subagent",
+                    "workflow_pause_mode": "debate",
+                    "workflow_pause_state": {"step_index": 0},
+                }
+            )
+        },
+    )
+    
+    def failing_resume(node, workflow, waiting_payload, resolved_payload, resolved_approval_id=""):
+        raise ValueError("Simulated plugin crash during resume recovery")
+
+    runtime = _build_runtime(
+        approval_queue=queue,
+        workflows={"wf_plugin_resume": workflow},
+        exec_node=lambda node, workflow, run_id: {"ok": True},
+        resume_collaboration_node=failing_resume,
+    )
+
+    # Queue resolution for the pending approval
+    queue.resolve(request.approval_id, approved=True)
+
+    # Try to resume, which should crash inside resume_collaboration_node and be caught
+    result = runtime.resume_workflow("wf_plugin_resume", "resume-plugin", True)
+
+    assert result["status"] == "failed"
+    assert "Simulated plugin crash" in str(result.get("error", ""))
+    assert workflow.status == WorkflowStatus.FAILED
+    assert workflow.nodes["plugin1"].status == NodeStatus.FAILED

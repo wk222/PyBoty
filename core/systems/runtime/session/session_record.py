@@ -152,3 +152,31 @@ class SessionRecord:
             latest_run=payload.get("latest_run") if isinstance(payload.get("latest_run"), dict) else None,
             metadata=payload.get("metadata", {}) if isinstance(payload.get("metadata"), dict) else {},
         )
+
+    def verify_invariants(self) -> None:
+        """Validate critical guarantees for session state and history."""
+        last_ts = -1.0
+        compaction_count = 0
+        
+        for index, event in enumerate(self.timeline):
+            ts = float(event.get("timestamp", 0.0))
+            if ts < last_ts:
+                raise ValueError(f"Event ordering invariant violated at index {index}: timestamp {ts} < {last_ts}")
+            last_ts = ts
+            
+            if event.get("kind") == "compaction":
+                compaction_count += 1
+                
+        if self.timeline:
+            last_event_ts = float(self.timeline[-1].get("timestamp", 0.0))
+            if self.updated_at < last_event_ts:
+                raise ValueError(f"Replay safety invariant violated: updated_at {self.updated_at} < last_event_ts {last_event_ts}")
+                
+        compiled_artifacts = self.metadata.get("compiled_artifacts", {})
+        if isinstance(compiled_artifacts, dict):
+            hygiene = compiled_artifacts.get("context_hygiene", {})
+            if isinstance(hygiene, dict):
+                snip_count = int(hygiene.get("history_snip_count", 0) or 0)
+                if compaction_count > 0 and snip_count == 0:
+                    raise ValueError("Compaction boundary invariant violated: compaction events exist but snip_count is 0")
+

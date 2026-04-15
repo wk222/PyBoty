@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from core.assets.agents.agent_storage import AgentDefinition, AgentStorage
+from core.modes.agents.agent_storage import AgentDefinition, AgentStorage
 
 
 def test_agent_storage_persists_updates(tmp_path: Path):
@@ -44,3 +44,4 @@ def test_agent_storage_remove_agent_deletes_directory(tmp_path: Path):
 
     assert removed is True
     assert not agent_dir.exists()
+

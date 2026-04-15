@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from core.assets.tools.file_system_tools import get_file_system_tools
-from core.systems.context.workspace_view import WorkspaceViewService
+from core.assets.tools import get_file_system_tools
+from core.systems.context import WorkspaceViewService
 
 
 def _tool_by_name(tools, name: str):

@@ -7,16 +7,18 @@ from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, SystemMessage
 from langgraph.runtime import Runtime
 
-from core.systems.middleware.agent_middleware_factory import (
-    build_root_langchain_middleware,
+from core.modes.factories import (
     build_subagent_langchain_middleware,
     build_subagent_runtime_prompt_sections,
 )
+from core.systems.middleware.agent_middleware_factory import (
+    build_root_langchain_middleware,
+)
 from core.systems.middleware.agent_prompt_middleware import PromptSectionMiddleware
-from core.assets.agents import AgentCapabilityProfile, AgentMiddlewareProfile
+from core.modes.agents import AgentCapabilityProfile, AgentMiddlewareProfile
 from core.systems.bus.capability_tree import build_capability_tree_resume_projection
 from core.systems.runtime.prompts import build_static_system_prompt, get_root_mode_label, normalize_root_mode
-from core.assets.agents.subagent_governance import build_subagent_governance_snapshot
+from core.modes.agents.subagent_governance import build_subagent_governance_snapshot
 from core.systems.governance.subagent_sandbox import SubagentSandbox
 from core.systems.governance import AgentControlPolicy
 
@@ -474,7 +476,7 @@ def test_capability_tree_resume_projection_includes_branch_route_hints():
 
 
 def test_workflow_and_delegation_tool_descriptions_include_routing_guidance():
-    from core.assets.agents.agent_creator import DelegateToAgentTool
+    from core.modes.agents.agent_creator import DelegateToAgentTool
     from core.assets.workflows.workflow_tools import RunWorkflowTool
 
     run_workflow = RunWorkflowTool(engine=object())

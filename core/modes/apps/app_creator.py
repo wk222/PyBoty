@@ -7,9 +7,9 @@ import json
 from langchain.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.assets.apps.app_manager import AppManager
-from core.assets.apps.app_manager_registry import get_shared_app_manager, set_shared_app_manager
-from core.assets.apps.iterative_app_builder import IterativeAppBuilderTool
+from core.modes.apps.app_manager import AppManager
+from core.modes.apps.app_manager_registry import get_shared_app_manager, set_shared_app_manager
+from core.modes.apps.iterative_app_builder import IterativeAppBuilderTool
 
 
 def _get_app_manager() -> AppManager:
@@ -169,7 +169,7 @@ Do NOT ignore validation warnings in the response.
     def _validate_file(mgr: AppManager, app_name: str, file_path: str) -> list[dict[str, str]]:
         from pathlib import Path
 
-        from core.assets.apps.app_verifier_checks import check_api, check_html, check_javascript
+        from core.modes.apps.app_verifier_checks import check_api, check_html, check_javascript
 
         app_dir = Path(mgr.apps_dir) / app_name
         norm = file_path.replace("\\", "/")

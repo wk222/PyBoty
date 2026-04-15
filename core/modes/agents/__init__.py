@@ -1,7 +1,7 @@
 """Public asset entrypoints for agent-related capabilities.
 
 This package intentionally uses lazy exports so importing a leaf module like
-``core.assets.agents.agent_capability_profile`` does not eagerly pull the whole
+``core.modes.agents.agent_capability_profile`` does not eagerly pull the whole
 governance/runtime stack into memory and trigger circular imports.
 """
 
@@ -52,3 +52,4 @@ def __getattr__(name: str) -> Any:
 
 def __dir__() -> list[str]:
     return sorted(set(globals()) | set(__all__))
+

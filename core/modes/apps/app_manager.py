@@ -820,6 +820,26 @@ except Exception as exc:
             script_path, self._runner_script(api_path.resolve(), db_path)
         )
 
+        def _emit_error(error_msg: str, stderr: str = "") -> dict[str, Any]:
+            from core.systems.runtime.event_bus import Event, EventType, event_bus
+            event_bus.emit(
+                Event(
+                    type=EventType.APP_RUNTIME_ERROR,
+                    source="app_manager",
+                    payload={
+                        "app_name": app_name,
+                        "action": action,
+                        "error": error_msg,
+                        "stderr": stderr,
+                        "payload_size": len(json.dumps(payload, default=str)),
+                    },
+                )
+            )
+            res: dict[str, Any] = {"success": False, "error": error_msg}
+            if stderr:
+                res["stderr"] = stderr
+            return res
+
         try:
             process = subprocess.run(
                 self._runner_command(script_path, input_path, output_path),
@@ -829,19 +849,16 @@ except Exception as exc:
             )
             stderr_str = process.stderr.decode("utf-8", errors="replace") if process.stderr else ""
         except subprocess.TimeoutExpired:
-            return {"success": False, "error": "API execution timed out (30s)"}
+            return _emit_error("API execution timed out (30s)")
         except Exception as exc:
-            return {"success": False, "error": str(exc)}
+            return _emit_error(str(exc))
 
         if not output_path.exists():
-            return {
-                "success": False,
-                "error": "API execution produced no output",
-                "stderr": stderr_str[-500:],
-            }
+            return _emit_error("API execution produced no output", stderr=stderr_str[-500:])
 
         try:
             out_data = self._read_json(output_path)
         except Exception as exc:
-            return {"success": False, "error": f"Failed to parse API output: {exc}"}
+            return _emit_error(f"Failed to parse API output: {exc}")
         return {"success": True, "result": out_data.get("result")}
+

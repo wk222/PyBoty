@@ -11,7 +11,7 @@ try:
 except ImportError:
     _HAS_LC = False
 
-from core.assets.tools.tool_eviction_middleware import LCToolEvictionMiddleware
+from core.assets.tools import LCToolEvictionMiddleware
 
 pytestmark = pytest.mark.skipif(not _HAS_LC, reason="langchain not installed")
 

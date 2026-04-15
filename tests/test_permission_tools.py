@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from core.assets.tools.permission_tools import get_permission_tools
+from core.assets.tools import get_permission_tools
 
 
 class _DummyPermissionMiddleware:

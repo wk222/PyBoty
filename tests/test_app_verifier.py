@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 
-from core.assets.apps.app_manager import AppManager
-from core.assets.apps.app_verifier import ReadAppFileTool, VerifyAppTool, set_verifier_app_manager
+from core.modes.apps.app_manager import AppManager
+from core.modes.apps.app_verifier import ReadAppFileTool, VerifyAppTool, set_verifier_app_manager
 
 
 def test_verify_app_reports_runtime_and_api_issues(temp_paths):

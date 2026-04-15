@@ -91,6 +91,49 @@ class RateLimitStage:
         )
 
 
+import re
+
+@dataclass(frozen=True)
+class RegexArgValidationStage:
+    name: str = "regex_arg_validation"
+
+    def evaluate(self, context: ToolPolicyContext) -> ToolControlDecision | None:
+        patterns = context.control_policy.arg_regex_patterns.get(context.tool_name, {})
+        if not patterns:
+            return None
+        
+        for arg_name, pattern in patterns.items():
+            if arg_name in context.tool_args:
+                val = str(context.tool_args[arg_name])
+                if not re.match(pattern, val):
+                    return ToolControlDecision(
+                        allowed=False,
+                        risk_level=ToolRiskLevel.HIGH,
+                        reason=f"参数 '{arg_name}' 格式不符合安全策略要求",
+                        control_tags=("arg-validation", "regex-mismatch"),
+                    )
+        return None
+
+@dataclass(frozen=True)
+class BudgetPolicyStage:
+    name: str = "budget_policy"
+
+    def evaluate(self, context: ToolPolicyContext) -> ToolControlDecision | None:
+        budget = context.control_policy.tool_budgets.get(context.tool_name)
+        if budget is None:
+            return None
+        
+        # Here context.recent_calls represents the "spent" budget. 
+        # In a real scenario, this could be extended to track tokens or cost.
+        if context.recent_calls >= budget:
+            return ToolControlDecision(
+                allowed=False,
+                risk_level=ToolRiskLevel.HIGH,
+                reason=f"工具 '{context.tool_name}' 已耗尽分配的预算配额 ({budget})",
+                control_tags=("budget-policy", "quota-exceeded"),
+            )
+        return None
+
 @dataclass(frozen=True)
 class RiskAssessmentStage:
     name: str = "risk_assessment"
@@ -152,6 +195,8 @@ def build_default_tool_policy_pipeline(
         stages=[
             PathPolicyStage(allowed_roots=tuple(allowed_roots or ())),
             RateLimitStage(max_calls_per_tool=max_calls_per_tool),
+            RegexArgValidationStage(),
+            BudgetPolicyStage(),
             RiskAssessmentStage(),
         ]
     )

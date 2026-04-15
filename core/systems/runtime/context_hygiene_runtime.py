@@ -18,7 +18,7 @@ except ImportError:
     HumanMessage = object  # type: ignore[assignment,misc]
     ToolMessage = object  # type: ignore[assignment,misc]
 
-from core.systems.context.context_manager import count_tokens_approx
+from core.systems.context import count_tokens_approx
 
 logger = logging.getLogger(__name__)
 

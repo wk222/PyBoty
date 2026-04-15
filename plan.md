@@ -1,281 +1,124 @@
-# Claude Code Alignment Plan
+# PyBot Tree Refactor Plan
+
+## Ground Rules
+
+- This repo is a test/dev branch.
+- Backward compatibility is explicitly out of scope.
+- Large refactors, renames, file moves, and deletion of duplicate layers are allowed.
+- Prefer explicit state objects (Canonical Views) over nested metadata.
+- High-level branches must grow from lower-level trunk capabilities.
+
+---
+
+## Architecture Tree (4-Layer Dependency Hierarchy)
+
+Every capability in PyBot grows from a shared root. Higher layers depend on
+lower layers; never the reverse. This is codified in `core/modes/system_model.py`
+via `ArchitecturalLayerDescriptor` and enforced by convention.
+
+```text
+PyBot
+│
+├─ Layer 0 — Root (Runtime Foundation)  ← THE TRUNK
+│  ├─ core/systems/runtime/         config, paths, errors, event bus, model, bootstrap
+│  ├─ core/systems/runtime/session/ Session Spine: events, compaction, kernel, recorder
+│  └─ core/systems/context/         Workspace View: context engine, strategies, file view
+│
+├─ Layer 1 — First Branches (Core Systems)
+│  ├─ core/systems/governance/      approvals, guardrails, policies, sandbox
+│  ├─ core/systems/memory/          Markdown Garden, semantic memory, admin memory, scoring
+│  ├─ core/systems/knowledge/       document pipeline, vector stores, embedding providers
+│  ├─ core/systems/bus/             CapabilityBus + CapabilityRegistry (single discovery plane)
+│  ├─ core/systems/middleware/      middleware chain, summarization, reasoning frame
+│  ├─ core/systems/execution/       code execution sandbox, project scanner
+│  ├─ core/systems/eval/            evaluation framework
+│  └─ core/systems/integration/     channels, MCP, PyHub, external content
+│
+├─ Layer 2 — Second Branches (Asset Domains)
+│  ├─ core/assets/tools/            tool creation, runtime, storage, templates, risk
+│  ├─ core/assets/skills/           skill registry, marketplace, HTTP backends
+│  ├─ core/assets/agents/           agent storage, subagent registry, delegation, isolation
+│  └─ core/assets/workflows/        PyFlow DAG engine, scheduling, pause/resume, plugins
+│
+└─ Layer 3 — Crown (Product Modes)
+   ├─ core/assets/apps/             App Matrix runtime, Brain planner, orchestration
+   └─ core/modes/                   assistant / app_matrix / admin mode packs
+```
+
+**Dependency rule**: Layer N may only import from layers 0..N, never from N+1.
+
+---
+
+## Current Status (Solidification Wave)
+
+### 1. Engine Unification & Swarm Robustness
+- [x] **Spawn/Wait Primitives**: Native asynchronous subagent orchestration.
+- [x] **Admin Swarm Unification**: Inject `spawn_subagent` and `wait_subagent` into `PersistentAdminRuntime`.   
+- [x] **Error Bubbling**: Update `SubagentRegistry` to capture and return specific traceback/logs for failed runs.
+
+### 2. Closed-Loop Knowledge
+- [x] **Markdown Garden**: Hierarchical directory-based long-term memory.
+- [x] **Recursive MD Summarization**: Automatic compression of large notes.
+- [x] **Garden Suggestion Hook**: Automatically flag session compacts for garden inclusion.
+
+### 3. Canonical View Consolidation
+
+### 4. Advanced Self-Healing (Runtime)
+- [x] **Runtime API Error Auto-Recovery**: Intercept APP API errors (e.g. 500s or timeouts) and automatically promote them into repair tasks for the Admin swarm.
+- [x] **Rename Wave**: `session_artifacts` -> `session_runtime_view`.
+- [x] **Factory Refactor**: Move `_build_live_view` logic into `ProjectedRuntimeView.from_runtime()`.
+### 4. Legacy Failure Closure (Verified)
+- [x] **Historical Failing Cases Rechecked**: Previously failing tests for `parse_manifest`, app verifier checks, bootstrap runtime workspace mock, and middleware-memory patch targets now pass.
+- [x] **Cross-File Regression Check**: `test_security_extensibility`, `test_pybot_bootstrap`, `test_app_verifier`, and `test_lc_memory_middleware` pass together.
+
+---
+
+## Functional Maturity Backlog (Next Wave)
+
+### A. Import Surface Convergence (Session/Workspace-first)
+- [x] **Bypass Import Redirection Sweep**: Replace direct deep imports (e.g. `core.systems.context.context_engine`) with package facades (e.g. `core.systems.context`).
+- [x] **Consumption Mapping Report**: Produce a migration list of remaining bypass imports grouped by package (`context`, `memory`, `session`, `tools`).
+- [x] **Shim Deletion Readiness Gate**: Define and track "all consumers migrated" criteria before deleting `core/` root shim files. (Completed: 19 shim files deleted).
+
+### B. Capability Plane Hardening
+- [x] **Registry Contract Tests**: Add tests that cover `discover`, `issue_grant`, `list_grants`, and `invoke` in `CapabilityRegistryTool`.
+- [x] **Quota/TTL Edge Cases**: Add negative and boundary tests for grant quota exhaustion and ttl expiry.      
+- [x] **Operational Visibility**: Add structured logs/metrics for grant issuance and invocation failures.
+- [x] **Advanced Tool Policy Pipeline**: Implement sequential deterministic stages (Path Traversal, Regex Argument Validation, Budget Quotas) for hard middleware governance over tools.
+- [x] **Constraint Feedback Loop**: Integrate policy rejections with Reasoning Frame Middleware to force autonomous LLM self-critique and alternative strategy selection on boundary violations.
+- [x] **Hierarchical Multi-Agent Governance**: Enforce strict monotonic capability constraints (child permissions <= parent permissions) with dynamic fine-grained policy overrides during delegation.
+### C. Session Spine + Workspace Reliability
+- [x] **Session Recorder/Runtime Invariants**: Add invariant checks for event ordering, compaction boundaries, and replay safety.
+- [x] **Context Engine Budget Guards**: Add tests for token-budget clipping and deterministic head-tail behavior in long sessions.
+- [x] **Runbook Docs**: Add a short troubleshooting runbook for session/context mismatch incidents.
+
+### D. Workflow & Skill Execution Quality
+- [x] **Workflow Resume Robustness**: Add failure-recovery tests for pause/resume + plugin-backed nodes.
+- [x] **Skill Packaging Consistency**: Validate all skill descriptors through one schema validator entrypoint.
+- [x] **E2E Smoke Matrix**: Define minimal smoke tests spanning tool -> skill -> workflow -> app path.
+
+---
+
+## Technical Debt / Cleanup
+- [x] Move all session core files to `core/systems/runtime/session/`.
+- [x] Purge all remaining `runtime_bookkeeping` and `artifacts` terminology.
+- [x] Update `paper/pybot.tex` to reflect the architectural tree model.
 
-Last updated: 2026-04-01
+---
 
-## Latest Progress
+## Future Work (Advanced Research)
 
-- [x] Added a first persistent `SessionRuntime` backed by `sessions.json`
-- [x] Unified chat conversations and gateway HTTP/WS sessions behind one shared session spine
-- [x] Exposed session list/detail APIs plus lightweight session summary / note mutation endpoints
-- [x] Moved gateway runs and workflow runs into the canonical session spine instead of leaving them as route-local state
-- [x] Added explicit context-budget management and compaction policy on top of the session spine
-- [x] Added append-only session event logging plus resume scrubbing for interrupted `gateway/tool/workflow/subagent/durable-task` state on restart
-- [x] Replaced blunt session trimming with layered compaction: microcompaction, session-notebook compaction, then full budget trimming
-- [x] Introduced a typed session-memory policy for `session_note / user / feedback / project / reference` writes with durable-memory guards
-- [x] Promoted `events.jsonl` toward the canonical session ledger by replaying sessions from append-only events first and treating `sessions.json` as a checkpoint/cache
-- [x] Added explicit compaction boundaries plus middleware-to-session compaction callbacks so conversation summarization and session compaction land on one spine
-- [x] Extended typed-memory taxonomy into durable semantic memory + memory tools so save/search can use the same `user / feedback / project / reference` language
-- [x] Removed snapshot fallback from session restore so `events.jsonl` is the actual ledger, then folded tool-heavy transcript and file-view context into the same session compaction coordinator
-- [x] Turned `sessions.json` into a best-effort export, added compiled session artifacts with explicit invalidation, introduced a long-lived session kernel, and started using cache-safe sidechains for memory extraction and compaction work
+1. **Autonomous Re-planning (LATS/MCTS)**: Implement CriticAgent-driven tree search.
+2. **Visual Editor for App Matrix**: Integrate low-code UI for manual app adjustment.
+3. **Distributed Subagent Hosting**: Remote container targets for isolation.
 
-## Why Study Claude Code
+---
 
-Claude Code is worth learning from not because it has more features than PyBot, but because it hides complexity behind a much harder interaction spine:
+## Acceptance Targets
 
-- one primary work session
-- one execution engine
-- one formal tool protocol
-- one persistent recovery model
-- one disciplined multi-agent organization model
-
-PyBot already has deeper ecosystem, governance, capability-marketplace, and app-matrix ideas than Claude Code. What it still lacks is the same degree of compression around the user's primary workflow.
-
-This plan is about importing that compression and runtime discipline without throwing away PyBot's three-mode system.
-
-## The Main Lessons From Claude Code
-
-### 1. Keep one hard execution spine
-
-Claude Code consistently routes work through a small set of stable anchors:
-
-- startup / assembly
-- command surface
-- tool surface
-- QueryEngine session loop
-
-PyBot should move closer to:
-
-- one session engine
-- one run timeline
-- one clear distinction between user commands, model actions, and durable background tasks
-
-### 2. Treat tools as execution protocol, not feature list
-
-Claude Code's tools are not just functions. A tool call carries:
-
-- permissions
-- context
-- progress semantics
-- transcript semantics
-- recoverability
-
-PyBot already moved in this direction. The next step is to make more of the runtime go through the same protocol consistently.
-
-### 3. Separate memory into distinct jobs
-
-Claude Code clearly separates:
-
-- workspace rules memory
-- session memory
-- agent memory
-- compaction
-
-PyBot already has semantic memory, executive memory, working state, and capability-gap state, but they still feel too blended at runtime.
-
-### 4. Optimize context economics explicitly
-
-Claude Code does not treat token growth as accidental. It has:
-
-- read-state/cache mechanics
-- micro-compaction
-- session-memory-backed compaction
-- projected history / replay ideas
-
-PyBot needs a first-class context-budget manager instead of only summaries and compression helpers.
-
-### 5. Organize multi-agent work like a team, not a universe
-
-Claude Code's durable insight is not "many agents". It is:
-
-- coordinator / lead
-- worker
-- verifier
-- fork child
-- approval bridge
-
-PyBot should keep its richer mode model, but inside each mode it should adopt a more disciplined organization model.
-
-### 6. Make runtime extensibility formal
-
-Claude Code's hooks are runtime extension points, not decorative plugins. That is valuable for PyBot because it already has:
-
-- plugins
-- policy pipeline
-- governance
-- skills
-
-but still needs a more unified runtime-hook story.
-
-## What PyBot Should Not Copy
-
-- Do not copy Claude Code's CLI-first product identity. PyBot should remain a multi-surface system.
-- Do not collapse PyBot's three-mode architecture into a single assistant persona.
-- Do not imitate every Anthropic-specific product shell, flag system, or hosted-service assumption.
-- Do not turn PyBot into a generic "many agent sandbox". Claude Code is useful precisely because it is disciplined.
-
-## Current Gap Assessment
-
-### Already Strong In PyBot
-
-- mode packs and mode profiles
-- governance center and approvals
-- capability registry and app-to-app service exchange
-- durable admin/app-matrix runtimes
-- gateway/operator surfaces
-- OpenClaw-style ecosystem work
-
-### Still Weaker Than Claude Code
-
-- one obvious session spine
-- command surface as a first-class layer
-- context economics and compaction discipline
-- memory taxonomy clarity
-- coordinator/worker/verifier organization defaults
-- unified task/run/resume semantics across chat, background, and subagents
-- runtime hooks that feel like one system instead of several adjacent systems
-
-## Four Implementation Phases
-
-### Phase 1. Session Spine And Interaction Compression
-
-North-star outcome:
-PyBot feels like one persistent work session with mode profiles, not a constellation of parallel products.
-
-Concrete work:
-
-- Create a `PyBotSessionEngine` as the canonical work-session loop above chat, tool execution, background runs, and resume.
-- Introduce a small command surface for high-frequency actions such as mode switch, run inspect, approval jump, ecosystem open, and memory inspect.
-- Standardize one run timeline model for chat turns, tool runs, workflow runs, and delegated subagent runs.
-- Make the three modes behave like profiles over the same session spine instead of looking like three separate systems.
-- Keep `Chat / Governance / Ecosystem` as the only top-level interaction surfaces in UI, docs, and prompt summaries.
-
-Why first:
-This is the highest-leverage simplification. Without it, every new capability continues to increase front-end and mental complexity.
-
-### Phase 2. Memory Taxonomy And Context Economics
-
-North-star outcome:
-PyBot can run long-lived work without context sprawl, and each memory layer has one job.
-
-Concrete work:
-
-- Split memory into four explicit buckets:
-  - workspace rules memory
-  - session working memory
-  - agent/profile memory
-  - durable ecosystem/admin memory
-- Add a context-budget manager that tracks token pressure and decides when to:
-  - micro-trim high-cost tool outputs
-  - compact history
-  - project or replay only the needed slice
-  - refresh from session memory instead of replaying raw history
-- Add a read-state / file-context cache so repeated file work does not keep bloating prompts.
-- Introduce durable compaction boundaries so resumed sessions do not re-ingest the whole past.
-
-Why second:
-PyBot already wants to be durable and autopoietic. Without memory taxonomy and context economics, that ambition will keep colliding with token ceilings.
-
-### Phase 3. Team-Style Agent Organization
-
-North-star outcome:
-PyBot's agent runtime behaves like a disciplined engineering team, not an open-ended multi-agent cloud.
-
-Concrete work:
-
-- Add first-class internal roles:
-  - coordinator
-  - worker
-  - verifier
-  - fork-child / inherited-context worker
-- Distinguish inherited-context delegation from fresh-role delegation, similar to Claude Code's fork vs fresh subagent economics.
-- Standardize which roles may:
-  - synthesize
-  - implement
-  - verify
-  - approve
-  - ask for escalation
-- Make background/resume semantics uniform for:
-  - delegated agents
-  - admin synthesis tasks
-  - app-matrix orchestrations
-  - workflow-assisted agent runs
-
-Why third:
-PyBot already has lots of delegation power. This phase converts that power into organizational clarity.
-
-### Phase 4. Runtime Extensibility And Managed Policy
-
-North-star outcome:
-PyBot can change behavior through formal runtime extension points instead of adding more special-case logic into the core loop.
-
-Concrete work:
-
-- Unify plugin hooks, tool policy pipeline, governance checks, and skill-time hooks behind one runtime hook plane.
-- Add session-scoped hooks so a run or mode profile can temporarily alter behavior without changing global config.
-- Separate managed policy, project policy, session policy, and local override more clearly.
-- Promote command hooks and operator hooks into first-class extension surfaces.
-
-Why fourth:
-This phase keeps the core small while still letting the ecosystem grow.
-
-## Suggested Execution Order
-
-1. Build `PyBotSessionEngine` and a unified run timeline.
-2. Add explicit memory taxonomy plus a context-budget manager.
-3. Formalize coordinator / worker / verifier / inherited-context worker roles.
-4. Unify runtime hooks and managed policy layers.
-
-## Immediate Next Slices
-
-These are the next concrete slices that should be implemented first:
-
-1. `Session Spine`
-   - [x] add a canonical session-engine module
-   - [x] route chat turns, gateway runs, and background task continuation through it
-   - [x] expose a first session registry/detail API
-   - [x] expose kernel / artifact / sidechain surfaces on top of the session ledger
-
-2. `Mode As Profile`
-   - [x] make current mode/profile visible and switchable everywhere through the same session model
-   - [x] reduce remaining mode-specific special cases in public surfaces (identity prompt + startup summary now driven by ModeProfile fields)
-
-3. `Memory Taxonomy`
-   - [x] introduce explicit workspace/session/agent/admin memory descriptors (LAYER_DESCRIPTORS + type→layer matrix in memory_taxonomy.py)
-   - [x] stop treating all summaries as one class of memory (validate_layer_for_type, default_layer_for_type, session_memory_policy uses taxonomy)
-
-4. `Context Budget Manager`
-   - [x] add cost accounting and micro-trim rules for expensive tool outputs (record_tool_output, apply_micro_trim, top_expensive_tools, pressure-aware _TRIM_CHARS_BY_PRESSURE)
-   - [x] establish compaction boundaries for resumed sessions
-   - [x] fold tool-heavy transcript and file-view context into the same coordinator
-
-5. `Compiled Artifacts → Prompt Assembly`
-   - [x] add render_artifact_context() to session_artifacts.py — formats working_summary, context_notes, typed_memory, notebook summaries, file views, prompt_injection into prompt sections
-   - [x] add session_artifacts param to build_runtime_prompt_sections() in prompts.py
-   - [x] add artifacts_provider: Callable[[], dict | None] param to build_root_langchain_middleware() in agent_middleware_factory.py
-   - [x] add get_compiled_artifacts(session_key) to SessionRuntime so callers get a thread-safe compiled snapshot
-   - [x] wire artifacts_provider closure in create_root_agent() via session_runtime + thread_id — every model call now injects live session spine context into the prompt
-
-6. `Unified Tool Inventory`
-   - [x] create `UnifiedToolInfo` dataclass — flat, source-agnostic view of any tool (direct or skill-backed)
-   - [x] create `UnifiedAssetInventory` — single discovery/build layer wrapping ToolStorage + SkillRegistry
-         - `list_all()` merges both sources; skill tools carry `layer="skill_tool"` + `source="skill:{name}"`
-         - `get(name)` / `find(query, layer, tags)` / `enabled_names()`
-         - `build_langchain_tools(names=None)` delegates to the right runtime (tool_creator vs skill_tool_resolver)
-   - [x] wire into `CapabilityRegistry.refresh_local_index()` so bus accepts `unified_inventory=` param
-   - [x] add `skill_registry` param to `DynamicToolInventory` so `list_dynamic_tools()` includes enabled skill tools
-
-7. `Agent Role Taxonomy`
-   - [x] add `AgentRole` enum (coordinator / worker / verifier / fork_child) to agent_role_policy.py
-   - [x] create `agent_role_policy.py` — per-role defaults for autonomy, tool access, approval thresholds
-   - [x] update `AgentDefinition` with `team_role: str = "worker"` (distinct from persona `role` field)
-   - [x] apply role policy in `build_agent_tool_inventory` (role_policy key) and `build_effective_profiles()`
-
-## Success Criteria
-
-This Claude Code alignment is working when:
-
-- PyBot feels simpler to use despite having more capabilities.
-- A user can explain PyBot's runtime around one main work session.
-- Long sessions degrade gracefully instead of feeling increasingly heavy.
-- Subagents feel like organized teammates, not a noisy swarm.
-- New capabilities enter through the ecosystem without expanding the top-level mental model.
+- [x] Canonical `ProjectedRuntimeView` is the single source of truth for prompt, routing, and hygiene.
+- [x] Session split is finished and encapsulated.
+- [x] Multi-Agent control plane features real-time `TeamMemory` sync.
+- [x] AppManager supports closed-loop VLM-based iterative generation.
+- [x] Dual-mode memory (Garden + Vector) is active and integrated into presets.
+- [x] All core tests pass.

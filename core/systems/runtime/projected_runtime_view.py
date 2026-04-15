@@ -535,6 +535,27 @@ def _normalize_team_memory(projection: dict[str, Any] | None, *, limit: int = 8)
     }
 
 
+from typing import Any, Callable, Protocol, runtime_checkable
+
+
+@runtime_checkable
+class RuntimeContext(Protocol):
+    """Protocol for runtime components used during view projection."""
+    thread_id: str
+    root_mode: str
+    workspace: Any
+    workspace_view: Any
+    memory: Any
+    capability_bus: Any
+    trusted_settings: Any
+    hooks_runtime: Any
+    subagent_registry: Any
+    task_runtime: Any
+    middleware: Any
+    session_runtime: Any
+    session_memory_extractor: Any | None = None
+
+
 @dataclass(slots=True)
 class ProjectedRuntimeView:
     system_context: dict[str, Any] = field(default_factory=dict)
@@ -549,6 +570,85 @@ class ProjectedRuntimeView:
     route: dict[str, Any] = field(default_factory=dict)
     isolation: dict[str, Any] = field(default_factory=dict)
     team_memory: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_runtime(
+        cls,
+        runtime: RuntimeContext,
+        *,
+        system_overlay: dict[str, Any] | None = None,
+        session_overlay: dict[str, Any] | None = None,
+        context_hygiene_overlay: dict[str, Any] | None = None,
+        session_notes_provider: Callable[[], str] | None = None,
+    ) -> ProjectedRuntimeView:
+        """Create a ProjectedRuntimeView directly from a runtime instance with optional overlays."""
+        notes_provider = session_notes_provider
+        if notes_provider is None and hasattr(runtime, "session_memory_extractor") and runtime.session_memory_extractor is not None:
+            if hasattr(runtime.session_memory_extractor, "get_notes"):
+                notes_provider = runtime.session_memory_extractor.get_notes
+
+        return cls.compile(
+            runtime=runtime,
+            system_overlay=system_overlay,
+            session_overlay=session_overlay,
+            context_hygiene_overlay=context_hygiene_overlay,
+            session_notes_provider=notes_provider,
+        )
+
+    @classmethod
+    def compile(
+        cls,
+        *,
+        runtime: RuntimeContext,
+        system_overlay: dict[str, Any] | None = None,
+        session_overlay: dict[str, Any] | None = None,
+        context_hygiene_overlay: dict[str, Any] | None = None,
+        session_notes_provider: Callable[[], str] | None = None,
+    ) -> ProjectedRuntimeView:
+        """Centralized assembly of a ProjectedRuntimeView from a runtime instance."""
+        _tid = runtime.thread_id
+        _root_mode = runtime.root_mode
+        _sys = dict(system_overlay or {})
+        _sess = dict(session_overlay or {})
+        _hygiene = dict(context_hygiene_overlay or {})
+        
+        workspace_dir = (
+            getattr(runtime.workspace, "root_dir", "")
+            or getattr(runtime.workspace, "_root_dir", "")
+            or "."
+        )
+        
+        session_key = ""
+        if hasattr(runtime, "session_runtime") and runtime.session_runtime is not None:
+            try:
+                session_key = runtime.session_runtime.session_key_for_thread(_tid)
+            except Exception:
+                pass
+
+        multi_agent_ready = bool(
+            runtime.subagent_registry is not None
+            and runtime.task_runtime is not None
+            and runtime.middleware is not None
+        )
+
+        return compile_live_view(
+            thread_id=_tid,
+            root_mode=_root_mode,
+            system_overlay=_sys,
+            session_overlay=_sess,
+            context_hygiene_overlay=_hygiene,
+            workspace_view=runtime.workspace_view,
+            capability_bus=runtime.capability_bus,
+            trusted_settings=runtime.trusted_settings,
+            hooks_runtime=runtime.hooks_runtime,
+            subagent_registry=runtime.subagent_registry,
+            task_runtime=runtime.task_runtime,
+            tool_middleware=runtime.middleware,
+            session_notes_provider=session_notes_provider,
+            workspace_dir=workspace_dir,
+            multi_agent_ready=multi_agent_ready,
+            session_key=session_key,
+        )
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -580,6 +680,216 @@ class ProjectedRuntimeView:
         if session_key:
             artifacts["session_key"] = session_key
         return artifacts
+
+
+def compile_live_view(
+    *,
+    thread_id: str,
+    root_mode: str,
+    system_overlay: dict[str, Any],
+    session_overlay: dict[str, Any],
+    context_hygiene_overlay: dict[str, Any],
+    workspace_view: Any = None,
+    capability_bus: Any = None,
+    trusted_settings: Any = None,
+    hooks_runtime: Any = None,
+    subagent_registry: Any = None,
+    task_runtime: Any = None,
+    tool_middleware: Any = None,
+    session_notes_provider: Callable[[], str] | None = None,
+    workspace_dir: str = ".",
+    multi_agent_ready: bool = False,
+    session_key: str = "",
+) -> ProjectedRuntimeView:
+    """Centralized assembly of a ProjectedRuntimeView from raw runtime components."""
+    latest_boundary = dict(system_overlay.get("latest_compaction_boundary", {}))
+
+    # 1. Workspace
+    workspace_projection = {}
+    if workspace_view is not None and hasattr(workspace_view, "build_projection"):
+        try:
+            workspace_projection = workspace_view.build_projection(limit=8)
+        except Exception:
+            pass
+
+    # 2. Capability
+    capability_projection = {}
+    if capability_bus is not None and hasattr(capability_bus, "get_tree_projection"):
+        try:
+            from core.systems.bus.capability_tree import build_capability_tree_resume_projection
+            capability_projection = build_capability_tree_resume_projection(capability_bus.get_tree_projection())
+        except Exception:
+            pass
+
+    # 3. Settings
+    settings_projection = {}
+    if trusted_settings is not None and hasattr(trusted_settings, "build_projection"):
+        try:
+            settings_projection = trusted_settings.build_projection()
+        except Exception:
+            pass
+
+    # 4. Hooks
+    hooks_projection = {}
+    if hooks_runtime is not None and hasattr(hooks_runtime, "build_projection"):
+        try:
+            hooks_projection = hooks_runtime.build_projection()
+        except Exception:
+            pass
+
+    # 5. Isolation
+    from core.systems.runtime.subagent_isolation import build_root_isolation_projection
+    isolation_projection = build_root_isolation_projection(
+        workspace_dir=workspace_dir,
+        root_mode=root_mode,
+        multi_agent_ready=multi_agent_ready,
+        thread_id=thread_id,
+        session_key=session_key,
+        hooks_runtime=hooks_runtime,
+    )
+
+    # 6. Tool / Permission
+    recent_tool_runs = []
+    permission_projection = {}
+    if tool_middleware is not None and hasattr(tool_middleware, "get_control_snapshot"):
+        try:
+            snapshot = tool_middleware.get_control_snapshot()
+            observability = snapshot.get("observability", {}) if isinstance(snapshot, dict) else {}
+            recent_events = observability.get("recent_events", []) if isinstance(observability, dict) else []
+            permission_projection = snapshot.get("permission", {}) if isinstance(snapshot, dict) else {}
+            
+            # If snapshot has settings, prefer those as they might be more 'live'
+            snapshot_settings = snapshot.get("settings", {})
+            if isinstance(snapshot_settings, dict) and snapshot_settings:
+                settings_projection = snapshot_settings
+
+            for event in recent_events[-6:]:
+                if not isinstance(event, dict): continue
+                tool_name = str(event.get("tool_name", "")).strip()
+                if not tool_name: continue
+                status = "completed"
+                if event.get("requires_approval"): status = "approval_required"
+                elif not event.get("allowed", True): status = "blocked"
+                recent_tool_runs.append({
+                    "title": tool_name,
+                    "status": status,
+                    "source": "tool_control",
+                    "run_id": str(event.get("tool_call_id", "")).strip(),
+                    "preview": str(event.get("args_preview", "")).strip(),
+                    "timestamp": event.get("timestamp"),
+                })
+        except Exception:
+            pass
+
+    # 7. Team Memory
+    team_memory_projection = {}
+    if subagent_registry is not None and hasattr(subagent_registry, "build_team_memory_projection"):
+        try:
+            team_memory_projection = subagent_registry.build_team_memory_projection(
+                team_key=session_key or thread_id,
+                owner_session_key=session_key,
+                owner_thread_id=thread_id,
+            )
+        except Exception:
+            pass
+
+    # 8. Tasks
+    task_projection = {}
+    if task_runtime is not None:
+        try:
+            if recent_tool_runs:
+                task_runtime.ingest_tool_runs(recent_tool_runs, source="tool_control")
+            if isinstance(permission_projection, dict):
+                task_runtime.ingest_permission_events(
+                    list(permission_projection.get("recent_events", [])),
+                    source="permission_projection",
+                )
+            if latest_boundary:
+                task_runtime.record_compaction_boundary(dict(latest_boundary))
+            task_projection = task_runtime.build_projection() or {}
+        except Exception:
+            pass
+
+    # Build intermediate view for routing
+    def _compose_with_overrides(route_section=None, hooks_override=None):
+        return build_projected_runtime_view(
+            thread_id=thread_id,
+            root_mode=root_mode,
+            system_context={
+                "thread_id": thread_id,
+                "primary_mode": root_mode,
+                "working_summary": str(system_overlay.get("working_summary", "")).strip(),
+                "latest_compaction_boundary": latest_boundary,
+                "prompt_injection": str(system_overlay.get("prompt_injection", "")).strip(),
+            },
+            session={
+                "session_notebook_summary": session_notes_provider() if session_notes_provider else "",
+                "working_summary": str(session_overlay.get("working_summary", "")).strip(),
+                "compaction_summary": str(session_overlay.get("compaction_summary", "")).strip(),
+            },
+            workspace=workspace_projection,
+            tasks=build_runtime_task_section(
+                task_runtime=task_projection,
+                recent_tool_runs=recent_tool_runs,
+                permission=permission_projection,
+                latest_compaction_boundary=latest_boundary,
+            ),
+            permission=permission_projection,
+            settings=settings_projection,
+            capability=capability_projection,
+            context_hygiene=context_hygiene_overlay,
+            hooks=hooks_override or hooks_projection,
+            route=route_section or {},
+            isolation=isolation_projection,
+            team_memory=team_memory_projection,
+        )
+
+    # 9. Routing
+    route_projection = {}
+    preliminary_view_payload = _compose_with_overrides().to_payload()
+    if hooks_runtime is not None and hasattr(hooks_runtime, "run_phase"):
+        try:
+            from core.systems.runtime.hooks_runtime import HookPhase
+            route_projection = hooks_runtime.run_phase(
+                HookPhase.ROUTE_SELECTION,
+                {"query": "", "provides": "", "projected_runtime_view": preliminary_view_payload}
+            )
+        except Exception:
+            pass
+
+    if capability_bus is not None and hasattr(capability_bus, "get_route_projection"):
+        try:
+            bus_route = capability_bus.get_route_projection(
+                query="", provides="", projected_runtime_view=preliminary_view_payload
+            )
+            route_projection = {
+                **dict(bus_route or {}),
+                "prefer_slots": list(route_projection.get("prefer_slots", [])),
+                "avoid_slots": list(route_projection.get("avoid_slots", [])),
+                "notes": list(route_projection.get("notes", [])),
+            }
+        except Exception:
+            pass
+
+    # 10. Session Bookkeeping
+    if hooks_runtime is not None and hasattr(hooks_runtime, "run_phase"):
+        try:
+            from core.systems.runtime.hooks_runtime import HookPhase
+            mid_view = _compose_with_overrides(route_section=route_projection).to_payload()
+            bookkeeping = hooks_runtime.run_phase(
+                HookPhase.SESSION_BOOKKEEPING,
+                {"projected_runtime_view": mid_view}
+            )
+            if bookkeeping.get("notes") or bookkeeping.get("session_tags"):
+                hooks_projection = {
+                    **hooks_projection,
+                    "notes": list(bookkeeping.get("notes", [])),
+                    "session_tags": list(bookkeeping.get("session_tags", [])),
+                }
+        except Exception:
+            pass
+
+    return _compose_with_overrides(route_section=route_projection, hooks_override=hooks_projection)
 
 
 def build_projected_runtime_view(

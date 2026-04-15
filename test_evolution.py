@@ -7,7 +7,7 @@ from core.systems.runtime.event_bus import event_bus, Event, EventType
 from core.systems.runtime.admin_watcher import AdminWatcherDaemon
 from core.systems.runtime.daemon import BackgroundDaemon
 from core.systems.runtime.project_paths import ProjectPaths
-from core.assets.apps.app_manager_registry import get_shared_app_manager
+from core.modes.apps.app_manager_registry import get_shared_app_manager
 from core.systems.governance.approval_queue import ApprovalQueue
 from agent import create_admin_agent
 

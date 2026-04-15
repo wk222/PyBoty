@@ -10,9 +10,9 @@ from typing import Any
 from langchain.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.assets.apps.app_manager import AppManager
-from core.assets.apps.app_manager_registry import get_shared_app_manager, set_shared_app_manager
-from core.assets.apps.app_verifier_checks import (
+from core.modes.apps.app_manager import AppManager
+from core.modes.apps.app_manager_registry import get_shared_app_manager, set_shared_app_manager
+from core.modes.apps.app_verifier_checks import (
     build_verdict,
     check_api,
     check_css,

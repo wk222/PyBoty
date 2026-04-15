@@ -5,28 +5,28 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from core.assets.apps.app_creator import get_app_creator_tools, set_app_manager
-from core.assets.apps.app_manager import AppDefinition, AppManager, AppMode
-from core.assets.apps.app_matrix_planner import (
+from core.modes.apps.app_creator import get_app_creator_tools, set_app_manager
+from core.modes.apps.app_manager import AppDefinition, AppManager, AppMode
+from core.modes.apps.app_matrix_planner import (
     AppMatrixBindingProposal,
     AppMatrixPipelineProposal,
     AppMatrixPlanner,
     AppMatrixTopologyPlan,
     fallback_app_matrix_plan,
 )
-from core.assets.apps.app_matrix_runtime import AppMatrixRuntime
-from core.assets.apps.app_orchestration import AppOrchestrationRegistry, NodeStatus, NodeType, OrchestrationNode
-from core.assets.apps.app_orchestration_tools import get_app_orchestration_tools
-from core.assets.apps.app_packager import AppPackager
-from core.assets.apps.app_verifier import (
+from core.modes.apps.app_matrix_runtime import AppMatrixRuntime
+from core.modes.apps.app_orchestration import AppOrchestrationRegistry, NodeStatus, NodeType, OrchestrationNode
+from core.modes.apps.app_orchestration_tools import get_app_orchestration_tools
+from core.modes.apps.app_packager import AppPackager
+from core.modes.apps.app_verifier import (
     AppVerificationService,
     ReadAppFileTool,
     VerifyAppTool,
     get_app_verifier_tools,
     set_verifier_app_manager,
 )
-from core.assets.apps.iterative_app_builder import IterativeAppBuilderTool
-from core.assets.apps.marketplace_tools import get_app_marketplace_tools
+from core.modes.apps.iterative_app_builder import IterativeAppBuilderTool
+from core.modes.apps.marketplace_tools import get_app_marketplace_tools
 
 
 @dataclass(frozen=True, slots=True)

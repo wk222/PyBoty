@@ -10,7 +10,7 @@ from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 
-from core.assets.tools.tool_storage import ToolStorage
+from core.assets.tools import ToolStorage
 from core.systems.governance.agent_control import AgentControlPolicy
 from core.systems.governance.approval_queue import ApprovalQueue
 from core.systems.runtime.project_paths import ProjectPaths
@@ -127,6 +127,7 @@ def invoke_persisted_agent(
     worktree_dir: str | None = None,
     remote_target: str | None = None,
     capability_override: dict[str, Any] | str | None = None,
+    policy_override: dict[str, Any] | str | None = None,
 ) -> dict[str, Any] | Any:
     """Invoke a persisted subagent and return its structured runtime payload."""
     if control_policy is not None and not control_policy.allow_agent_delegation:
@@ -155,6 +156,7 @@ def invoke_persisted_agent(
         worktree_dir=worktree_dir,
         remote_target=remote_target,
         capability_override=capability_override,
+        policy_override=policy_override,
     )
     resolved_thread_id = thread_id or f"delegate_{agent_name}_{int(time.time())}"
     try:
@@ -227,6 +229,7 @@ def delegate_agent_task(
     worktree_dir: str | None = None,
     remote_target: str | None = None,
     capability_override: dict[str, Any] | str | None = None,
+    policy_override: dict[str, Any] | str | None = None,
 ) -> dict[str, Any] | Any:
     """Invoke a persisted subagent and return a parent-agent friendly payload."""
     result = invoke_persisted_agent(
@@ -250,6 +253,7 @@ def delegate_agent_task(
         worktree_dir=worktree_dir,
         remote_target=remote_target,
         capability_override=capability_override,
+        policy_override=policy_override,
     )
     if stream:
         return result

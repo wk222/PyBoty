@@ -11,7 +11,7 @@ const FIELD_DEFS = {
   ],
   code:                [
     { key: 'language', label: 'Language', type: 'select', options: ['python', 'javascript'] },
-    { key: 'source', label: 'Source Code', type: 'code' },
+    { key: 'code', label: 'Source Code', type: 'code' },
     { key: 'output_var', label: 'Output Variable', type: 'text' },
   ],
   agent:               [

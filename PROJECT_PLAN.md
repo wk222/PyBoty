@@ -56,6 +56,7 @@ The common foundation underneath those modes should stay governed, testable, and
 - [x] Added a dedicated OpenClaw skill-source registration flow plus per-skill dependency diagnostics for missing bins / env / config
 - [x] Hardened OpenClaw skill compatibility so OpenClaw repo roots can mount directly as skill sources, metadata/requirements are preserved, and `{baseDir}` placeholders resolve at read time
 - [x] Landed Phase 4 of the OpenClaw-alignment track: tool policy pipeline, plugin lifecycle loader, SDK decorators, live tool/message hooks, and plugin admin surfaces
+- [x] Landed Advanced Tool Policy Pipeline (Regex argument validation, Tool budget quotas, and deterministic rejection paths)\n- [x] Integrated ToolPolicyPipeline with Reasoning Frame for autonomous policy-driven self-correction\n
 - [x] Landed Phase 3 of the OpenClaw-alignment track: subagent registry, lifecycle events, depth/concurrency limits, timeout cleanup, and first steer/abort controls
 - [x] Landed Phase 2 of the OpenClaw-alignment track: vector memory backend matrix, richer embedding providers, hybrid/MMR/temporal retrieval, and runtime config wiring
 - [x] Landed Phase 1 channel foundations for the OpenClaw-alignment track: upgraded webhook protocol, WeChat/WeCom adapters, config wiring, and first route coverage
@@ -191,7 +192,7 @@ This file is meant to stay live. Each round should do two things:
 1. Update this plan
 2. Implement at least one concrete slice from the highest-priority workstream
 
-See [docs/CORE_REORGANIZATION_PLAN.md](/c:/Users/wzx/Documents/GitHub/PyBoty/docs/CORE_REORGANIZATION_PLAN.md) for the physical move strategy, batch order, and migration rules.
-See [docs/OPENCLAW_ALIGNMENT_PLAN.md](/c:/Users/wzx/Documents/GitHub/PyBoty/docs/OPENCLAW_ALIGNMENT_PLAN.md) for the four-phase maturity track inspired by OpenClaw.
-See [docs/CLAUDECODE_ALIGNMENT_PLAN.md](/c:/Users/wzx/Documents/GitHub/PyBoty/docs/CLAUDECODE_ALIGNMENT_PLAN.md) for the session-spine, memory-taxonomy, and team-organization plan inspired by Claude Code.
-See [docs/SESSION_SPINE_PHASE2_PLAN.md](/c:/Users/wzx/Documents/GitHub/PyBoty/docs/SESSION_SPINE_PHASE2_PLAN.md) for the current session-ledger, compaction, and context-artifact build order.
+See [docs/CORE_REORGANIZATION_PLAN.md](docs/CORE_REORGANIZATION_PLAN.md) for the physical move strategy, batch order, and migration rules.
+See [docs/OPENCLAW_ALIGNMENT_PLAN.md](docs/OPENCLAW_ALIGNMENT_PLAN.md) for the four-phase maturity track inspired by OpenClaw.
+See [docs/CLAUDECODE_ALIGNMENT_PLAN.md](docs/CLAUDECODE_ALIGNMENT_PLAN.md) for the session-spine, memory-taxonomy, and team-organization plan inspired by AI Agent Framework.
+See [docs/SESSION_SPINE_PHASE2_PLAN.md](docs/SESSION_SPINE_PHASE2_PLAN.md) for the current session-ledger, compaction, and context-artifact build order.

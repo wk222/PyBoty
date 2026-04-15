@@ -18,6 +18,7 @@ class CompactionBoundary:
     notebook_summary: str
     retained_recent_window: dict[str, Any]
     summary: str
+    garden_suggested: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -29,6 +30,7 @@ class CompactionBoundary:
             "notebook_summary": self.notebook_summary,
             "retained_recent_window": dict(self.retained_recent_window),
             "summary": self.summary,
+            "garden_suggested": self.garden_suggested,
         }
 
 
@@ -41,6 +43,7 @@ def create_compaction_boundary(
     source_event_range: dict[str, Any] | None = None,
     retained_recent_window: dict[str, Any] | None = None,
     created_at: float | None = None,
+    garden_suggested: bool = False,
 ) -> CompactionBoundary:
     timestamp = float(created_at) if created_at is not None else time.time()
     return CompactionBoundary(
@@ -52,4 +55,5 @@ def create_compaction_boundary(
         notebook_summary=str(notebook_summary).strip(),
         retained_recent_window=dict(retained_recent_window or {}),
         summary=str(summary).strip(),
+        garden_suggested=garden_suggested,
     )

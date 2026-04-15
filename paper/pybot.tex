@@ -168,15 +168,58 @@ PyBot integrates these concerns as first-class middleware components rather than
 \section{System Architecture}
 \label{sec:arch}
 
-\subsection{Design Philosophy}
+PyBot's codebase is structured as a \textbf{4-Layer, 10-Tier Dependency Tree}, enforcing a strict hierarchy where higher-level capabilities grow from a unified foundation (see Figure~\ref{fig:arch}). Each layer may only import from layers at the same level or below. Within a layer, components follow an internal gradient ($a \rightarrow b \rightarrow c$) where higher tiers depend on lower ones. This prevents horizontal bloat and circular dependencies.
 
-PyBot is built on three design principles:
+\begin{figure}[h]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  node distance=0.8cm,
+  layer/.style={draw, thick, fill=blue!10, rounded corners, minimum width=4cm, minimum height=1.2cm, align=center, font=\small\bfseries},
+  root/.style={draw, ultra thick, fill=gray!15, rounded corners, minimum width=10cm, minimum height=1.5cm, align=center, font=\large\bfseries},
+  >=Stealth,
+]
+\node[root] (l0) {Layer 0: Root (Runtime Foundation)\\ \small L0.a: Atomic Base $\vert$ L0.b: State Spine};
 
-\begin{enumerate}[label=\textbf{P\arabic*.}]
-  \item \textbf{Everything is a Capability.} Tools, skills, agents, workflows, and apps are all capabilities that can be registered, discovered, composed, and shared through a unified Capability Bus.
-  \item \textbf{Governance is not optional.} Every capability invocation passes through a middleware stack that can enforce approval, risk assessment, rate limiting, and audit.
-  \item \textbf{Sessions are an interface, not the architecture.} The underlying runtime persists state, tasks, and capabilities across sessions, enabling long-term autonomous operation.
-\end{enumerate}
+\node[layer, above=of l0] (l1) {Layer 1: Core Systems\\ \small L1.a: I/O \& Routing $\vert$ L1.b: Execution $\vert$ L1.c: Governance};
+\node[layer, above=of l1] (l2) {Layer 2: Asset Domains\\ \small L2.a: Atomic Tools $\vert$ L2.b: Composites};
+\node[layer, above=of l2] (l3) {Layer 3: Product Modes (Crown)\\ \small L3.a: Entities $\vert$ L3.b: Containers $\vert$ L3.c: Orchestrators};
+
+\draw[->, ultra thick] (l0.north) -- (l1.south);
+\draw[->, ultra thick] (l1.north) -- (l2.south);
+\draw[->, ultra thick] (l2.north) -- (l3.south);
+
+\end{tikzpicture}%
+}
+\caption{The PyBot 10-Tier Dependency Tree. Capabilities grow from a foundational runtime (trunk) into core systems, asset domains, and finally the user-facing product modes (crown).}
+\label{fig:arch}
+\end{figure}
+
+The layers and internal tiers represent the structural progression of the system:
+\begin{itemize}
+  \item \textbf{Layer 0: Root (The Trunk).} 
+  \begin{itemize}
+    \item \textbf{L0.a (Atomic Base):} Configuration, paths, errors, event bus, bootstrap.
+    \item \textbf{L0.b (State Spine):} Session Spine, compaction, kernel, Workspace View, and Context Engine.
+  \end{itemize}
+  \item \textbf{Layer 1: First Branches (Core Systems).} 
+  \begin{itemize}
+    \item \textbf{L1.a (I/O \& Routing):} CapabilityBus, Registry, Markdown Garden, semantic memory, knowledge retrieval.
+    \item \textbf{L1.b (Execution):} Code execution sandbox, middleware chain, reasoning frame, integration channels (MCP, PyHub).
+    \item \textbf{L1.c (Governance):} Approvals, guardrails, policies, evaluation framework.
+  \end{itemize}
+  \item \textbf{Layer 2: Second Branches (Asset Domains).} 
+  \begin{itemize}
+    \item \textbf{L2.a (Atomic Tools):} Tool creation, runtime, templates, risk assessment.
+    \item \textbf{L2.b (Composites):} Skill registry, marketplace, PyFlow DAG engine, scheduling.
+  \end{itemize}
+  \item \textbf{Layer 3: The Crown (Product Modes).} 
+  \begin{itemize}
+    \item \textbf{L3.a (Entities):} Agent storage, subagent registry, delegation logic (intelligent entities).
+    \item \textbf{L3.b (Containers):} App Matrix, App Manager, web endpoints (containers that host entities).
+    \item \textbf{L3.c (Orchestrators):} Assistant, App Matrix, Admin mode packs.
+  \end{itemize}
+\end{itemize}
 
 \subsection{Tri-Modal Root Identity}
 
@@ -191,172 +234,13 @@ PyBot supports three \emph{root modes} that determine the system's primary opera
 Mode selection is controlled by a single \texttt{root\_mode} parameter.
 The three modes share the same capability stack, middleware, and governance infrastructure; they differ only in their system prompt identity and the degree of autonomous scheduling they employ.
 
-\subsection{Module Organisation}
+\subsection{Advanced Self-Healing (Runtime Auto-Recovery)}
 
-The PyBot core engine has been refactored into a strict four-layer architecture, ensuring clean separation of concerns and robust dependency management:
+Traditional autonomous agents attempt to fix code errors strictly during generation (build-time). PyBot extends self-healing into the \textbf{runtime phase}. 
 
-\begin{table}[h]
-\centering
-\small
-\begin{tabularx}{\textwidth}{lX}
-\toprule
-\textbf{Layer} & \textbf{Responsibility} \\
-\midrule
-\texttt{core/systems/} & Foundational infrastructure: runtime (daemon, event bus), governance (security, policies), knowledge (RAG, memory), integration (MCP, plugins). \\
-\texttt{core/modes/} & Interaction paradigms: conversational chat, durable workflow execution, and autonomous agentic loops. \\
-\texttt{core/assets/} & Domain-specific capabilities: dynamic tools, sub-agents, and workflow definitions. \\
-\texttt{web/} & API surfaces and gateways: FastAPI routers, GatewayGuard (rate limiting, auth), and state management. \\
-\bottomrule
-\end{tabularx}
-\caption{The four-layer architecture of the PyBot core engine.}
-\label{tab:domains}
-\end{table}
+If a hosted Application (L3.b Container) encounters an internal error, timeout, or missing dependency while serving a live API request, the App Manager immediately catches the \texttt{stderr} and exception stack trace. It then broadcasts a critical \texttt{APP\_RUNTIME\_ERROR} event through the Layer 0 Event Bus.
 
-\subsection{Overall Architecture}
-
-Figure~\ref{fig:arch} illustrates the high-level architecture.
-The tri-modal root agent sits atop a middleware-instrumented LangGraph execution substrate.
-Below it, the five capability layers are connected by the Capability Bus.
-Cross-cutting systems (governance, knowledge, runtime foundation) span all layers.
-
-\begin{figure}[h]
-\centering
-\resizebox{\textwidth}{!}{%
-\begin{tikzpicture}[
-  node distance=0.55cm,
-  layer/.style={draw, rounded corners, minimum width=14cm, minimum height=0.85cm, align=center, font=\small},
-  support/.style={draw, dashed, rounded corners, minimum width=6cm, minimum height=0.7cm, align=center, font=\scriptsize, fill=gray!10},
-  >=Stealth,
-]
-\node[layer, fill=blue!15] (root) {Tri-Modal Root Agent (Assistant / App Matrix / Admin)};
-\node[layer, fill=green!10, below=of root] (mw) {Middleware Stack (Memory $\cdot$ Bus $\cdot$ Approval $\cdot$ Summarisation $\cdot$ Risk)};
-\node[layer, fill=orange!10, below=of mw] (cap5) {Apps (Web UI $\cdot$ API $\cdot$ Hosted Workspace $\cdot$ Orchestration Registry)};
-\node[layer, fill=orange!10, below=0.25cm of cap5] (cap4) {Workflows (PyFlow DAG $\cdot$ Cron Scheduling $\cdot$ Debate / Consensus / Supervisor)};
-\node[layer, fill=orange!10, below=0.25cm of cap4] (cap3) {Agents (Sub-agents $\cdot$ Delegation $\cdot$ Society of Mind $\cdot$ Sandbox)};
-\node[layer, fill=orange!10, below=0.25cm of cap3] (cap2) {Skills (Prompted Bundles $\cdot$ Tool Bindings $\cdot$ Marketplace)};
-\node[layer, fill=orange!10, below=0.25cm of cap2] (cap1) {Tools (Dynamic Python $\cdot$ MCP $\cdot$ Templates $\cdot$ Memory Tools)};
-\node[layer, fill=yellow!15, below=of cap1] (bus) {Capability Bus (Registration $\cdot$ Discovery $\cdot$ Shared Context $\cdot$ Events)};
-
-\node[support, below=0.7cm of bus, xshift=-4cm] (gov) {Governance: Approvals, Risk, Sandbox, Audit};
-\node[support, below=0.7cm of bus, xshift=4cm] (know) {Knowledge: RAG, Vectors, Semantic Memory};
-
-\draw[->, thick] (root) -- (mw);
-\draw[->, thick] (mw) -- (cap5);
-\draw[<->, thick, gray] (bus.north west) ++(0.3,0) -- ++(0,0.3) -- (cap1.south west);
-\draw[<->, thick, gray] (bus.north east) ++(-0.3,0) -- ++(0,0.3) -- (cap1.south east);
-\draw[->, dashed, gray] (gov.north) -- (bus.south west);
-\draw[->, dashed, gray] (know.north) -- (bus.south east);
-\end{tikzpicture}%
-}
-\caption{PyBot high-level architecture.  The tri-modal root agent dispatches through the middleware stack to five capability layers connected by the Capability Bus.  Governance and knowledge systems are cross-cutting.}
-\label{fig:arch}
-\end{figure}
-
-
-% ================================================================
-\section{Capability Layers}
-\label{sec:capabilities}
-
-\subsection{Layer 1: Tools}
-
-PyBot treats tools as first-class runtime entities that can be created, modified, and deleted during execution.
-Three tool sources are supported:
-
-\begin{itemize}
-  \item \textbf{Dynamic Tools.} The root agent can create Python tools at runtime by specifying a name, description, parameter schema, and implementation code. The code is executed in an isolated \texttt{uv} virtual environment or Docker container. Failed tools trigger automatic diagnostic--repair cycles.
-  \item \textbf{Template Tools.} Pre-built parameterised templates (API wrappers, data transformers, file processors) that can be instantiated with configuration parameters.
-  \item \textbf{MCP Tools.} External tools discovered via the Model Context Protocol (JSON-RPC 2.0 over stdio), enabling integration with community tool servers.
-\end{itemize}
-
-All tools are persisted to the workspace directory and automatically registered with the Capability Bus, making them available to all agents, workflows, and applications.
-
-In addition to user-created tools, PyBot injects built-in \textbf{Memory Tools} (search, save, forget) into every root agent invocation, enabling the agent to explicitly query, store, and delete entries in its semantic long-term memory.
-
-\subsection{Layer 2: Skills}
-
-Skills package reusable domain knowledge as Markdown prompt bundles with optional tool bindings:
-
-\begin{lstlisting}
-skills/
-  data_analyst/
-    SKILL.md          # Domain prompt + instructions
-    scripts/
-      clean_csv.py    # Bound tools
-    references/
-      schema.json     # Reference material
-\end{lstlisting}
-
-A Skill Marketplace supports packaging (\texttt{.skill} archives), installation, search, and version management.
-Skills are activated via the Skill Registry and injected into the system prompt through progressive disclosure---only the most relevant skills are loaded for a given context.
-
-\subsection{Layer 3: Agents}
-
-Sub-agents are specialised personas with their own tool inventory, memory, and middleware profile.
-Each agent is defined by:
-
-\begin{itemize}
-  \item A \textbf{system prompt} describing its role and expertise.
-  \item A \textbf{Capability Profile} specifying which tools it can access (own tools, global tools, or both).
-  \item A \textbf{Middleware Profile} controlling which middleware layers apply to its invocations.
-  \item A formal \textbf{Isolation Model} and \textbf{Sandbox Policy}, which dictates worktree overrides (CWD, remote targets) and restricts filesystem or code execution capabilities during delegation.
-\end{itemize}
-
-Crucially, PyBot implements a sophisticated \textbf{Multi-Agent Control Plane} encompassing two primary features:
-\begin{enumerate}
-  \item \textbf{Subagent Streaming and Isolation:} When a parent agent delegates a task, the subagent runs in an isolated, contract-bound context. It can stream its internal thought processes asynchronously, preventing UI blocking while ensuring that delegated operations do not violate parent constraints.
-  \item \textbf{Team Memory and Shared Continuity:} Subagents do not merely return a single string upon completion. Using tools like \texttt{add\_team\_note}, agents can push critical contracts, discoveries, and blockers into a shared \emph{Team Memory} space. This allows sibling agents and the parent coordinator to achieve real-time consensus, enabling long-lived Swarm behaviors that outlast individual task delegations.
-\end{enumerate}
-
-Multi-agent coordination is supported through three paradigms implemented as PyFlow workflow nodes:
-\begin{itemize}
-  \item \textbf{Debate:} Agents argue different positions; a judge synthesises the final answer.
-  \item \textbf{Consensus (MoE):} Multiple experts produce independent analyses that are merged.
-  \item \textbf{Supervisor:} A routing agent dynamically selects which specialist to invoke based on real-time team memory.
-\end{itemize}
-
-\subsection{Layer 4: Workflows}
-
-The \textbf{PyFlow v3} engine provides a YAML-defined DAG execution model with 18+ node types:
-
-\begin{center}
-\small
-\texttt{start} $\cdot$ \texttt{end} $\cdot$ \texttt{exec} $\cdot$ \texttt{tool} $\cdot$ \texttt{llm} $\cdot$ \texttt{agent} $\cdot$ \texttt{code} $\cdot$ \texttt{approve} $\cdot$ \texttt{condition} $\cdot$ \texttt{router} $\cdot$ \texttt{parallel} $\cdot$ \texttt{foreach} $\cdot$ \texttt{subflow} $\cdot$ \texttt{transform} $\cdot$ \texttt{merge} $\cdot$ \texttt{delay} $\cdot$ \texttt{debate} $\cdot$ \texttt{consensus} $\cdot$ \texttt{supervisor}
-\end{center}
-
-Workflows support:
-\begin{itemize}
-  \item \textbf{Durable execution:} Step-level checkpointing and crash recovery.
-  \item \textbf{Cron scheduling:} Standard five-field cron expressions with stagger jitter.
-  \item \textbf{Human-in-the-loop:} Approval nodes that pause execution until a human decision is recorded.
-  \item \textbf{Dynamic generation:} The LLM can generate new workflow YAML at runtime based on natural language descriptions.
-\end{itemize}
-
-\subsection{Layer 5: Apps}
-
-PyBot can generate, host, and serve complete web applications as workspace-resident artefacts:
-
-\begin{itemize}
-  \item \textbf{Managed App Runtime:} Applications are generated within an ephemeral, strict subagent sandbox using tools like \texttt{build\_app\_iteratively}. This closed-loop generator writes code (\texttt{UpdateAppFileTool}) and immediately lints/tests it (\texttt{VerifyAppTool}), automatically repairing failures without exposing the host to raw code execution risks.
-  \item \textbf{Multi-Mode Switching:} Apps can dynamically switch between operating as static pages, chat interfaces, workflow triggers, RAG-enhanced assistants, or general-purpose assistants (AaaS), rebuilding their frontend templates seamlessly via the API.
-  \item \textbf{API Backend:} Each app can define a Python \texttt{api.py} that is executed in a subprocess sandbox with SQLite access.
-  \item \textbf{Verification:} A built-in HTML/CSS/JS linter detects common issues before deployment.
-\end{itemize}
-
-Apps are served at \texttt{/apps/<name>/} by the FastAPI backend and participate in the Capability Bus as APP-layer entities.
-
-\subsection{Capability Bus}
-
-The Capability Bus is the architectural spine connecting all five layers.
-It provides:
-
-\begin{itemize}
-  \item \textbf{Registration:} Every tool, skill, agent, workflow, and app registers itself with layer type, tags, dependencies, and capability metadata.
-  \item \textbf{Discovery:} Queries by layer, tag, or provided capability enable cross-layer composition (e.g., ``find all tools tagged \texttt{data\_cleaning}'').
-  \item \textbf{Shared Context:} A key--value store for runtime data sharing across capabilities.
-  \item \textbf{Invocation Tracking:} Usage counts, success rates, and latency metrics per capability.
-  \item \textbf{Event Propagation:} Registration, invocation, and error events are broadcast to subscribers.
-\end{itemize}
-
+The Persistent Admin Runtime listens for this telemetry. Upon interception, the Admin swarm autonomously provisions a highest-priority background task to repair the application. It spawns a dedicated, heavily-sandboxed builder sub-agent equipped with the crashed application's source code and the captured stack trace. The sub-agent iteratively writes fixes, verifies them, and reinstantiates the App, effectively achieving a \textbf{closed-loop, reverse-routed autonomous healing mechanism} triggered by live operational traffic.
 
 % ================================================================
 \section{Admin Runtime}
@@ -559,6 +443,25 @@ Tool execution supports three isolation levels:
   \item \textbf{Docker:} Full container isolation with resource limits and automatic cleanup.
 \end{itemize}
 
+\subsection{Advanced Tool Policy Pipeline \& Constraint Governance}
+
+To prevent autonomous agents from engaging in catastrophic hallucination loops or exhausting expensive external API quotas, PyBot shifts from ``soft prompt constraints'' to ``hard middleware governance'' via a pluggable \textbf{Tool Policy Pipeline}. Every tool invocation, regardless of its risk tier, is intercepted and evaluated across sequential deterministic stages:
+\begin{itemize}
+  \item \textbf{Path Traversal \& Isolation Guards:} Detects and blocks directory escapes (e.g., \texttt{../../}) beyond the dynamically assigned subagent workspace.
+  \item \textbf{Regex Argument Validation:} Enforces mathematical pattern matching directly on tool arguments (e.g., restricting a \texttt{shell} tool to only allow \texttt{ls} or \texttt{cat} commands) before they reach the execution engine.
+  \item \textbf{Budget \& Quota Allocation:} Implements strict invocation or token-based quotas per-tool, forcibly terminating execution when semantic budgets are depleted.
+\end{itemize}
+Crucially, when a policy stage rejects a tool call, the pipeline does not merely crash the session; it injects a highly specific, tagged error message back into the context window. Working in tandem with the \textbf{Reasoning Frame Middleware} (which enforces a mandatory Self-Critique phase), this creates a closed-loop negative feedback mechanism. The agent recognizes the boundary violation, critiques its own plan, and autonomously pivots to an alternative, policy-compliant strategy. This ``Policy Separation'' ensures the LLM's generative flexibility is securely bounded by deterministic system constraints.
+
+
+\subsection{Hierarchical Multi-Agent Governance Model}
+
+As autonomous agents increasingly delegate tasks to specialized sub-agents, managing permissions across the swarm becomes critical. PyBot introduces a Hierarchical Multi-Agent Governance Model based on two core principles:
+\begin{itemize}
+  \item \textbf{Strict Monotonic Constraints:} A parent agent can never grant a child agent permissions exceeding its own. During delegation, the effective sandbox boundary is rigorously computed as the intersection of the parent's control policy and the child's requested capability profile.
+  \item \textbf{Fine-Grained Policy Overrides:} Delegation is not limited to binary capability toggles. A parent agent can dynamically pass a \texttt{policy\_override} payload (e.g., injecting tool-specific budget quotas or regex argument filters) to strictly bound the child agent's action space for a specific task.
+\end{itemize}
+This model ensures that capability scaling via multi-agent swarms does not compromise system security, allowing a root agent to operate as a secure coordinator that enforces dynamic, granular constraints on its delegates.
 
 % ================================================================
 \section{Knowledge and Memory Substrate}

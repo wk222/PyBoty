@@ -5,14 +5,14 @@ from __future__ import annotations
 import traceback
 from typing import Any
 
-from core.assets.agents import (
+from core.modes.agents import (
     AgentCapabilityProfile,
     AgentMiddlewareProfile,
     build_agent_tool_inventory,
     build_subagent_governance_snapshot,
     resume_persisted_agent_approval,
 )
-from core.assets.tools import ToolStorage
+from core.assets.tools.tool_storage import ToolStorage
 from core.modes import (
     attach_mode_surface_methods,
     build_mode_subclasses,
@@ -118,51 +118,69 @@ class PyBot:
             root_mode=self.root_mode,
             session_runtime=session_runtime,
         )
-        self._bind_runtime()
         initialize_mode_services(self)
         self._initialize_agent()
         print_startup_summary(self)
 
     def _bind_runtime(self) -> None:
-        """Expose runtime services on the public instance for backward compatibility."""
-        self.storage = self.runtime.storage
-        self.agent_storage = self.runtime.agent_storage
-        self.backend = self.runtime.backend
+        """Legacy shim for backward compatibility. 
+        Most services should be accessed via self.runtime.
+        """
+        # We only keep common shortcuts used in external scripts/tests
         self.workspace = self.runtime.workspace
         self.memory = self.runtime.memory
-        self.skill_registry = self.runtime.skill_registry
-        self.scheduler = self.runtime.scheduler
-        self.app_manager = self.runtime.app_manager
-        self.skill_marketplace = self.runtime.skill_marketplace
-        self.mcp_hub = self.runtime.mcp_hub
-        self.channel_manager = self.runtime.channel_manager
-        self.pyflow_engine = self.runtime.pyflow_engine
-        self.tool_chain = self.runtime.tool_chain
-        self.eval_framework = self.runtime.eval_framework
-        self.context_manager = self.runtime.context_manager
-        self.session_runtime = self.runtime.session_runtime
         self.capability_bus = self.runtime.capability_bus
-        self.capability_registry = self.runtime.capability_registry
-        self.mw_stack = self.runtime.middleware_stack  # legacy; new pipeline in LangChain middleware
         self.llm = self.runtime.llm
-        self.checkpointer = self.runtime.checkpointer
-        self.middleware = self.runtime.middleware
-        self.control_policy = self.runtime.control_policy
-        self.approval_queue = self.runtime.approval_queue
-        self.subagent_registry = self.runtime.subagent_registry
+
+    def __getattr__(self, name: str) -> Any:
+        """Delegate to runtime or resolve mode surface methods."""
+        # Use __dict__ to avoid recursion if runtime isn't set yet
+        runtime = self.__dict__.get("runtime")
+        if runtime is not None and hasattr(runtime, name):
+            return getattr(runtime, name)
+            
+        # 2. Try to resolve via dynamic mode surfaces
+        surface = resolve_mode_surface_method(self, name)
+        if surface is not None:
+            return surface
+            
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+    def _dispatch_mode_method(self, name: str, *args: Any, **kwargs: Any) -> Any:
+        """Legacy test helper to manually trigger mode-specific surface logic."""
+        surface = resolve_mode_surface_method(self, name)
+        if surface is None:
+            raise AttributeError(f"Mode method '{name}' not found")
+        return surface(*args, **kwargs)
+
+    def _dispatch_mode_method(self, name: str, *args: Any, **kwargs: Any) -> Any:
+        """Legacy test helper to manually trigger mode-specific surface logic."""
+        surface = resolve_mode_surface_method(self, name)
+        if surface is None:
+            raise AttributeError(f"Mode method '{name}' not found")
+        return surface(*args, **kwargs)
 
     def _lc_middleware_names(self) -> list[str]:
         """Return display names for the active LangChain middleware stack."""
+        # Use a cached version or resolve once
+        if hasattr(self, "_cached_middleware_names"):
+            return self._cached_middleware_names
+            
         try:
+            # We only build names once to avoid heavy factory overhead in summary printing
             from core.systems.middleware.agent_middleware_factory import build_root_langchain_middleware
 
             mws = build_root_langchain_middleware(runtime=self.runtime)
-            return [getattr(m, "name", None) or type(m).__name__ for m in mws]
+            names = [getattr(m, "name", None) or type(m).__name__ for m in mws]
+            self._cached_middleware_names = names
+            return names
         except Exception:
-            return self.mw_stack.layers
+            return getattr(self.runtime.middleware_stack, "layers", [])
 
     def _create_llm(self, model: str | None = None, temperature: float | None = None):
         """Create LLM instances for delegated sub-agents."""
+        from core.systems.runtime.pybot_bootstrap import create_llm_client
+        
         return create_llm_client(
             model=model or self.model_name,
             temperature=self.temperature if temperature is None else temperature,
@@ -172,7 +190,10 @@ class PyBot:
         )
 
     def _initialize_agent(self) -> None:
-        """Assemble and create the root agent."""
+        """Assemble and create the root agent using the factory."""
+        from core.modes.factories import assemble_primary_tools
+        from core.systems.runtime.pybot_bootstrap import create_root_agent
+
         assembly = assemble_primary_tools(
             runtime=self.runtime,
             paths=self.paths,
@@ -186,11 +207,7 @@ class PyBot:
         self.agent = create_root_agent(runtime=self.runtime, assembly=assembly)
 
     def _do_invoke(self, message: str, *, tools_before: int) -> dict[str, Any]:
-        """Single invoke call.
-
-        All middleware (context, summarization, memory, bus, eviction,
-        tool-call patching) now runs through the unified LangChain pipeline.
-        """
+        """Single invoke call."""
         config = self._invoke_config()
         invoke_state = {"messages": [{"role": "user", "content": message}]}
         response = self.agent.invoke(invoke_state, config=config)
@@ -214,13 +231,7 @@ class PyBot:
 
     @staticmethod
     def _extract_final_reply(messages: list[Any]) -> str:
-        """Extract the best text reply from a finished agent message list.
-
-        Strategy: walk backwards to find the last AIMessage with non-empty
-        text content.  Falls back to the last ToolMessage content (which may
-        be the result of a return_direct tool) if no AIMessage is found.
-        Applies deduplication to catch LLM repetition loops.
-        """
+        """Extract the best text reply from a finished agent message list."""
         from langchain_core.messages import AIMessage, ToolMessage
 
         last_tool_content: str | None = None
@@ -476,7 +487,7 @@ class PyBot:
             )
             if blocked_reason is not None:
                 self.capability_bus.record_invocation("chat", False)
-                return f"⛔ {blocked_reason}"
+                return f"⚠️ {blocked_reason}"
 
             try:
                 result = self._do_invoke(message, tools_before=tools_before)
@@ -484,7 +495,7 @@ class PyBot:
                 err_str = str(invoke_err)
                 tools_after = len(self.storage.tools)
                 if "unknown tool" in err_str.lower() and tools_after > tools_before:
-                    print("[INFO] 新工具创建后触发了 unknown tool 错误，重建 Agent 并重试...")
+                    print("[INFO] 新工具创建后触发了 unknown tool 错误，重启 Agent 并重试...")
                     self._initialize_agent()
                     result = self._do_invoke(message, tools_before=len(self.storage.tools))
                 else:
@@ -497,7 +508,6 @@ class PyBot:
             print(f"[ERROR] 对话出错:\n{error_trace}")
             self.capability_bus.record_invocation("chat", False)
 
-            # Emit error to global event bus for Admin telemetry
             from core.systems.runtime.event_bus import Event, EventType, event_bus
 
             event_bus.emit(
@@ -619,51 +629,6 @@ class PyBot:
     def export_agents(self, filepath: str) -> None:
         self.agent_storage.export_to_json(filepath)
 
-    # ── Mode-pack dispatch ──────────────────────────────────────────
-
-    def _dispatch_mode_method(self, method_name: str, *args: Any, **kwargs: Any) -> Any:
-        """Dispatch a mode-specific call to the active ModePack.
-
-        The pack's ``get_api_methods()`` returns a dict of callables.
-        Each callable receives ``(host, *args, **kwargs)``.
-        """
-        pack = getattr(self, "_mode_pack", None)
-        if pack is None:
-            from core.modes import ensure_builtin_packs, get_mode_pack
-
-            ensure_builtin_packs()
-            try:
-                pack = get_mode_pack(
-                    getattr(
-                        self,
-                        "mode_profile",
-                        resolve_mode_profile(getattr(self, "root_mode", "assistant")),
-                    ).name
-                )
-            except Exception:
-                pack = None
-            else:
-                self._mode_pack = pack
-        if pack is None:
-            raise RuntimeError(f"No mode pack attached; cannot dispatch {method_name!r}")
-        api = pack.get_api_methods()
-        if method_name not in api:
-            capability_name = get_mode_api_capability(method_name)
-            if capability_name is not None:
-                self.require_mode_capability(capability_name, surface=method_name)
-            raise RuntimeError(
-                f"当前模式 {pack.name!r} 不支持方法 {method_name!r}。可用方法: {', '.join(sorted(api)) or '(无)'}."
-            )
-        return api[method_name](self, *args, **kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        surface = resolve_mode_surface_method(self, name)
-        if surface is not None:
-            return surface
-        raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
-
-    # ── System model & capability introspection ───────────────────
-
     def get_system_model(self) -> dict[str, Any]:
         """Return the canonical system model used to explain PyBot's boundaries."""
         return build_system_model()
@@ -696,7 +661,7 @@ class PyBot:
         capability_label = get_mode_capability_label(capability_name)
         profile = getattr(self, "mode_profile", resolve_mode_profile(getattr(self, "root_mode", "assistant")))
         raise RuntimeError(
-            f"{profile.label} 未启用能力 `{capability_label}`，无法调用 `{surface}`。"
+            f"{profile.label} 未启用能力 `{capability_label}`，无法调用 `{surface}`。\n"
             "如需开放该能力，请切换根模式或显式启用对应 runtime/profile。"
         )
 
@@ -712,11 +677,7 @@ class PyBot:
 
 
 def _deduplicate_response(text: str, min_block_len: int = 60) -> str:
-    """Remove repeated text blocks from an LLM response.
-
-    LLMs sometimes enter a token-level repetition loop, producing the same
-    paragraph many times.  This function detects and truncates such output.
-    """
+    """Remove repeated text blocks from an LLM response."""
     if len(text) < min_block_len * 2:
         return text
 
@@ -739,7 +700,6 @@ def _deduplicate_response(text: str, min_block_len: int = 60) -> str:
     i = 0
     while i < len(lines):
         line = lines[i]
-
         matched = False
         for block_size in range(3, min(8, len(lines) - i + 1)):
             candidate = "\n".join(lines[i : i + block_size])
@@ -754,11 +714,9 @@ def _deduplicate_response(text: str, min_block_len: int = 60) -> str:
                 i += block_size
                 matched = True
                 break
-
         if not matched:
             result_lines.append(line)
             i += 1
-
         if len(result_lines) >= 3:
             block = "\n".join(result_lines[-3:])
             if len(block) >= min_block_len and block not in seen_blocks:

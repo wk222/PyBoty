@@ -8,7 +8,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from core.assets.agents import (
+from core.modes.agents import (
     AgentCapabilityProfile,
     AgentMiddlewareProfile,
     AgentStorage,
@@ -902,6 +902,7 @@ async def update_governance_policy(
         "success": True,
         "policy": validated.to_dict(),
         "message": "策略已保存。新的会话将使用更新后的策略。",
+
     }
 
 
@@ -1318,3 +1319,4 @@ async def api_run_schedule_now(
         metadata={"task_name": task_name, "trigger": "manual"},
     )
     return {"success": True, "task_id": handle.task_id, "status": "pending"}
+

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.assets.apps import app_branch, app_modes, app_orchestration, app_runtime
+from core.modes.apps import app_branch, app_modes, app_orchestration, app_runtime
 from core.assets.workflows import workflow_branch, workflow_collaboration, workflow_orchestration, workflow_runtime
 
 

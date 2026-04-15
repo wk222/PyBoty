@@ -4,18 +4,18 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
-from core.assets.agents.agent_storage import AgentStorage
-from core.assets.agents.subagent_registry import SubagentRegistry
-from core.assets.apps.app_manager import AppManager
-from core.assets.skills.skill_marketplace import SkillMarketplace
-from core.assets.skills.skill_registry import SkillRegistry
-from core.assets.tools import ToolChainExecutor
-from core.assets.workflows import workflow_orchestration, workflow_runtime
+if TYPE_CHECKING:
+    from core.systems.runtime.backend_protocol import (
+        AgentStorageProtocol,
+        AppManagerProtocol,
+        SkillRegistryProtocol,
+        SubagentRegistryProtocol,
+    )
+
 from core.systems.bus import CapabilityBus, CapabilityRegistry
-from core.systems.context.context_manager import ContextConfig, ContextWindowManager
-from core.systems.eval.eval_framework import EvalFramework
+from core.systems.context import ContextConfig, ContextWindowManager
 from core.systems.governance import AgentControlPolicy, ApprovalQueue
 from core.systems.middleware.middleware_stack import MiddlewareStack
 from core.systems.runtime.config_impl import get_agent_control_config
@@ -28,13 +28,13 @@ class CapabilityRuntimeBundle:
 
     approval_queue: ApprovalQueue
     pyflow_engine: Any
-    tool_chain: ToolChainExecutor
-    eval_framework: EvalFramework
+    tool_chain: Any
+    eval_framework: Any
     context_manager: ContextWindowManager
     capability_bus: CapabilityBus
     capability_registry: CapabilityRegistry
     control_policy: AgentControlPolicy
-    subagent_registry: SubagentRegistry
+    subagent_registry: SubagentRegistryProtocol
     middleware_stack: MiddlewareStack
 
 
@@ -46,10 +46,10 @@ def build_capability_runtime_bundle(
     tool_callback: Callable[[str, dict[str, Any]], Any],
     agent_callback: Callable[[str], str],
     delegate_callback: Callable[[str, str, str], Any],
-    skill_registry: SkillRegistry,
-    skill_marketplace: SkillMarketplace,
-    app_manager: AppManager,
-    agent_storage: AgentStorage,
+    skill_registry: SkillRegistryProtocol,
+    skill_marketplace: Any,
+    app_manager: AppManagerProtocol,
+    agent_storage: AgentStorageProtocol,
     control_config: dict[str, Any] | None = None,
     approval_queue: ApprovalQueue | None = None,
     session_runtime: Any | None = None,
@@ -57,6 +57,13 @@ def build_capability_runtime_bundle(
     """Assemble workflow/capability services with one shared wiring path."""
 
     resolved_approval_queue = approval_queue or ApprovalQueue(storage_path=paths.approvals_file)
+    
+    # Deferred L2 imports for internal implementation
+    from core.assets.workflows import workflow_runtime
+    from core.assets.tools import ToolChainExecutor
+    from core.systems.eval.eval_framework import EvalFramework
+    from core.modes.agents.subagent_registry import SubagentRegistry
+
     pyflow_engine = workflow_runtime.engine_class(
         str(paths.workspace_dir),
         approval_queue=resolved_approval_queue,
@@ -111,3 +118,4 @@ def build_capability_runtime_bundle(
         subagent_registry=subagent_registry,
         middleware_stack=MiddlewareStack(),
     )
+

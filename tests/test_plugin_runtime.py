@@ -8,9 +8,9 @@ from langchain_core.messages import ToolMessage
 
 from agent import PyBot
 from core.systems.governance.approval_queue import ApprovalQueue
-from core.assets.tools.tool_call_runtime import ToolCallRuntime
-from core.assets.tools.tool_delegation_runtime import DelegatedToolApprovalRuntime
-from core.assets.tools.tool_dynamic_inventory import DynamicToolInventory
+from core.assets.tools import ToolCallRuntime
+from core.assets.tools import DelegatedToolApprovalRuntime
+from core.assets.tools import DynamicToolInventory
 from core.systems.integration import PluginRegistry, discover_plugins, get_plugin_registry, reset_plugin_registry
 from core.systems.governance import AgentControlPolicy
 from core.systems.governance.tool_control_runtime import ToolControlRuntime

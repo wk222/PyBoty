@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.assets.apps.app_matrix_planner import AppMatrixPlanner, fallback_app_matrix_plan
+from core.modes.apps.app_matrix_planner import AppMatrixPlanner, fallback_app_matrix_plan
 
 
 def plan_app_matrix_topology(

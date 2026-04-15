@@ -10,7 +10,7 @@ from core.systems.runtime.session.session_memory_policy import (
     typed_memory_entry_payload,
     validate_session_memory,
 )
-from core.systems.runtime.session import (
+from core.systems.runtime.session.session_record import (
     SessionRecord,
     _append_unique,
     _preview_text,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from core.assets.agents.delegation_payload import delegation_response_text, normalize_delegation_payload
+from core.modes.agents.delegation_payload import delegation_response_text, normalize_delegation_payload
 
 
 def test_normalize_delegation_payload_preserves_structured_state():
@@ -42,3 +42,4 @@ def test_normalize_delegation_payload_parses_json_strings():
     assert payload["status"] == "waiting_approval"
     assert payload["approval_id"] == "appr_123"
     assert delegation_response_text(payload) == "paused"
+

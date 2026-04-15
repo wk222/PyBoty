@@ -6,7 +6,7 @@ import tempfile
 
 import pytest
 
-from core.systems.memory.semantic_memory import MEMORY_COLLECTION, SemanticMemoryManager
+from core.systems.memory import MEMORY_COLLECTION, SemanticMemoryManager
 from core.systems.knowledge.vector_store import InMemoryVectorStore
 
 

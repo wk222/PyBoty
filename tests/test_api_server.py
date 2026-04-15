@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 import api_server
-from core.assets.agents.agent_storage import AgentDefinition
+from core.modes.agents.agent_storage import AgentDefinition
 
 
 def create_api_client(temp_paths, monkeypatch, *, stub_invoke: bool = True):

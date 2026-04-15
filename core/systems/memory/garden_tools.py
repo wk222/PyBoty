@@ -77,6 +77,27 @@ class SearchGardenTool(BaseTool):
             output.append(f"- {r['path']}: {r['snippet']}")
         return "\n".join(output)
 
+class ReorganizeGardenInput(BaseModel):
+    action: str = Field(description="操作类型: 'move' 或 'delete'")
+    src_path: str = Field(description="源笔记路径", default="")
+    dst_path: str = Field(description="目标笔记路径（仅 move 操作需要）", default="")
+
+class ReorganizeGardenTool(BaseTool):
+    name: str = "reorganize_garden"
+    description: str = "重构记忆园林的结构。支持移动（重命名）笔记或删除陈旧笔记。"
+    args_schema: type[BaseModel] = ReorganizeGardenInput
+    manager: MarkdownGardenManager = Field(exclude=True)
+
+    def _run(self, action: str, src_path: str = "", dst_path: str = "") -> str:
+        if action == "delete":
+            success = self.manager.delete_note(src_path)
+            return f"{'✅' if success else '❌'} 笔记 '{src_path}' {'已删除' if success else '未找到'}。"
+        elif action == "move":
+            if not dst_path: return "错误：移动操作需要提供 dst_path。"
+            success = self.manager.move_note(src_path, dst_path)
+            return f"{'✅' if success else '❌'} 笔记 '{src_path}' {'已移动到 ' + dst_path if success else '移动失败'}。"
+        return f"错误：未知操作 '{action}'。"
+
 def get_garden_tools(
     workspace_dir: str = "workspace",
     summarize_fn: Any | None = None,
@@ -92,4 +113,5 @@ def get_garden_tools(
         ReadGardenNoteTool(manager=manager),
         UpdateGardenNoteTool(manager=manager),
         SearchGardenTool(manager=manager),
+        ReorganizeGardenTool(manager=manager),
     ]

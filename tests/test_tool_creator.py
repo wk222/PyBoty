@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from core.assets.agents import AgentDefinition, AgentStorage
+from core.modes.agents import AgentDefinition, AgentStorage
 from core.assets.tools import (
     TemplateToolCreator,
     ToolCreationError,

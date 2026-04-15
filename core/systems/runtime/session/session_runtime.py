@@ -13,17 +13,17 @@ from core.systems.runtime.projected_runtime_view import extract_projected_runtim
 from core.systems.runtime.projected_runtime_view import merge_projected_runtime_views
 from core.systems.runtime.session.session_runtime_view import compile_session_runtime_view
 from core.systems.runtime.session.session_kernel import SessionKernel
-from core.systems.runtime.session import (
+from core.systems.runtime.session.session_record import (
     SessionRecord,
-    SessionHygieneMixin,
-    SessionSyncMixin,
-    SessionRecorderMixin,
-    SessionApplierMixin,
     _as_text,
     _normalize_runtime_view_payload,
     _preview_text,
     _stable_text_hash,
 )
+from core.systems.runtime.session.session_hygiene import SessionHygieneMixin
+from core.systems.runtime.session.session_sync import SessionSyncMixin
+from core.systems.runtime.session.session_recorder import SessionRecorderMixin
+from core.systems.runtime.session.session_applier import SessionApplierMixin
 
 
 class SessionRuntime(

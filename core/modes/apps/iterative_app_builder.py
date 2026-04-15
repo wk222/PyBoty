@@ -16,14 +16,14 @@ from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, ConfigDict, Field
 from langchain.agents import create_agent
 
-from core.assets.apps.app_manager_registry import get_shared_app_manager
-from core.assets.apps.app_verifier import AppVerificationService
+from core.modes.apps.app_manager_registry import get_shared_app_manager
+from core.modes.apps.app_verifier import AppVerificationService
 from core.systems.governance.agent_control import AgentControlPolicy
 from core.systems.governance.subagent_sandbox import build_subagent_sandbox
-from core.assets.agents.agent_capability_profile import AgentCapabilityProfile
-from core.assets.agents.agent_middleware_profile import AgentMiddlewareProfile
-from core.systems.middleware.agent_middleware_factory import build_subagent_langchain_middleware
-from core.assets.tools.tool_middleware import DynamicToolMiddleware
+from core.modes.agents.agent_capability_profile import AgentCapabilityProfile
+from core.modes.agents.agent_middleware_profile import AgentMiddlewareProfile
+from core.modes.factories import build_subagent_langchain_middleware
+from core.assets.tools import DynamicToolMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -76,9 +76,9 @@ Use this as the top-level App Runtime entrypoint when you want a working app in 
             return json.dumps(create_result, ensure_ascii=False)
 
         # Step 2: Set up the dedicated Subagent Sandbox and Tools
-        from core.assets.apps.app_creator import UpdateAppFileTool, TestAppApiTool
-        from core.assets.apps.app_verifier import VerifyAppTool, ReadAppFileTool
-        from core.assets.agents.agent_storage import AgentDefinition
+        from core.modes.apps.app_creator import UpdateAppFileTool, TestAppApiTool
+        from core.modes.apps.app_verifier import VerifyAppTool, ReadAppFileTool
+        from core.modes.agents.agent_storage import AgentDefinition
 
         # Create isolated capability profile for App Generation
         capability_profile = AgentCapabilityProfile.from_value({
@@ -86,7 +86,18 @@ Use this as the top-level App Runtime entrypoint when you want a working app in 
             "allow_app_mutation": True,
             "allow_code_execution": False,  # Strict managed policy: block external code exec
         })
-        policy = AgentControlPolicy(mode="balanced", blocked_tools=frozenset({"exec_code", "run_tests"}))
+        
+        # Fine-grained control policy: map "max_iterations" to semantic tool budgets
+        # instead of a blunt LangGraph recursion limit.
+        policy = AgentControlPolicy(
+            mode="balanced",
+            blocked_tools=frozenset({"exec_code", "run_tests"}),
+            tool_budgets={
+                "verify_app": max_iterations + 1,        # 1 initial pass + N repairs
+                "test_app_api": max_iterations * 3,      # Testing logic
+                "update_app_file": 20 + max_iterations * 10, # Generous file edits
+            }
+        )
         sandbox = build_subagent_sandbox(agent_name="app_generator", capability_profile=capability_profile)
         
         # Tools specific to app generation
@@ -144,7 +155,7 @@ Use this as the top-level App Runtime entrypoint when you want a working app in 
             ]
         }
         
-        config = {"recursion_limit": max(20, max_iterations * 5)}
+        config = {"recursion_limit": max(100, max_iterations * 20)}
         try:
             result = graph.invoke(state, config=config)
             final_messages = result.get("messages", [])
@@ -163,3 +174,4 @@ Use this as the top-level App Runtime entrypoint when you want a working app in 
             "app_url": f"/apps/{app_name}/",
             "agent_response": response_text
         }, ensure_ascii=False, indent=2)
+

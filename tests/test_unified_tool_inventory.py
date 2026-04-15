@@ -218,8 +218,7 @@ class TestUnifiedAssetInventoryToolsOnly:
         assert s["skill_tools"] == 0
 
     def test_build_langchain_tools(self):
-        fake_tool = MagicMock()
-        with patch("core.assets.tools.unified_tool_inventory.create_dynamic_tool", return_value=fake_tool):
+        with patch("core.assets.tools.unified_tool_inventory.create_dynamic_tool", side_effect=lambda t: MagicMock(name=t["name"])) as mock_create:
             tools = self.inv.build_langchain_tools()
         assert len(tools) == 2
 

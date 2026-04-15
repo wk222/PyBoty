@@ -4,7 +4,7 @@ import time
 
 from core.modes.admin_runtime import PersistentAdminRuntime
 from core.systems.governance.approval_queue import ApprovalQueue
-from core.assets.agents.persistent_agent_runner import PersistentTaskStatus
+from core.modes.agents.persistent_agent_runner import PersistentTaskStatus
 from core.systems.runtime.event_bus import Event, EventType
 
 
@@ -607,3 +607,4 @@ def test_admin_runtime_can_track_rollout_and_resolve_capability_gap(tmp_path):
         assert evaluated["candidate"]["post_release_observations"][0]["outcome"] == "healthy"
     finally:
         runtime.close()
+

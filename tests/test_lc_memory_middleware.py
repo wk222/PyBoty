@@ -28,7 +28,7 @@ class TestMemoryExtraction:
             AIMessage(content="Got it, I'll remember the API key"),
         ]
         with patch(
-            "core.memory_manager.extract_key_facts",
+            "core.systems.memory.memory_manager.extract_key_facts",
             return_value=[
                 {"section": "credentials", "content": "API key is xyz123"},
             ],
@@ -67,7 +67,7 @@ class TestMemoryExtraction:
             HumanMessage(content="test"),
             AIMessage(content="response"),
         ]
-        with patch("core.memory_manager.extract_key_facts", side_effect=RuntimeError("boom")):
+        with patch("core.systems.memory.memory_manager.extract_key_facts", side_effect=RuntimeError("boom")):
             mw._extract_memories(messages)
         memory.append_memory.assert_not_called()
 
