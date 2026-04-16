@@ -19,7 +19,7 @@ from core.systems.runtime.entrypoints import DEFAULT_WEB_PORT, ensure_utf8_stdio
 from core.systems.runtime import ProjectPaths, get_pybot_version
 from core.systems.runtime.event_bus import Event, EventType, event_bus
 from web.gateway_guard import GatewayGuardMiddleware
-from web.routers import admin, apps, chat, gateway, sessions, workflows, workspace
+from web.routers import admin, apps, channels, chat, gateway, sessions, workflows, workspace
 from web.state import WebServices
 
 load_dotenv()
@@ -101,6 +101,7 @@ def create_app(
     app.include_router(chat.router)
     app.include_router(sessions.router)
     app.include_router(gateway.router)
+    app.include_router(channels.router)
     app.include_router(admin.router)
     app.include_router(workspace.router)
     app.include_router(apps.router)

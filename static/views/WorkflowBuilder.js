@@ -425,6 +425,61 @@ export default {
       router.push('/workflows');
     }
 
+    function exportJSON() {
+      const def = buildDefinitionFromFlow();
+      const json = JSON.stringify(def, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = (workflowName.value || 'workflow') + '.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('Workflow exported', 'success');
+    }
+
+    function importJSON() {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json,.yaml,.yml';
+      input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+          const text = await file.text();
+          let def;
+          if (file.name.endsWith('.json')) {
+            def = JSON.parse(text);
+          } else {
+            def = jsyaml.load(text);
+          }
+          if (def && def.nodes) {
+            const rawNodes = def.nodes.map((n, i) => buildFlowNode(
+              n.id || nextNodeId(n.type),
+              n.type,
+              n.label || n.id,
+              100 + i * (NODE_W + GAP_X),
+              100,
+              n.config || {},
+            ));
+            const rawEdges = (def.edges || []).map(e => buildFlowEdge(
+              e.from || e.source,
+              e.to || e.target,
+              e.label || '',
+            ));
+            const layout = autoLayout(rawNodes, rawEdges);
+            initialNodes.value = layout.nodes;
+            initialEdges.value = layout.edges;
+            if (def.name) workflowName.value = def.name;
+            toast('Workflow imported (' + rawNodes.length + ' nodes)', 'success');
+          }
+        } catch (err) {
+          toast('Import failed: ' + err.message, 'error');
+        }
+      };
+      input.click();
+    }
+
     return {
       workflowName, isNew, selectedNode, saving, showYaml, yamlPreview,
       initialNodes, initialEdges, showHistory, runHistory, running,
@@ -433,6 +488,7 @@ export default {
       onUpdateNode, onDeleteNode,
       toggleYaml, refreshYaml, saveWorkflow, runWorkflow, goBack,
       toggleHistory, toggleVersions, publishWorkflow, rollbackToVersion,
+      exportJSON, importJSON,
       formatDuration, formatTime, statusColor,
       FLOW_ID,
     };
@@ -467,6 +523,14 @@ export default {
           </button>
           <button class="mx-btn mx-btn--ghost mx-btn--sm" @click="toggleYaml">
             {{ showYaml ? 'Hide Code' : 'Code' }}
+          </button>
+          <button class="mx-btn mx-btn--ghost mx-btn--sm" @click="exportJSON" title="Export as JSON">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export
+          </button>
+          <button class="mx-btn mx-btn--ghost mx-btn--sm" @click="importJSON" title="Import JSON or YAML">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Import
           </button>
           <span class="wb-toolbar-sep"></span>
           <button class="mx-btn mx-btn--ghost mx-btn--sm wb-btn-run" @click="runWorkflow" :disabled="running">

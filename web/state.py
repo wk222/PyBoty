@@ -21,7 +21,9 @@ from core.modes import resolve_mode_profile
 from core.systems.bus import CapabilityBus, CapabilityRegistry
 from core.systems.governance import ApprovalOrchestrator, ApprovalQueue
 from core.systems.integration import GatewayRuntime
+from core.modes.canvas import get_canvas_profile
 from core.systems.memory import MemoryManager
+from core.systems.memory.memory_distill import MemoryDistillManager
 from core.systems.runtime import (
     ProjectPaths,
     SessionRuntime,
@@ -80,32 +82,52 @@ class ConversationStore:
         items.sort(key=lambda item: item.get("last_message_at", 0), reverse=True)
         return items
 
-    def create_conversation(self, title: str | None = None) -> dict[str, Any]:
+    def get_canvas(self, thread_id: str) -> str:
+        with self._lock:
+            return self._conversations.get(thread_id, {}).get("canvas", "balanced")
+
+    def set_canvas(self, thread_id: str, canvas: str) -> None:
+        from core.modes.canvas import CANVAS_NAMES
+        from core.systems.runtime.event_bus import Event, EventType, event_bus
+        if canvas not in CANVAS_NAMES:
+            raise ValueError(f"Unknown canvas: {canvas!r}. Valid values: {CANVAS_NAMES}")
+        with self._lock:
+            if thread_id in self._conversations:
+                self._conversations[thread_id]["canvas"] = canvas
+                self._save_conversations_unlocked()
+        event_bus.emit(Event(
+            type=EventType.CANVAS_CHANGED,
+            payload={"canvas": canvas, "thread_id": thread_id},
+            session_id=thread_id,
+        ))
+
+    def create_conversation(self, title: str | None = None, canvas: str = "balanced") -> dict[str, Any]:
         with self._lock:
             thread_id = f"session-{uuid.uuid4().hex[:8]}"
             now = time.time()
             metadata = {
                 "title": title or f"新会话 {len(self._conversations) + 1}",
-
                 "created_at": now,
                 "last_message_at": now,
                 "message_count": 0,
+                "canvas": canvas,
             }
             self._conversations[thread_id] = metadata
             self._save_conversations_unlocked()
-        return {"thread_id": thread_id, "title": metadata["title"]}
+        return {"thread_id": thread_id, "title": metadata["title"], "canvas": canvas}
 
     def ensure_conversation(self, thread_id: str, title_hint: str | None = None) -> None:
         with self._lock:
             if thread_id in self._conversations:
                 return
             now = time.time()
-            title = title_hint or f"新会�?{len(self._conversations) + 1}"
+            title = title_hint or f"新会话 {len(self._conversations) + 1}"
             self._conversations[thread_id] = {
                 "title": title[:30] + ("..." if len(title) > 30 else ""),
                 "created_at": now,
                 "last_message_at": now,
                 "message_count": 0,
+                "canvas": "balanced",
             }
             self._save_conversations_unlocked()
 
@@ -144,12 +166,14 @@ class AgentPool:
         control_config: dict[str, Any],
         approval_queue: ApprovalQueue,
         session_runtime: SessionRuntime | None = None,
+        canvas_resolver: Any | None = None,
     ):
         self.paths = paths
         self.llm_config = llm_config
         self.control_config = control_config
         self.approval_queue = approval_queue
         self.session_runtime = session_runtime
+        self._canvas_resolver = canvas_resolver  # Callable[[thread_id], str]
         self._lock = threading.Lock()
         self._agents: dict[tuple[str, str], Any] = {}
 
@@ -170,10 +194,24 @@ class AgentPool:
         except Exception:
             return {"llm_config": self.llm_config}
 
-    def _fresh_llm_config(self) -> dict[str, Any]:
+    def _canvas_for_thread(self, thread_id: str) -> str:
+        """Return the execution canvas for a given thread (via resolver or fallback)."""
+        try:
+            if self._canvas_resolver is not None:
+                return self._canvas_resolver(thread_id) or "balanced"
+        except Exception:
+            pass
+        return "balanced"
+
+    def _fresh_llm_config(self, canvas: str = "balanced") -> dict[str, Any]:
         runtime_cfg = self._fresh_runtime_config()
         llm_cfg = runtime_cfg.get("llm_config", self.llm_config)
-        return llm_cfg if isinstance(llm_cfg, dict) else self.llm_config
+        llm_cfg = dict(llm_cfg) if isinstance(llm_cfg, dict) else dict(self.llm_config)
+        # Apply ExecutionCanvas LLM overrides from core/modes/canvas.py
+        profile = get_canvas_profile(canvas)
+        for k, v in profile.to_llm_overrides().items():
+            llm_cfg.setdefault(k, v)
+        return llm_cfg
 
     def _fresh_llm_fallback_config(self) -> list[dict[str, Any]]:
         runtime_cfg = self._fresh_runtime_config()
@@ -198,8 +236,13 @@ class AgentPool:
         with self._lock:
             agent = self._agents.get(key)
             if agent is None:
-                cfg = self._fresh_llm_config()
+                canvas = self._canvas_for_thread(thread_id)
+                cfg = self._fresh_llm_config(canvas)
                 fallback_cfg = self._fresh_llm_fallback_config()
+                # Merge canvas agent_control overrides from core/modes/canvas.py
+                canvas_profile = get_canvas_profile(canvas)
+                canvas_ctrl = canvas_profile.to_control_overrides()
+                merged_control = {**self.control_config, **canvas_ctrl}
                 factory = {
                     "assistant": create_tool_creator_agent,
                     "app_matrix": create_app_matrix_agent,
@@ -213,7 +256,7 @@ class AgentPool:
                     provider=cfg.get("provider"),
                     fallback_configs=fallback_cfg,
                     paths=self.paths,
-                    control_config=self.control_config,
+                    control_config=merged_control,
                     approval_queue=self.approval_queue,
                     session_runtime=self.session_runtime,
                 )
@@ -263,6 +306,8 @@ class WebServices:
     app_manager: AppManager
     gateway_runtime: GatewayRuntime
     subagent_registry: SubagentRegistry
+    memory_distill: MemoryDistillManager | None = None
+    memory_facade: Any | None = None   # MemoryFacade — canvas-aware unified memory reader
 
     @staticmethod
     def _build_skill_registry(resolved_paths: ProjectPaths) -> SkillRegistry:
@@ -315,6 +360,7 @@ class WebServices:
                 resolved_control,
                 approval_queue,
                 session_runtime=session_runtime,
+                canvas_resolver=None,  # wired up below after conversations store is created
             ),
             workspace_mgr=WorkspaceManager(str(resolved_paths.workspace_dir)),
             memory_mgr=MemoryManager(str(resolved_paths.workspace_dir)),
@@ -329,6 +375,8 @@ class WebServices:
             gateway_runtime=GatewayRuntime(resolved_paths.workspace_data_dir),
             subagent_registry=get_global_subagent_registry(),
         )
+        # Wire canvas resolver so AgentPool can read per-conversation canvas
+        services.agents._canvas_resolver = services.conversations.get_canvas
         services.capability_registry = CapabilityRegistry(
             workspace_dir=resolved_paths.workspace_dir,
             capability_bus=services.capability_bus,
@@ -336,6 +384,58 @@ class WebServices:
             skill_registry=services.skill_registry,
             app_manager=services.app_manager,
         )
+        # Deep Digest: 记忆蒸馏流水线
+        # journal 和 distill 使用不同温度：journal 归纳对话（略高），distill 精炼记忆（低温保稳定）
+        try:
+            def _make_digest_caller(temperature: float):
+                """Build a LangChain-backed LLM caller for Deep Digest at a fixed temperature."""
+                from core.systems.runtime import create_llm_client
+                from langchain_core.messages import SystemMessage, HumanMessage as LCHuman
+
+                def _call(system: str, user: str) -> str:
+                    try:
+                        cfg = services.agents._fresh_llm_config()
+                        client = create_llm_client(
+                            model=cfg.get("model", "gpt-4o-mini"),
+                            temperature=temperature,
+                            api_key=cfg.get("api_key"),
+                            base_url=cfg.get("api_base"),
+                        )
+                        resp = client.invoke([SystemMessage(content=system), LCHuman(content=user)])
+                        return str(getattr(resp, "content", resp) or "")
+                    except Exception as e:
+                        logger.warning("[MemoryDistill] llm_caller(temp=%.1f) error: %s", temperature, e)
+                        return ""
+                return _call
+
+            services.memory_distill = MemoryDistillManager(
+                workspace_dir=resolved_paths.workspace_dir,
+                journal_llm_caller=_make_digest_caller(0.5),   # journal: 归纳摘要，略高温
+                distill_llm_caller=_make_digest_caller(0.2),   # distill: 精炼记忆，低温稳定
+            )
+        except Exception as _dd_exc:
+            logger.warning("MemoryDistillManager init failed: %s", _dd_exc)
+            services.memory_distill = MemoryDistillManager(
+                workspace_dir=resolved_paths.workspace_dir,
+                llm_caller=None,
+            )
+        # MemoryFacade: canvas-aware unified memory reader
+        try:
+            from core.systems.memory.facade import MemoryFacade
+            from core.systems.memory.semantic_memory import SemanticMemoryManager
+            from core.systems.memory.markdown_garden import MarkdownGardenManager
+
+            sem_mem = SemanticMemoryManager(str(resolved_paths.workspace_dir))
+            garden = MarkdownGardenManager(str(resolved_paths.workspace_dir))
+            services.memory_facade = MemoryFacade(
+                memory_manager=services.memory_mgr,
+                semantic_memory=sem_mem,
+                garden=garden,
+            )
+        except Exception as _mf_exc:
+            logger.warning("MemoryFacade init failed: %s", _mf_exc)
+            services.memory_facade = None
+
         services.session_runtime.sync_conversations(services.conversations)
         services.session_runtime.sync_gateway_runtime(services.gateway_runtime)
         services.approvals = ApprovalOrchestrator(

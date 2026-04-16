@@ -26,6 +26,7 @@ class SessionSyncMixin:
                 EventType.SUBAGENT_FAILED,
                 EventType.SUBAGENT_TIMEOUT,
                 EventType.SCHEDULE_RUN,
+                EventType.CANVAS_CHANGED,
             ):
                 event_bus.subscribe(event_type, self._handle_runtime_event, priority=-100)
         except Exception:
@@ -239,3 +240,25 @@ class SessionSyncMixin:
                 root_mode=str(payload.get("root_mode", "admin")),
                 timestamp=timestamp,
             )
+
+        if event_type == "canvas_changed":
+            canvas = str(payload.get("canvas", "balanced")).strip()
+            self._apply_canvas_budget(thread_id=thread_id, canvas=canvas)
+
+    def _apply_canvas_budget(self, *, thread_id: str, canvas: str) -> None:
+        """Adjust compaction aggressiveness when the session's canvas changes.
+
+        - focused : compact immediately if the session is long (省token，立刻清理）
+        - balanced: no immediate action, standard thresholds apply
+        - deep    : defer compaction (allow more context, up to 2× the standard limit)
+        """
+        import logging
+        _log = logging.getLogger(__name__)
+        if canvas == "focused":
+            try:
+                self.compact_session_by_thread(thread_id=thread_id, reason="canvas_focused")
+                _log.debug("Canvas changed to focused: triggered compaction for thread %s", thread_id)
+            except Exception as exc:
+                _log.debug("Canvas-focused compaction skipped: %s", exc)
+        elif canvas == "deep":
+            _log.debug("Canvas changed to deep for thread %s: deferred compaction", thread_id)

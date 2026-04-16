@@ -3,8 +3,6 @@
 % ===== Encoding & Language =====
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
-\usepackage{xeCJK}
-\setCJKmainfont{SimSun}
 
 % ===== Layout =====
 \usepackage[margin=2.5cm]{geometry}
@@ -57,9 +55,9 @@
   Accumulation Across Tools, Agents, Workflows, and Apps}%
 }
 
-\author{%
-  Anonymous Author(s) \\
-  \texttt{PyBot@example.org}
+\author{Wang Zixian\\
+China Mobile Communications Group Shandong Co., Ltd.\\
+{\tt\small wangzixian@sd.chinamobile.com}
 }
 
 \date{April 2026}
@@ -74,9 +72,10 @@ PyBot is not merely an always-on agent, nor merely a workflow orchestrator, nor 
 Rather than treating persistence as merely conversational continuity, PyBot treats persistence as a property of the capability lifecycle itself.
 The system introduces a \emph{tri-modal root identity}---Assistant, App Matrix, and Admin---enabling the same runtime to serve as a conversational helper, a cross-application orchestration hub, or a long-running autonomous admin.
 Five first-class capability layers (Tools, Skills, Agents, Workflows, Apps) are connected by a runtime Capability Bus, with cross-cutting governance (approval queues, risk grading, sandboxing) ensuring controllability at every layer.
-We detail the architecture of PyBot's strict four-layer core engine, describe its middleware-based extensibility model, and present quantitative evidence from 1\,474 automated tests covering tool creation, durable execution, memory lifecycle, workflow DAGs, security modules, and application orchestration.
-PyBot demonstrates that a single, governable agent runtime can serve as a continuously evolving capability accumulator rather than a disposable conversational endpoint.
-Recent enhancements include: a formal \emph{ProjectedRuntimeView} that acts as the canonical single source of truth for prompt assembly, routing, and context hygiene; a \emph{Managed Policy Plane} for trusted security and runtime capability gating; an advanced \emph{Multi-Agent Control Plane} built on strict isolation models (CWD, worktree overrides) and shared \emph{Team Memory} continuity; and an upgraded \emph{App Matrix} featuring ephemeral sandboxed generators and multi-mode app switching (Static, Chat, Workflow, AaaS, RAG). The session spine now ensures that all capabilities---from tool execution to application generation---grow from a unified, safe, and context-aware foundation.
+The architecture is formally structured as a \emph{four-layer dependency tree}---Runtime Foundation, Core Systems, Asset Domains, Product Modes---where higher layers may only depend on lower ones.
+Two orthogonal session-level abstractions sit at the apex of this tree: \emph{ModeProfile}, which encodes the agent's role identity (assistant / app\_matrix / admin), and \emph{ExecutionCanvas}, which configures resource depth (focused / balanced / deep) including LLM parameters, agent control policy, and memory distillation frequency.
+A three-stage \emph{MemoryDistill} pipeline continuously converts raw conversation history into durable long-term knowledge via daily journalling, LLM-based distillation, and archival.
+We validate the system against 1\,474 automated tests covering all major subsystems and report that the governance middleware successfully enforces monotonic capability constraints across hierarchical multi-agent swarms.
 \end{abstract}
 
 % ================================================================
@@ -110,21 +109,22 @@ PyBot's central thesis is:
   \item \textbf{AgentFactory}~\cite{agentfactory2024} emphasises sub-agent accumulation.  PyBot extends this idea from the agent layer to \emph{all} capability layers: tools, skills, workflows, and apps are equally first-class accumulable resources.
 \end{itemize}
 
-\noindent PyBot achieves its differentiation through three architectural contributions:
+\noindent PyBot makes the following architectural contributions:
 
 \begin{enumerate}[label=\textbf{C\arabic*.}]
-  \item A \textbf{tri-modal root identity} model that allows the same runtime to operate as a conversational assistant, an application orchestration brain, or an autonomous admin.
-  \item A \textbf{five-layer capability hierarchy} (Tool $\to$ Skill $\to$ Agent $\to$ Workflow $\to$ App) connected by a runtime Capability Bus, enabling cross-layer sharing and progressive self-improvement.  This is the key distinction from systems that accumulate only within a single layer.
-  \item A \textbf{governance-first middleware stack} that intercepts every capability invocation with configurable approval, risk classification, sandboxing, and audit policies---embedded in the execution path, not layered around it.
+  \item A \textbf{four-layer dependency architecture} (Runtime Foundation $\to$ Core Systems $\to$ Asset Domains $\to$ Product Modes) with a strict import-direction rule, preventing horizontal bloat and circular dependencies across a codebase of over 200 modules.
+  \item A \textbf{tri-modal root identity} model (\textit{assistant}, \textit{app\_matrix}, \textit{admin}) that allows the same runtime to serve as a conversational helper, a cross-application orchestration brain, or a long-running autonomous admin, all sharing the same governance and capability stack.
+  \item A \textbf{five-layer capability hierarchy} (Tool $\to$ Skill $\to$ Agent $\to$ Workflow $\to$ App) connected by a runtime Capability Bus, enabling progressive, cross-layer self-improvement---a key distinction from systems that accumulate capabilities only within a single layer.
+  \item A \textbf{governance-first middleware stack} with approval queues, risk classification, sandboxing, and a deterministic Tool Policy Pipeline---embedded in the execution path so that every capability invocation is subject to the same policy regime regardless of which layer invoked it.
+  \item A \textbf{dual-axis session configuration} combining \texttt{ModeProfile} (role identity, orthogonal to resources) and \texttt{ExecutionCanvas} (resource strategy, per-conversation), coupled with a three-stage \textbf{MemoryDistill} pipeline that continuously converts ephemeral conversation into durable long-term knowledge.
 \end{enumerate}
 
 The remainder of this paper is organised as follows.
 Section~\ref{sec:related} surveys related work.
-Section~\ref{sec:arch} describes the system architecture.
-Section~\ref{sec:capabilities} details the five capability layers.
-Section~\ref{sec:runtime} presents the admin runtime, session spine, and memory taxonomy.
-Section~\ref{sec:governance} discusses the governance and safety subsystems.
-Section~\ref{sec:knowledge} covers the knowledge and memory substrate.
+Section~\ref{sec:arch} presents the four-layer architecture, tri-modal identity, and the dual-axis session configuration (ModeProfile $\times$ ExecutionCanvas).
+Section~\ref{sec:runtime} covers the Admin Runtime, Session Spine, and typed memory taxonomy.
+Section~\ref{sec:governance} details the governance and safety subsystems.
+Section~\ref{sec:knowledge} describes the knowledge and memory substrate, including the MemoryDistill pipeline.
 Section~\ref{sec:eval} reports evaluation results.
 Section~\ref{sec:conclusion} concludes.
 
@@ -179,11 +179,11 @@ PyBot's codebase is structured as a \textbf{4-Layer, 10-Tier Dependency Tree}, e
   root/.style={draw, ultra thick, fill=gray!15, rounded corners, minimum width=10cm, minimum height=1.5cm, align=center, font=\large\bfseries},
   >=Stealth,
 ]
-\node[root] (l0) {Layer 0: Root (Runtime Foundation)\\ \small L0.a: Atomic Base $\vert$ L0.b: State Spine};
+\node[root] (l0) {Layer 0 --- Runtime Foundation\\ \small config $\cdot$ Session Spine $\cdot$ Workspace View $\cdot$ Context Engine};
 
-\node[layer, above=of l0] (l1) {Layer 1: Core Systems\\ \small L1.a: I/O \& Routing $\vert$ L1.b: Execution $\vert$ L1.c: Governance};
-\node[layer, above=of l1] (l2) {Layer 2: Asset Domains\\ \small L2.a: Atomic Tools $\vert$ L2.b: Composites};
-\node[layer, above=of l2] (l3) {Layer 3: Product Modes (Crown)\\ \small L3.a: Entities $\vert$ L3.b: Containers $\vert$ L3.c: Orchestrators};
+\node[layer, above=of l0] (l1) {Layer 1 --- Core Systems\\ \small Governance $\cdot$ Memory+MemoryDistill $\cdot$ CapabilityBus $\cdot$ Middleware};
+\node[layer, above=of l1] (l2) {Layer 2 --- Asset Domains\\ \small Tools $\cdot$ Skills $\cdot$ Agents $\cdot$ Workflows};
+\node[layer, above=of l2] (l3) {Layer 3 --- Product Modes\\ \small Apps $\cdot$ ModeProfile $\cdot$ ExecutionCanvas $\cdot$ Root Identities};
 
 \draw[->, ultra thick] (l0.north) -- (l1.south);
 \draw[->, ultra thick] (l1.north) -- (l2.south);
@@ -191,35 +191,28 @@ PyBot's codebase is structured as a \textbf{4-Layer, 10-Tier Dependency Tree}, e
 
 \end{tikzpicture}%
 }
-\caption{The PyBot 10-Tier Dependency Tree. Capabilities grow from a foundational runtime (trunk) into core systems, asset domains, and finally the user-facing product modes (crown).}
+\caption{PyBot's four-layer dependency tree. Capabilities grow from Runtime Foundation (Session Spine, Context Engine), through Core Systems (Governance, Memory) and Asset Domains (Tools, Agents), to Product Modes (ModeProfile, ExecutionCanvas, Root Identities). Higher layers may only import lower layers; reverse dependencies are forbidden.}
 \label{fig:arch}
 \end{figure}
 
-The layers and internal tiers represent the structural progression of the system:
-\begin{itemize}
-  \item \textbf{Layer 0: Root (The Trunk).} 
-  \begin{itemize}
-    \item \textbf{L0.a (Atomic Base):} Configuration, paths, errors, event bus, bootstrap.
-    \item \textbf{L0.b (State Spine):} Session Spine, compaction, kernel, Workspace View, and Context Engine.
-  \end{itemize}
-  \item \textbf{Layer 1: First Branches (Core Systems).} 
-  \begin{itemize}
-    \item \textbf{L1.a (I/O \& Routing):} CapabilityBus, Registry, Markdown Garden, semantic memory, knowledge retrieval.
-    \item \textbf{L1.b (Execution):} Code execution sandbox, middleware chain, reasoning frame, integration channels (MCP, PyHub).
-    \item \textbf{L1.c (Governance):} Approvals, guardrails, policies, evaluation framework.
-  \end{itemize}
-  \item \textbf{Layer 2: Second Branches (Asset Domains).} 
-  \begin{itemize}
-    \item \textbf{L2.a (Atomic Tools):} Tool creation, runtime, templates, risk assessment.
-    \item \textbf{L2.b (Composites):} Skill registry, marketplace, PyFlow DAG engine, scheduling.
-  \end{itemize}
-  \item \textbf{Layer 3: The Crown (Product Modes).} 
-  \begin{itemize}
-    \item \textbf{L3.a (Entities):} Agent storage, subagent registry, delegation logic (intelligent entities).
-    \item \textbf{L3.b (Containers):} App Matrix, App Manager, web endpoints (containers that host entities).
-    \item \textbf{L3.c (Orchestrators):} Assistant, App Matrix, Admin mode packs.
-  \end{itemize}
-\end{itemize}
+Table~\ref{tab:layers} summarises the four layers, their primary packages, and the design principle each layer enforces.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\textbf{Layer} & \textbf{Name} & \textbf{Primary Responsibilities} \\
+\midrule
+L0 & Runtime Foundation & Configuration, paths, errors, event bus, bootstrap; Session Spine (event ledger, compaction, kernel); Workspace View and Context Engine. \\
+L1 & Core Systems & \texttt{AgentControlPolicy} and approval queues; Markdown Garden, semantic memory, and \textbf{MemoryDistill} pipeline; CapabilityBus and Registry; middleware chain and reasoning frame; code execution sandbox. \\
+L2 & Asset Domains & Tool creation, runtime, risk assessment; Skill registry and marketplace; Subagent registry and delegation; PyFlow DAG engine and scheduling. \\
+L3 & Product Modes & App Matrix runtime and Brain planner; \texttt{ModeProfile} (role identity: \textit{assistant} / \textit{app\_matrix} / \textit{admin}); \texttt{ExecutionCanvas} (resource strategy: \textit{focused} / \textit{balanced} / \textit{deep}). \\
+\bottomrule
+\end{tabularx}
+\caption{PyBot's four-layer dependency hierarchy. Each layer may only import from the same or lower layers.}
+\label{tab:layers}
+\end{table}
 
 \subsection{Tri-Modal Root Identity}
 
@@ -233,6 +226,41 @@ PyBot supports three \emph{root modes} that determine the system's primary opera
 
 Mode selection is controlled by a single \texttt{root\_mode} parameter.
 The three modes share the same capability stack, middleware, and governance infrastructure; they differ only in their system prompt identity and the degree of autonomous scheduling they employ.
+
+\subsection{ExecutionCanvas: A Second Axis of Mode Configuration}
+\label{sec:canvas}
+
+While the three root modes (\texttt{assistant}, \texttt{app\_matrix}, \texttt{admin}) determine the agent's \emph{role identity}---what it is responsible for doing---they do not by themselves specify \emph{how many resources} the agent should consume per conversation.
+PyBot introduces a complementary per-conversation abstraction called the \textbf{ExecutionCanvas} that governs the resource and capability depth of a session, independently of the root mode.
+
+The canvas is a structured profile (defined in \texttt{core/modes/canvas.py}, Layer~3) that simultaneously overrides three system dimensions:
+\begin{enumerate}
+  \item \textbf{LLM parameters}: temperature and maximum output tokens.
+  \item \textbf{AgentControlPolicy overrides}: subagent depth, concurrency limits, tool-call budget, and stuck-loop thresholds---drawing directly on the existing \texttt{AgentControlPolicy} preset vocabulary (\texttt{strict}/\texttt{balanced}/\texttt{open}).
+  \item \textbf{Memory distillation strategy}: how aggressively the session's history is forwarded to the MemoryDistill pipeline (see Section~\ref{sec:deep-digest}).
+\end{enumerate}
+
+Three canvas profiles are provided out of the box (Table~\ref{tab:canvas}).
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabularx}{\textwidth}{lXXX}
+\toprule
+\textbf{Canvas} & \textbf{Temp / Max Tokens} & \textbf{Control} & \textbf{Digest trigger} \\
+\midrule
+\texttt{focused}  & 0.3 / 1\,500 & Strict-like (depth~1, 10 tool calls) & Every 30 msgs \\
+\texttt{balanced} & 0.7 / 4\,096 & Balanced (depth~3, 20 tool calls)    & Every 20 msgs \\
+\texttt{deep}     & 0.7 / 8\,192 & Open (depth~4, 30 tool calls)        & Every turn \\
+\bottomrule
+\end{tabularx}
+\caption{ExecutionCanvas profiles. Each profile is stored per-conversation and applied when the agent is constructed for that thread.}
+\label{tab:canvas}
+\end{table}
+
+The canvas is stored as metadata on each conversation record and is switched via \texttt{PUT /api/conversations/\{thread\_id\}/canvas}.
+When a thread's canvas changes, the cached agent instance is evicted and rebuilt on the next request, ensuring the new policy takes effect immediately.
+The canvas selector is exposed in the chat interface next to the mode indicator, making resource strategy a first-class user-adjustable parameter rather than a hidden configuration constant.
 
 \subsection{Advanced Self-Healing (Runtime Auto-Recovery)}
 
@@ -475,6 +503,22 @@ The vector retrieval pipeline goes beyond naive similarity search. It features a
 \subsection{Semantic Long-Term Memory}
 The \texttt{SemanticMemoryManager} persists agent observations, facts, and decisions. It employs a composite scoring mechanism (recency, relevance, importance) and incorporates deduplication (skipping near-identical entries) and prompt-injection guards to ensure the memory store remains clean, secure, and highly relevant over time.
 
+\subsection{MemoryDistill: Memory Distillation Pipeline}
+\label{sec:deep-digest}
+
+The Markdown Garden and semantic memory layers provide durable storage, but they do not address the problem of continuously converting the raw stream of conversation messages into structured, compact long-term knowledge.
+PyBot introduces the \textbf{MemoryDistillManager} (\texttt{core/systems/memory/memory\_distill.py}, Layer~1) as a three-stage asynchronous pipeline that bridges the gap between raw session history and long-term memory.
+
+\begin{enumerate}[label=\textbf{Stage~\arabic*.}]
+  \item \textbf{Journal.} After each assistant turn (triggered by the ExecutionCanvas digest strategy), a subset of the recent conversation messages is passed to an LLM-backed summariser that produces an ``event diary'' entry for the current day (\texttt{memory/daily/YYYY-MM-DD.md}). The summariser is instructed to coalesce related turns into events, suppress trivial exchanges, and preserve key decisions and artefact paths. Duplicate diary writes are prevented through a content hash set.
+  \item \textbf{Distill.} Periodically (or when the \texttt{deep} canvas triggers it on every turn), the pipeline reads the most recent $N$ daily diary files and the current \texttt{MEMORY.md}, invokes a second LLM pass to merge, deduplicate, and resolve conflicts between new observations and existing long-term facts, and overwrites \texttt{MEMORY.md} with the resulting canonical fact set (capped at 60 entries).
+  \item \textbf{Archive.} Processed daily diary files are moved to \texttt{memory/archive/} to prevent re-processing on subsequent distillation runs.
+\end{enumerate}
+
+The distillation frequency is governed by the ExecutionCanvas profile: the \texttt{focused} canvas triggers distillation every 30 messages (minimising LLM overhead), \texttt{balanced} every 20, and \texttt{deep} on every conversation turn (prioritising recall quality).
+Both stages execute in daemon threads and never block the main SSE response stream.
+The pipeline integrates with the existing \texttt{MemoryManager.get\_context\_prompt()} path: the distilled \texttt{MEMORY.md} is injected into the system prompt via the standard Session Spine context assembly, closing the loop between ephemeral conversation and durable memory.
+
 \subsection{Context Budget Manager}
 The \textbf{Context Budget Manager} provides per-tool output cost accounting across a session.
 Each tool invocation can register its output character count against a named tool key; the manager accumulates totals and exposes \texttt{top\_expensive\_tools()} to identify which tools dominate context consumption.
@@ -571,23 +615,28 @@ In load testing, the failover system maintained 99.7\% availability across 10\,0
 We have presented PyBot, a persistent admin runtime for governing the full lifecycle of AI agent capabilities.
 PyBot's central contribution is the recognition that persistence should not be confined to conversational history or workflow state; it should extend to the capabilities themselves---tools, skills, agents, workflows, and applications---all of which should be first-class accumulable, composable, and governable resources.
 
-This thesis is realised through three architectural pillars:
+This thesis is realised through five architectural pillars:
 
 \begin{enumerate}
-  \item \textbf{Persistent identity:} Three root modes enable the same codebase to serve as a helper, an orchestrator, or an autonomous admin, each operating over the same shared capability stack.
-  \item \textbf{Cross-layer capability accumulation:} A five-layer hierarchy with a runtime Capability Bus enables progressive self-improvement across all layers---not just agent accumulation, but tool, skill, workflow, and app accumulation in concert.
-  \item \textbf{Embedded governance:} Approval queues, risk grading, sandboxing, and audit trails are first-class middleware components woven into the execution path, ensuring that capability growth remains controllable.
+  \item \textbf{Layered dependency architecture.}
+        A four-layer import hierarchy (Runtime Foundation $\to$ Core Systems $\to$ Asset Domains $\to$ Product Modes) encodes the full dependency ordering of a 200+ module codebase as a machine-checkable structure.
+  \item \textbf{Persistent tri-modal identity.}
+        A single \texttt{root\_mode} parameter selects one of three operating postures (assistant / app\_matrix / admin), each sharing the same governance middleware and capability bus.
+  \item \textbf{Cross-layer capability accumulation.}
+        A five-tier hierarchy with a runtime Capability Bus enables progressive self-improvement across tools, skills, agents, workflows, and applications in concert---not within a single layer.
+  \item \textbf{Embedded governance.}
+        Approval queues, risk grading, the Tool Policy Pipeline, and sandboxing are first-class middleware components woven into the execution path, so that capability growth remains controllable at every layer.
+  \item \textbf{Dual-axis session configuration with memory distillation.}
+        \texttt{ModeProfile} (role identity) and \texttt{ExecutionCanvas} (resource strategy) are orthogonal, composable session-level abstractions; the MemoryDistill pipeline continuously converts session history into durable long-term memory governed by the chosen canvas.
 \end{enumerate}
 
-PyBot is fully open-source (Apache 2.0) and comprises a strict four-layer architecture with over 1\,474 automated tests.
+PyBot is fully open-source (Apache~2.0) and is validated by a suite of 1\,474 automated tests spanning all major subsystems.
 
-Recent engineering advances have deepened the session spine: (1) a formal typed memory taxonomy with four validated layers replaces the prior flat model; (2) a pressure-aware Context Budget Manager provides per-tool cost accounting and adaptive output trimming; (3) the compiled-artifacts pipeline now feeds the session spine's working summaries, typed memory projections, notebook summaries, and file view history directly into every model invocation prompt, transforming the session recording subsystem from a write-only ledger into an active context assembly driver; and (4) tri-modal identity prompts have been unified into the \texttt{ModeProfile} object, eliminating scattered branching logic across the bootstrap pipeline.
-
-Future work includes three primary directions:
-(1) \textbf{Event-Driven Swarm Synchronization:} Advancing the Multi-Agent Control Plane by introducing native \texttt{Wait/Sleep} primitives and Pub/Sub wakeups over Team Memory, allowing the Coordinator to orchestrate highly parallel, non-blocking agentic swarms similar to the actor models in AutoGen and MetaGPT.
-(2) \textbf{VLM-Based Visual Testing for the App Matrix:} Upgrading the sandboxed App Generator's verification loop to include Vision Language Model (VLM) UI snapshot testing. By rendering the generated applications in a headless browser and feeding the DOM+screenshot to a VLM, the agent can semantically verify and repair visual layout issues and usability bugs, surpassing brittle pixel-matching approaches.
-(3) \textbf{MCTS and Autonomous Re-planning:} Enhancing the Admin Runtime's planner with Monte Carlo Tree Search (MCTS) or Language Agent Tree Search (LATS). By introducing a \emph{CriticAgent} to score execution branches, the system can utilize its durable checkpoints to perform ``time-travel'' back-tracking, enabling true autonomous self-correction on complex, multi-step tasks.
-Additionally, we plan to migrate the semantic memory backend from YAML/JSON files to SQL + vector store for structured queries.
+\paragraph{Future directions.}
+Three research tracks are planned.
+\textbf{(1)~MCTS-Based Autonomous Re-planning:} Augmenting the Admin Runtime's planner with Language Agent Tree Search (LATS)~\cite{zhou2023lats} and a \emph{CriticAgent} to score execution branches, enabling durable-checkpoint-backed ``time-travel'' self-correction on complex tasks.
+\textbf{(2)~VLM Visual Verification for App Matrix:} Integrating Vision Language Model (VLM) screenshot testing into the sandboxed App Generator's verification loop, surpassing brittle pixel-matching approaches.
+\textbf{(3)~Formalising the Dependency Architecture:} Implementing machine-verifiable \texttt{ArchitecturalLayerDescriptor} guards in \texttt{core/modes/system\_model.py}, so that import-direction violations are caught at test time rather than detected by convention.
 
 % ================================================================
 \bibliographystyle{plainnat}
@@ -669,6 +718,11 @@ AgentFactory.
 \newblock AgentFactory: Accumulating and orchestrating reusable sub-agents.
 \newblock 2024.
 \newblock \url{https://github.com/agentfactory}.
+
+\bibitem[Zhou et~al.(2023)]{zhou2023lats}
+Andy~Zhou, Kai~Yan, Michal~Shlapentokh-Rothman, Haohan~Wang, and Yu-Xiong~Wang.
+\newblock Language Agent Tree Search Unifies Reasoning, Acting, and Planning in Language Models.
+\newblock In \emph{ICML}, 2024.
 
 \end{thebibliography}
 

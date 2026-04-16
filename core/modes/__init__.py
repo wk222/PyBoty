@@ -32,6 +32,14 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "should_attach_admin_runtime": (".lifecycle", "should_attach_admin_runtime"),
     "sync_app_matrix_registry": (".app_matrix_ops", "sync_app_matrix_registry"),
     "update_app_matrix_node_metadata": (".app_matrix_ops", "update_app_matrix_node_metadata"),
+    # -- ExecutionCanvas --
+    "CanvasProfile": (".canvas", "CanvasProfile"),
+    "get_canvas_profile": (".canvas", "get_canvas_profile"),
+    "list_canvas_profiles": (".canvas", "list_canvas_profiles"),
+    "DEFAULT_CANVAS": (".canvas", "DEFAULT_CANVAS"),
+    "CANVAS_NAMES": (".canvas", "CANVAS_NAMES"),
+    # -- 身份层统一 API（推荐 web/ 层使用的入口）--
+    "get_session_config": (".api", "get_session_config"),
     # -- ModePack registry API --
     "ModePack": (".pack", "ModePack"),
     "BaseModePack": (".pack", "BaseModePack"),

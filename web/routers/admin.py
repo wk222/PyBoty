@@ -1133,6 +1133,75 @@ async def test_llm_connection(request: Request) -> dict[str, object]:
         return {"success": False, "error": str(exc)}
 
 
+# --- Model Router endpoints ---
+
+_model_router_instance = None
+
+
+def _get_model_router():
+    global _model_router_instance
+    if _model_router_instance is None:
+        from core.systems.runtime.model_router import create_model_router
+        cfg = get_config()
+        router_cfg = cfg.get("model_router", {})
+        llm_cfg = cfg.get("llm_config", {})
+        _model_router_instance = create_model_router(
+            router_cfg,
+            default_model=llm_cfg.get("model", "gpt-4o"),
+        )
+    return _model_router_instance
+
+
+@router.get("/api/model-router")
+async def get_model_router_status() -> dict[str, object]:
+    """Get model router configuration and stats."""
+    try:
+        mr = _get_model_router()
+        return {"router": mr.to_dict()}
+    except Exception as exc:
+        return {"router": {}, "error": str(exc)}
+
+
+@router.put("/api/model-router")
+async def update_model_router(request: Request) -> dict[str, object]:
+    """Update model router tier configuration."""
+    global _model_router_instance
+    try:
+        body = await request.json()
+        current = get_config()
+        current.setdefault("model_router", {}).update(body)
+        save_config(current)
+
+        from core.systems.runtime.model_router import create_model_router
+        llm_cfg = current.get("llm_config", {})
+        _model_router_instance = create_model_router(
+            current.get("model_router", {}),
+            default_model=llm_cfg.get("model", "gpt-4o"),
+        )
+        return {"success": True, "router": _model_router_instance.to_dict()}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+@router.post("/api/model-router/classify")
+async def classify_prompt(request: Request) -> dict[str, object]:
+    """Preview which tier a prompt would be routed to."""
+    try:
+        body = await request.json()
+        prompt = body.get("prompt", "")
+        canvas = body.get("canvas")
+        mr = _get_model_router()
+        decision = mr.classify(prompt, canvas=canvas)
+        return {
+            "tier": decision.tier.value,
+            "reason": decision.reason,
+            "model_spec": decision.model_spec,
+            "overrides": decision.overrides,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 # --- Feedback / Training endpoints ---
 
 _feedback_store = None

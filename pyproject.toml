@@ -61,11 +61,13 @@ pybot-web = "service_mode:main"
 pybot-api = "api_server:main"
 pybot-cli = "interactive_cli:main"
 pybot-onboard = "onboard:main"
+pybot-checkup = "checkup:main"
 
 [tool.setuptools]
 py-modules = [
   "agent",
   "api_server",
+  "checkup",
   "interactive_cli",
   "onboard",
   "service_mode",

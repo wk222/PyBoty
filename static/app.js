@@ -4,6 +4,10 @@ import { createRouter, createWebHashHistory } from 'vue-router';
 import TopBar from '/static/components/TopBar.js';
 import SideNav from '/static/components/SideNav.js';
 import ToastContainer from '/static/components/Toast.js';
+import CommandPalette from '/static/components/CommandPalette.js';
+import StatusBar from '/static/components/StatusBar.js';
+import OnboardingGuide from '/static/components/OnboardingGuide.js';
+import CliPanel from '/static/components/CliPanel.js';
 
 import Dashboard from '/static/views/Dashboard.js';
 import EcosystemView from '/static/views/EcosystemView.js';
@@ -18,6 +22,9 @@ import AppList from '/static/views/AppList.js';
 import ScheduleList from '/static/views/ScheduleList.js';
 import HubView from '/static/views/HubView.js';
 import GovernanceDashboard from '/static/views/GovernanceDashboard.js';
+import MemoryView from '/static/views/MemoryView.js';
+import TracingView from '/static/views/TracingView.js';
+import AppMatrixView from '/static/views/AppMatrixView.js';
 import DebugPanel from '/static/views/DebugPanel.js';
 import Settings from '/static/views/Settings.js';
 
@@ -37,6 +44,9 @@ const routes = [
   { path: '/hub', component: HubView },
   { path: '/schedules', component: ScheduleList },
   { path: '/governance', component: GovernanceDashboard, alias: ['/approvals', '/governance/policy'] },
+  { path: '/memory', component: MemoryView },
+  { path: '/tracing', component: TracingView },
+  { path: '/app-matrix', component: AppMatrixView },
   { path: '/debug', component: DebugPanel },
   { path: '/settings', component: Settings },
 ];
@@ -47,7 +57,7 @@ const router = createRouter({
 });
 
 const App = {
-  components: { TopBar, SideNav, ToastContainer },
+  components: { TopBar, SideNav, ToastContainer, CommandPalette, StatusBar, OnboardingGuide, CliPanel },
   template: `
     <div class="mx-layout">
       <TopBar />
@@ -61,8 +71,12 @@ const App = {
           </router-view>
         </main>
       </div>
+      <CliPanel />
+      <StatusBar />
       <ToastContainer />
-            </div>
+      <CommandPalette />
+      <OnboardingGuide />
+    </div>
   `,
 };
 

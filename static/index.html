@@ -5,11 +5,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PyBot — Assistant, APP Brain, and Ultimate Agent Runtime</title>
   <meta name="description" content="PyBot is a governed runtime with three root modes above tools, skills, agents, workflows, and apps.">
+  <!-- FOUC prevention: apply theme before first paint -->
+  <script>
+    (function() {
+      var t = localStorage.getItem('pybot_theme') || 'dark';
+      if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    })();
+  </script>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vue-flow/core@1/dist/style.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vue-flow/core@1/dist/theme-default.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vue-flow/controls@1/dist/style.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vue-flow/minimap@1/dist/style.css">
+  <!-- markdown-it + highlight.js for rich message rendering -->
+  <link id="hljs-theme-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link id="hljs-theme-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" disabled>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/java.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/markdown-it@13.0.1/dist/markdown-it.min.js"></script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>P</text></svg>">
   <script src="https://unpkg.com/js-yaml@4/dist/js-yaml.min.js"></script>
   <script type="importmap">

@@ -48,6 +48,11 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "SessionMemoryExtractor": (".session_memory_extractor", "SessionMemoryExtractor"),
     "SessionMemoryConfig": (".session_memory_extractor", "SessionMemoryConfig"),
     "SessionMemoryScheduler": (".session_memory_extractor", "SessionMemoryScheduler"),
+    # memory_distill — 记忆蒸馏流水线 (Journal → Distill → Archive)
+    "MemoryDistillManager": (".memory_distill", "MemoryDistillManager"),
+    "DeepDigestManager": (".memory_distill", "DeepDigestManager"),  # 兼容别名
+    # facade — 统一记忆检索门面 (canvas-aware)
+    "MemoryFacade": (".facade", "MemoryFacade"),
 }
 
 __all__ = sorted(_EXPORTS)

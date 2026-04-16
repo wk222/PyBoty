@@ -38,6 +38,9 @@ class NodeType(str, Enum):
     FILE_READ = "file_read"
     FILE_WRITE = "file_write"
     WAIT_SIGNAL = "wait_signal"
+    DATA_SOURCE = "data_source"
+    NOTIFY = "notify"
+    MONITOR = "monitor"
 
 
 BRANCH_NODE_TYPES = frozenset({NodeType.CONDITION, NodeType.ROUTER, NodeType.QUESTION_CLASSIFIER})

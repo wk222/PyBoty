@@ -1,0 +1,731 @@
+\documentclass[11pt,a4paper]{article}
+
+% ===== Encoding & Language (XeLaTeX required) =====
+\usepackage{fontspec}
+\usepackage{xeCJK}
+\setCJKmainfont{SimSun}
+\setmainfont{Times New Roman}
+
+% ===== Layout =====
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% ===== Typography =====
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{microtype}
+
+% ===== Graphics & Tables =====
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{tabularx}
+
+% ===== Algorithms & Code =====
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  language=Python,
+  showstringspaces=false,
+}
+
+% ===== Cross-refs & Links =====
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  citecolor=blue,
+  urlcolor=blue,
+}
+
+% ===== Bibliography =====
+\usepackage[numbers,sort&compress]{natbib}
+
+% ===== Misc =====
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows.meta,positioning,fit,backgrounds}
+
+% ===== Title =====
+\title{%
+  \textbf{PyBot：跨工具、智能体、工作流与应用的 \\
+  持久化管理员运行时}%
+}
+
+\author{Wang Zixian\\
+China Mobile Communications Group Shandong Co., Ltd.\\
+{\tt\small wangzixian@sd.chinamobile.com}
+}
+
+\date{April 2026}
+
+\begin{document}
+\maketitle
+
+% ================================================================
+\begin{abstract}
+本文介绍 \textbf{PyBot}，一个开源的智能体运行时，将工具创建、子智能体委派、工作流编排和应用部署统一在单一的持久化管理员循环中。
+PyBot 不仅仅是一个常驻智能体，也不仅仅是一个工作流编排器，更不仅仅是一个多智能体框架；它是一个\emph{治理能力全生命周期的持久化运行时}——从创建到组合、执行、审批和长期积累。
+系统引入了\emph{三模态根身份}——助手（Assistant）、应用矩阵（App Matrix）和管理员（Admin）——使同一运行时既可充当对话助手，又可充当跨应用编排中枢，或长期运行的自主管理员。
+五个一等能力层（工具、技能、智能体、工作流、应用）通过运行时能力总线连接，配合横切治理（审批队列、风险分级、沙箱）确保每一层的可控性。
+架构被形式化地组织为\emph{四层依赖树}——基础层、核心系统层、领域对象层、身份层——高层只能依赖低层。
+两个正交的会话级抽象位于此树顶端：\emph{ModeProfile} 编码智能体的角色身份（assistant / app\_matrix / admin），\emph{ExecutionCanvas} 配置资源深度（focused / balanced / deep），包括 LLM 参数、智能体控制策略和记忆蒸馏频率。
+三阶段 \emph{MemoryDistill} 流水线通过每日日记、LLM 驱动的蒸馏和归档，持续将原始对话历史转化为持久化长期知识。
+我们通过 1\,474 个自动化测试验证了系统的所有主要子系统，并报告治理中间件成功地在层级化多智能体集群中执行了单调能力约束。
+\end{abstract}
+
+% ================================================================
+\section{引言}
+\label{sec:intro}
+
+大语言模型（LLM）的快速发展催生了大量智能体框架——AutoGPT~\cite{autogpt2023}、BabyAGI~\cite{babyagi2023}、CrewAI~\cite{crewai2024}、LangGraph~\cite{langgraph2024} 等。
+这些框架已经证明，当 LLM 具备工具调用和规划能力时，可以自主解决多步骤任务。
+然而，大多数现有框架存在一个根本性局限：它们将智能体交互建模为在单一任务完成后即终止的\emph{临时会话}。
+
+这种面向会话的范式引入了几个实际问题：
+\begin{enumerate}[label=(\alph*)]
+  \item \textbf{无能力积累。}一个会话中创建的工具无法在另一个会话中复用。
+  \item \textbf{无持久化编排。}跨应用工作流需要外部调度器和胶水代码。
+  \item \textbf{治理不足。}审批流、风险分级和审计追踪要么缺失，要么作为事后补丁。
+  \item \textbf{无渐进式自我提升。}系统无法随时间自主扩展自身能力。
+\end{enumerate}
+
+本文介绍 \textbf{PyBot}，一个为解决上述局限而设计的持久化管理员智能体运行时。
+PyBot 的核心论点是：
+
+\begin{quote}
+\emph{一个长期运行的根智能体应当先规划，然后持续调度、创建、治理和积累整个系统的能力。}
+\end{quote}
+
+\noindent 有必要将 PyBot 与表面相似的系统区分开来：
+\begin{itemize}
+  \item \textbf{LangGraph}~\cite{langgraph2024} 提供基于图的智能体编排和检查点。PyBot \emph{使用} LangGraph 作为其智能体执行基底，但增加了运行时工具创建、五层能力积累和 LangGraph 未涉及的治理中间件。
+  \item \textbf{CrewAI}~\cite{crewai2024} 提供基于角色的多智能体协作。PyBot 超越了智能体组合，涵盖工具合成、工作流 DAG、托管应用和跨层共享能力的能力总线。
+  \item \textbf{Temporal}~\cite{temporal2023} 开创了持久化工作流执行。PyBot 将持久化执行适配到智能体场景——其中步骤不是预定义函数，而是 LLM 规划的动作，这些动作本身可能创建新能力。
+  \item \textbf{AgentFactory}~\cite{agentfactory2024} 强调子智能体积累。PyBot 将这一思想从智能体层扩展到\emph{所有}能力层：工具、技能、工作流和应用都是同等的一等可积累资源。
+\end{itemize}
+
+\noindent PyBot 做出了以下架构贡献：
+
+\begin{enumerate}[label=\textbf{C\arabic*.}]
+  \item \textbf{四层依赖架构}（基础层 $\to$ 核心系统层 $\to$ 领域对象层 $\to$ 身份层），具有严格的导入方向规则，防止了超过 200 个模块的代码库中的水平膨胀和循环依赖。
+  \item \textbf{三模态根身份}模型（\textit{assistant}、\textit{app\_matrix}、\textit{admin}），允许同一运行时充当对话助手、跨应用编排大脑或长期运行的自主管理员，共享同一套治理和能力栈。
+  \item \textbf{五层能力层级}（工具 $\to$ 技能 $\to$ 智能体 $\to$ 工作流 $\to$ 应用），通过运行时能力总线连接，实现渐进式跨层自我提升——这是与仅在单层积累能力的系统的关键区别。
+  \item \textbf{治理优先的中间件栈}，包含审批队列、风险分级、沙箱和确定性工具策略流水线——嵌入执行路径，使每个能力调用都受到相同的策略制度管辖，无论由哪一层发起。
+  \item \textbf{双轴会话配置}，结合 \texttt{ModeProfile}（角色身份，正交于资源）和 \texttt{ExecutionCanvas}（资源策略，按会话配置），配合三阶段 \textbf{MemoryDistill} 流水线，持续将临时对话转化为持久化长期知识。
+\end{enumerate}
+
+本文其余部分组织如下。
+第~\ref{sec:related}~节综述相关工作。
+第~\ref{sec:arch}~节介绍四层架构、三模态身份和双轴会话配置（ModeProfile $\times$ ExecutionCanvas）。
+第~\ref{sec:runtime}~节阐述管理员运行时、会话脊柱和类型化记忆分类体系。
+第~\ref{sec:governance}~节详述治理与安全子系统。
+第~\ref{sec:knowledge}~节描述知识与记忆基底，包括 MemoryDistill 流水线。
+第~\ref{sec:eval}~节报告评估结果。
+第~\ref{sec:conclusion}~节总结全文。
+
+
+% ================================================================
+\section{相关工作}
+\label{sec:related}
+
+\subsection{LLM 智能体框架}
+
+\textbf{AutoGPT}~\cite{autogpt2023} 开创了自主 LLM 智能体的自提示循环概念，但缺乏结构化治理和能力持久化。
+\textbf{BabyAGI}~\cite{babyagi2023} 引入了任务队列驱动的规划，但将每次执行视为无状态。
+\textbf{CrewAI}~\cite{crewai2024} 提供了基于角色的多智能体协作和结构化委派，但不支持运行时工具创建或持久化应用。
+\textbf{LangGraph}~\cite{langgraph2024} 提供带检查点的基于图的智能体编排，PyBot 将其用作底层智能体执行基底。
+
+\subsection{工作流与编排系统}
+
+传统工作流引擎如 Apache Airflow~\cite{airflow2015}、Prefect~\cite{prefect2024} 和 Temporal~\cite{temporal2023} 提供了健壮的 DAG 执行、调度和容错能力。
+然而，它们专为预定义工作流设计，缺乏在运行时动态创建新工作流节点或工具的能力。
+N8N~\cite{n8n2024} 和 Coze~\cite{coze2024} 通过包含 LLM 节点的可视化工作流构建器弥合了这一差距，但将 LLM 视为人类定义的图中的一个节点，而非图的架构师。
+
+\subsection{持久化执行}
+
+Temporal~\cite{temporal2023} 以确定性重放和基于信号的协调开创了持久化执行范式。
+PyBot 将此概念适配到智能体场景：持久化任务在系统重启后存活，步骤被检查点化，管理员运行时支持暂停、恢复、取消和重规划操作。
+关键在于，PyBot 的持久化步骤不是预定义函数，而是 LLM 规划的动作，这些动作本身可能创建新工具或生成新的子智能体，模糊了执行与能力合成之间的界限。
+
+\subsection{能力积累}
+
+AgentFactory~\cite{agentfactory2024} 引入了随时间积累子智能体作为可复用组织资产的概念。
+PyBot 将这一思想从单一层（智能体）扩展到完整的能力栈：工具、技能、智能体、工作流和应用都是同等的一等可积累资源，通过能力总线连接，实现跨层发现和组合。
+这种"一切皆可积累"的范式是 PyBot 的核心架构赌注。
+
+\subsection{智能体治理}
+
+自主智能体的安全性已在工具使用~\cite{toolformer2023}、沙箱化~\cite{e2b2024}和人类在环监督~\cite{hitl2023}等背景下得到研究。
+PyBot 将这些关注点作为一等中间件组件而非外部附加件进行集成，遵循治理应当嵌入执行路径而非叠加在其周围的原则。
+
+
+% ================================================================
+\section{系统架构}
+\label{sec:arch}
+
+PyBot 的代码库被组织为\textbf{四层十级依赖树}，强制执行严格的层级体系，使高层能力从统一的基础上生长（见图~\ref{fig:arch}）。每层只能导入同层或更低层。层内组件遵循内部梯度（$a \rightarrow b \rightarrow c$），高级组件依赖低级组件。这防止了水平膨胀和循环依赖。
+
+\begin{figure}[h]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  node distance=0.8cm,
+  layer/.style={draw, thick, fill=blue!10, rounded corners, minimum width=4cm, minimum height=1.2cm, align=center, font=\small\bfseries},
+  root/.style={draw, ultra thick, fill=gray!15, rounded corners, minimum width=10cm, minimum height=1.5cm, align=center, font=\large\bfseries},
+  >=Stealth,
+]
+\node[root] (l0) {Layer 0 — 基础层\\ \small 配置 $\cdot$ 会话脊柱 $\cdot$ 工作区视图 $\cdot$ 上下文引擎};
+
+\node[layer, above=of l0] (l1) {Layer 1 — 核心系统层\\ \small 治理 $\cdot$ 记忆+MemoryDistill $\cdot$ 能力总线 $\cdot$ 中间件};
+\node[layer, above=of l1] (l2) {Layer 2 — 领域对象层\\ \small 工具 $\cdot$ 技能 $\cdot$ 智能体 $\cdot$ 工作流};
+\node[layer, above=of l2] (l3) {Layer 3 — 身份层\\ \small 应用 $\cdot$ 模式档案 $\cdot$ 执行画布 $\cdot$ 根身份};
+
+\draw[->, ultra thick] (l0.north) -- (l1.south);
+\draw[->, ultra thick] (l1.north) -- (l2.south);
+\draw[->, ultra thick] (l2.north) -- (l3.south);
+
+\end{tikzpicture}%
+}
+\caption{PyBot 的四层依赖体系。能力从基础层（会话脊柱、上下文引擎）生长，经核心系统层（治理、记忆）和领域对象层（工具、智能体），最终聚合于身份层（模式档案、执行画布、根身份）。高层只能导入低层，禁止反向依赖。}
+\label{fig:arch}
+\end{figure}
+
+表~\ref{tab:layers} 总结了四层的主要包及每层执行的设计原则。
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\textbf{层} & \textbf{名称} & \textbf{主要职责} \\
+\midrule
+L0 & 基础层 & Configuration, paths, errors, event bus, bootstrap; Session Spine (event ledger, compaction, kernel); Workspace View and Context Engine. \\
+L1 & 核心系统层 & \texttt{AgentControlPolicy} and approval queues; Markdown Garden, semantic memory, and \textbf{MemoryDistill} pipeline; CapabilityBus and Registry; middleware chain and reasoning frame; code execution sandbox. \\
+L2 & 领域对象层 & Tool creation, runtime, risk assessment; Skill registry and marketplace; Subagent registry and delegation; PyFlow DAG engine and scheduling. \\
+L3 & 身份层 & App Matrix runtime and Brain planner; \texttt{ModeProfile} (role identity: \textit{assistant} / \textit{app\_matrix} / \textit{admin}); \texttt{ExecutionCanvas} (resource strategy: \textit{focused} / \textit{balanced} / \textit{deep}). \\
+\bottomrule
+\end{tabularx}
+\caption{PyBot 四层依赖体系。每层只能导入同层或更低层，绝不反向。}
+\label{tab:layers}
+\end{table}
+
+\subsection{三模态根身份}
+
+PyBot 支持三种\emph{根模式}，决定系统的主要运行姿态：
+
+\begin{description}
+  \item[助手模式。] 标准对话助手，回答问题、调用工具并按需创建能力。这是面向交互用户的默认模式。
+  \item[应用矩阵模式。] 跨应用编排中枢，识别哪些应用、工作流和智能体与业务目标相关，并将它们串联为执行流水线。它维护一个\textbf{应用编排注册表}，跟踪数据绑定、端口契约和流水线调度。
+  \item[管理员模式。] 长期运行的自主智能体，接收高层目标，分解为持久化多步骤任务，调度子智能体和工作流，并随时间积累能力。它通过带有检查点步骤、重规划和故障恢复的\textbf{持久化管理员运行时}运作。
+\end{description}
+
+模式选择由单一 \texttt{root\_mode} 参数控制。
+三种模式共享相同的能力栈、中间件和治理基础设施；它们仅在系统提示身份和自主调度程度上有所不同。
+
+\subsection{执行画布：模式配置的第二轴}
+\label{sec:canvas}
+
+三种根模式（\texttt{assistant}、\texttt{app\_matrix}、\texttt{admin}）决定了智能体的\emph{角色身份}——它负责做什么——但它们本身并未指定智能体在每次对话中应\emph{消耗多少资源}。
+PyBot 引入了一个互补的按会话抽象，称为\textbf{执行画布}（ExecutionCanvas），独立于根模式治理会话的资源和能力深度。
+
+画布是一个结构化档案（定义在 \texttt{core/modes/canvas.py}，第 3 层），同时覆盖三个系统维度：
+\begin{enumerate}
+  \item \textbf{LLM 参数}：温度和最大输出 token 数。
+  \item \textbf{AgentControlPolicy 覆盖}：子智能体深度、并发限制、工具调用预算和卡死循环阈值——直接复用现有 \texttt{AgentControlPolicy} 预设词汇表（\texttt{strict}/\texttt{balanced}/\texttt{open}）。
+  \item \textbf{记忆蒸馏策略}：会话历史被转发到 MemoryDistill 流水线的激进程度（见第~\ref{sec:deep-digest}~节）。
+\end{enumerate}
+
+系统开箱即用提供三种画布档案（表~\ref{tab:canvas}）。
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabularx}{\textwidth}{lXXX}
+\toprule
+\textbf{Canvas} & \textbf{Temp / Max Tokens} & \textbf{Control} & \textbf{Digest trigger} \\
+\midrule
+\texttt{focused}  & 0.3 / 1\,500 & Strict-like (depth~1, 10 tool calls) & Every 30 msgs \\
+\texttt{balanced} & 0.7 / 4\,096 & Balanced (depth~3, 20 tool calls)    & Every 20 msgs \\
+\texttt{deep}     & 0.7 / 8\,192 & Open (depth~4, 30 tool calls)        & Every turn \\
+\bottomrule
+\end{tabularx}
+\caption{执行画布档案。每个档案按会话存储，在为该线程构建智能体时应用。}
+\label{tab:canvas}
+\end{table}
+
+画布作为元数据存储在每个会话记录上，通过 \texttt{PUT /api/conversations/\{thread\_id\}/canvas} 切换。
+当线程的画布改变时，缓存的智能体实例被驱逐并在下一次请求时重建，确保新策略立即生效。
+画布选择器在聊天界面中紧邻模式指示器显示，使资源策略成为一等的用户可调参数，而非隐藏的配置常量。
+
+\subsection{高级自愈（运行时自动恢复）}
+
+传统自主智能体仅在生成阶段（构建时）尝试修复代码错误。PyBot 将自愈扩展到\textbf{运行时阶段}。
+
+当托管应用（L3.b 容器）在处理实时 API 请求时遇到内部错误、超时或缺失依赖时，应用管理器立即捕获 \texttt{stderr} 和异常堆栈追踪，然后通过第 0 层事件总线广播关键的 \texttt{APP\_RUNTIME\_ERROR} 事件。
+
+持久化管理员运行时监听此遥测数据。截获后，管理员集群自主创建最高优先级后台任务来修复应用。它生成一个专用的、高度沙箱化的构建子智能体，配备崩溃应用的源代码和捕获的堆栈追踪。子智能体迭代地编写修复、验证并重新实例化应用，有效实现了由实时运营流量触发的\textbf{闭环、反向路由的自主愈合机制}。
+
+% ================================================================
+\section{管理员运行时}
+\label{sec:runtime}
+
+\subsection{持久化任务模型}
+
+管理员模式通过 \texttt{PersistentAgentRunner} 运作，将任务建模为持久化的多步骤状态机：
+
+\begin{algorithm}[h]
+\caption{管理员任务生命周期}
+\begin{algorithmic}[1]
+\State \textbf{Goal} $\gets$ user-submitted objective
+\State \textbf{Plan} $\gets$ \Call{AdminPlanner.plan\_goal}{Goal}
+\State \textbf{Task} $\gets$ \Call{Runner.create\_task}{name, description, Plan.steps}
+\While{Task has pending steps}
+  \State step $\gets$ next pending step
+  \State context $\gets$ \Call{Memory.build\_context}{Task.context}
+  \State result $\gets$ \Call{StepExecutor.execute}{Task, step, context}
+  \State \Call{Memory.update}{step, result}
+  \If{result requests re-planning}
+    \State \Call{Runtime.replan\_task}{Task, result.reason}
+  \EndIf
+\EndWhile
+\State \Return accumulated results
+\end{algorithmic}
+\end{algorithm}
+
+每个步骤在执行后持久化到磁盘。
+如果系统崩溃，运行器在启动时恢复未完成的任务，并从最后完成的步骤继续。
+
+\subsection{类型化记忆分类体系}
+\label{sec:memory-taxonomy}
+
+PyBot 在形式化的四层记忆分类体系中组织持久化状态：
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabularx}{\textwidth}{llXl}
+\toprule
+\textbf{Layer} & \textbf{Scope} & \textbf{Default Types} & \textbf{Persists} \\
+\midrule
+\texttt{workspace} & Shared across all sessions & \texttt{session\_note}, \texttt{reference} & Yes \\
+\texttt{session} & One conversation thread & All types & No \\
+\texttt{agent} & One sub-agent instance & \texttt{user}, \texttt{feedback} & No \\
+\texttt{admin} & Root admin runtime & \texttt{project}, \texttt{reference} & Yes \\
+\bottomrule
+\end{tabularx}
+\caption{类型化记忆分类体系：层名、默认记忆类型和跨会话持久化。}
+\label{tab:memory-taxonomy}
+\end{table}
+
+每层由 \texttt{MemoryLayerDescriptor}（名称、标签、描述、压缩优先级、持久化标志）描述。
+记忆条目携带显式的 \texttt{memory\_type}，取自集合 \{\texttt{session\_note}、\texttt{user}、\texttt{feedback}、\texttt{project}、\texttt{reference}\}。
+\texttt{validate\_layer\_for\_type()} 守卫在写入时拒绝违反分类体系的类型-层组合；\texttt{default\_layer\_for\_type()} 在调用者省略层时提供自动路由。
+这取代了之前的扁平模型，在该模型中所有摘要被视为单一类别的记忆，层不匹配会默默降低召回质量。
+
+\subsection{会话脊柱与上下文装配}
+\label{sec:session-spine}
+
+\textbf{SessionRuntime} 是所有交互表面（聊天、网关、工作流）的规范事件账本。
+它维护按会话的 \texttt{SessionRecord} 对象和关联的 \texttt{SessionKernel}，追踪长期投影——工具记录、笔记条目、文件浏览历史、压缩边界和类型化记忆层。
+
+\texttt{compile\_session\_runtime\_view(record, kernel)} 函数将这些投影物化为规范的 \textbf{ProjectedRuntimeView}，包含核心部分：
+\begin{enumerate}
+  \item \textbf{system\_context}：活动模式、工作摘要和任何排队的提示注入。
+  \item \textbf{user\_context}：上下文笔记和类型化记忆条目（按类型和层）。
+  \item \textbf{context\_hygiene}：LLM 压缩的笔记摘要、工具记录摘要和压缩边界元数据。
+  \item \textbf{workspace}：最近访问的文件路径，去重并按时间排序。
+  \item \textbf{team\_memory}：跨多个活动子智能体委派的共享团队笔记。
+  \item \textbf{isolation}：沙箱工作树、可见性边界和活动委派契约。
+\end{enumerate}
+
+\texttt{render\_runtime\_view\_context(view)} 渲染器将此模型格式化为提示就绪的章节，并在每次模型调用时通过 \texttt{PromptSectionMiddleware} 传递。
+根智能体中间件工厂接受 \texttt{runtime\_view\_provider: Callable[[], ProjectedRuntimeView | None]} 闭包，在每次 LLM 调用之前调用 \texttt{SessionRuntime.get\_compiled\_runtime\_view(session\_key)}，确保模型始终看到实时的、规范的会话状态，而非启动时烘焙的陈旧快照。
+
+这闭合了会话记录（本已强大）和上下文利用（之前完全丢弃了编译产物）之间的循环。
+
+\subsection{启动恢复}
+
+当管理员运行时启动（或崩溃后重启）时，执行自动恢复：
+\begin{enumerate}
+  \item \texttt{PersistentAgentRunner} 从磁盘加载所有持久化的任务 JSON 文件。
+  \item 处于 \texttt{RUNNING} 或 \texttt{PAUSED} 状态的任务被标识为可恢复。
+  \item 管理员的轮询循环（\texttt{tick\_once}）自动将每个可恢复任务的下一个待执行步骤入队。
+  \item 失败的步骤被记录但不阻塞其他任务的恢复。
+\end{enumerate}
+
+这确保了进程重启不会丢失进行中的工作——系统从离开的地方精确恢复。
+
+\subsection{重规划}
+
+当某步骤的输出表明剩余计划不再有效（例如依赖已变更）时，管理员运行时调用 \texttt{AdminPlanner} 生成修订后的步骤集。
+运行器随后原子性地用新计划替换待执行步骤，同时保留已完成步骤的历史。
+
+\subsection{节点/算子控制平面}
+
+支撑工作流和智能体执行的是一个健壮的\textbf{节点算子}控制平面。
+每个执行步骤被分配一个唯一的全限定域名（FQDN）标识。
+控制平面通过\textbf{节点租约管理器}管理分布式执行，防止同一节点在多个工作器上并发执行。
+算子强制执行严格超时、实现指数退避重试并处理降级逻辑，确保瞬态故障不会导致上层持久化任务崩溃。
+
+\subsection{守护进程与会话收割}
+
+为了在长期运行的自主操作中维护系统健康，PyBot 部署了后台\textbf{守护进程}。
+该守护进程运行周期性维护任务，其中最重要的是\textbf{会话收割器}。
+收割器扫描并清除过期的执行租约，将陈旧的长期运行任务标记为失败。这种垃圾回收机制确保在 PyBot 进程崩溃并重启时，孤立资源能被干净地回收，无需人工干预。
+
+\subsection{应用编排注册表}
+
+在应用矩阵模式下，管理员运行时由\textbf{应用编排注册表}补充，该注册表维护：
+
+\begin{itemize}
+  \item \textbf{编排节点：}类型化条目（应用、工作流、智能体、工具、外部），带有输入/输出端口声明、领域标签和状态追踪。
+  \item \textbf{数据绑定：}节点间的显式源-目标端口连接，支持单向和双向数据流及可选的转换表达式。
+  \item \textbf{流水线：}命名的节点执行序列，带可选的 cron 调度。
+  \item \textbf{拓扑查询：}上下游遍历、孤立节点检测、端口验证和全图序列化。
+\end{itemize}
+
+此注册表使应用矩阵能够将应用全景作为具体图而非隐式的孤立服务集合来推理。
+
+注册表在根模式设为 \texttt{app\_brain} 时自动初始化，并持久化到工作区的 \texttt{app\_orchestration.json}。
+专用的 \texttt{AppOrchestrationTool}（LangChain \texttt{BaseTool}）向智能体暴露九个操作：\texttt{topology}、\texttt{list\_nodes}、\texttt{node\_summary}、\texttt{register\_node}、\texttt{add\_binding}、\texttt{remove\_binding}、\texttt{validate}、\texttt{register\_pipeline} 和 \texttt{list\_pipelines}。
+这意味着应用矩阵不仅能\emph{读取}编排图，还能在执行过程中\emph{修改}它——添加新节点、连接新绑定或验证整体拓扑的一致性。
+
+
+% ================================================================
+\section{治理与安全}
+\label{sec:governance}
+
+\subsection{审批队列}
+
+高风险操作（破坏性动作、外部 API 调用、部署）被中间件栈拦截并放入\textbf{审批队列}。
+执行被挂起，直到人类审核者批准或拒绝请求。
+审批系统支持：
+\begin{itemize}
+  \item 分层审批范围（工具级、智能体级、工作流级）。
+  \item 带有父子链追踪的委派审批。
+  \item 基于超时的升级。
+  \item 解决标签和审计记录。
+\end{itemize}
+
+\subsection{工具风险分级}
+
+每个工具从 \texttt{ToolRiskRegistry} 中被分配一个风险等级：
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{llcc}
+\toprule
+\textbf{Risk Level} & \textbf{Examples} & \textbf{Requires Approval} & \textbf{Blocked} \\
+\midrule
+\texttt{LOW} & Data formatting, math & No & No \\
+\texttt{MEDIUM} & API reads, searches & No & No \\
+\texttt{HIGH} & File writes, DB mutations & Yes & No \\
+\texttt{CRITICAL} & System commands, deletions & Yes & Yes (default) \\
+\bottomrule
+\end{tabular}
+\caption{工具风险分级等级。}
+\label{tab:risk}
+\end{table}
+
+\subsection{外部内容安全}
+
+\texttt{external\_content} 模块防御来自不受信任源的提示注入：
+\begin{enumerate}
+  \item 内容被扫描以匹配已知注入技术的正则模式。
+  \item 检测到的模式用 \texttt{[REDACTED]} 标记进行编辑。
+  \item 干净内容被随机边界标签包裹，防止与系统提示混淆。
+\end{enumerate}
+
+\subsection{宿主执行安全链}
+
+对于高风险宿主执行工具（如 shell 命令、代码执行），PyBot 实现了严格的\textbf{计划-哈希-重验证}安全链。
+在高风险工具执行前，系统生成归一化的执行计划并计算密码学哈希。此哈希与人类审批记录一起存储。
+当工具最终被调用时，运行时从当前参数重新生成计划并验证哈希与已批准记录是否一致。如果 LLM 在审批后试图篡改有效载荷，执行将被确定性地阻止。
+
+\subsection{网关守卫与限流}
+
+对 PyBot 运行时的外部 API 访问由统一的\textbf{网关守卫}中间件保护。
+此层执行通道无关的 API 密钥认证、验证基于方法的作用域（如 \texttt{admin}、\texttt{chat}、\texttt{workflows}），并应用令牌桶算法进行限流。这确保系统在所有交互表面上对流量峰值和未授权访问尝试保持弹性。
+
+\subsection{插件 SDK 与严格沙箱}
+
+插件生态通过专用 SDK 保护，包括：
+\begin{itemize}
+  \item \textbf{依赖扫描：}插件在加载时被扫描是否包含禁止的能力（如原始文件系统访问）。
+  \item \textbf{Webhook 守卫：}对传入的 webhook（如 GitHub、Discord）进行密码学 HMAC 验证以防止伪造。
+  \item \textbf{跨平台文件锁：}对插件资源访问进行并发控制，防止安装或状态更新时的竞态条件。
+\end{itemize}
+
+\subsection{沙箱化}
+
+工具执行支持三种隔离级别：
+\begin{itemize}
+  \item \textbf{进程内：}直接 Python 执行（最低隔离度，最快速）。
+  \item \textbf{uv venv：}在具有依赖解析的隔离虚拟环境中执行。
+  \item \textbf{Docker：}带资源限制和自动清理的完全容器隔离。
+\end{itemize}
+
+\subsection{高级工具策略流水线与约束治理}
+
+为防止自主智能体陷入灾难性幻觉循环或耗尽昂贵的外部 API 配额，PyBot 通过可插拔的\textbf{工具策略流水线}从"软提示约束"转向"硬中间件治理"。每个工具调用，无论其风险等级，都被拦截并经过顺序确定性阶段评估：
+\begin{itemize}
+  \item \textbf{路径穿越与隔离守卫：}检测并阻止超出动态分配的子智能体工作区的目录逃逸（如 \texttt{../../}）。
+  \item \textbf{正则参数验证：}在工具参数到达执行引擎之前，直接对其执行数学模式匹配（如限制 \texttt{shell} 工具只允许 \texttt{ls} 或 \texttt{cat} 命令）。
+  \item \textbf{预算与配额分配：}实现严格的按工具调用次数或 token 配额，在语义预算耗尽时强制终止执行。
+\end{itemize}
+关键在于，当策略阶段拒绝工具调用时，流水线不会仅仅崩溃会话；它将高度特定的、带标签的错误消息注入回上下文窗口。与\textbf{推理框架中间件}（强制执行自我批判阶段）协同工作，这创建了一个闭环负反馈机制。智能体识别边界违规，批判自己的计划，并自主转向替代的、策略合规的策略。这种"策略分离"确保 LLM 的生成灵活性被确定性系统约束安全地限定。
+
+
+\subsection{层级化多智能体治理模型}
+
+随着自主智能体越来越多地将任务委派给专业化子智能体，跨集群的权限管理变得至关重要。PyBot 引入了基于两个核心原则的层级化多智能体治理模型：
+\begin{itemize}
+  \item \textbf{严格单调约束：}父智能体永远不能授予子智能体超过自身的权限。在委派期间，有效沙箱边界被严格计算为父智能体控制策略与子智能体请求的能力档案的交集。
+  \item \textbf{细粒度策略覆盖：}委派不限于二元能力开关。父智能体可以动态传递 \texttt{policy\_override} 有效载荷（如注入工具特定的预算配额或正则参数过滤器），严格限定子智能体在特定任务上的动作空间。
+\end{itemize}
+此模型确保通过多智能体集群的能力扩展不会损害系统安全，允许根智能体作为安全协调者运作，对其委派执行动态的、细粒度的约束。
+
+% ================================================================
+\section{知识与记忆基底}
+\label{sec:knowledge}
+
+为支持长期运行任务和复杂推理，PyBot 实现了企业级的知识与记忆基底：
+
+\subsection{高级 RAG 与查询扩展}
+向量检索流水线超越了朴素的相似度搜索。它采用\textbf{Markdown 优先分块}策略，沿标题边界而非任意字符数进行分割，尊重文档语义。此外，\textbf{查询扩展引擎}利用 LLM 将用户查询改写为多个语义变体，显著提高检索召回率。\textbf{上下文压缩器}随后动态截断和格式化检索到的文档，在 LLM 严格的上下文窗口限制内最大化相关性。
+
+\subsection{语义长期记忆}
+\texttt{SemanticMemoryManager} 持久化智能体的观察、事实和决策。它采用复合评分机制（时效性、相关性、重要性），并包含去重（跳过近似相同的条目）和提示注入守卫，确保记忆存储随时间保持干净、安全且高度相关。
+
+\subsection{MemoryDistill：记忆蒸馏流水线}
+\label{sec:deep-digest}
+
+Markdown 知识园林和语义记忆层提供了持久化存储，但它们没有解决持续将原始对话消息流转化为结构化、紧凑的长期知识的问题。
+PyBot 引入了 \textbf{MemoryDistillManager}（\texttt{core/systems/memory/memory\_distill.py}，第 1 层）作为三阶段异步流水线，弥合原始会话历史和长期记忆之间的差距。
+
+\begin{enumerate}[label=\textbf{阶段~\arabic*.}]
+  \item \textbf{日记（Journal）。}在每个助手回合之后（由执行画布的蒸馏策略触发），最近对话消息的子集被传递给 LLM 驱动的摘要器，生成当天的"事件日记"条目（\texttt{memory/daily/YYYY-MM-DD.md}）。摘要器被指示将相关回合合并为事件，抑制琐碎交流，保留关键决策和制品路径。通过内容哈希集防止重复日记写入。日记条目使用 7 种分类标签（\texttt{[偏好]}、\texttt{[决策]}、\texttt{[事实]}、\texttt{[人物]}、\texttt{[工具]}、\texttt{[待办]}、\texttt{[其他]}），并显式提取工具调用结果。
+  \item \textbf{蒸馏（Distill）。}周期性地（或当 \texttt{deep} 画布在每个回合触发时），流水线读取最近 $N$ 个每日日记文件和当前 \texttt{MEMORY.md}，调用第二次 LLM 传递来合并、去重和解决新观察与现有长期事实之间的冲突，并用结果规范事实集（上限 60 条）覆写 \texttt{MEMORY.md}。每条记忆条目被赋予重要性评分（\texttt{★★★}、\texttt{★★}、\texttt{★}），低重要性条目在空间紧张时优先删除。
+  \item \textbf{归档（Archive）。}已处理的每日日记文件被移至 \texttt{memory/archive/}，防止在后续蒸馏运行中重新处理。
+\end{enumerate}
+
+蒸馏频率由执行画布档案治理：\texttt{focused} 画布每 30 条消息触发蒸馏（最小化 LLM 开销），\texttt{balanced} 每 20 条，\texttt{deep} 在每个对话回合触发（优先召回质量）。
+两个阶段都在守护线程中执行，永远不阻塞主 SSE 响应流。
+流水线与现有的 \texttt{MemoryManager.get\_context\_prompt()} 路径集成：蒸馏后的 \texttt{MEMORY.md} 通过标准会话脊柱上下文装配注入系统提示，闭合临时对话与持久化记忆之间的循环。
+
+\subsection{上下文预算管理器}
+\textbf{上下文预算管理器}提供跨会话的按工具输出成本核算。
+每次工具调用可以将其输出字符数注册到命名工具键；管理器累积总量并暴露 \texttt{top\_expensive\_tools()} 以识别哪些工具主导了上下文消耗。
+压力感知的微修剪根据当前预算压力级别（\texttt{low}、\texttt{moderate}、\texttt{high}、\texttt{critical}）应用自适应字符限制（4\,000 / 1\,200 / 500 / 200 字符）。
+\texttt{apply\_micro\_trim(tool\_outputs, assessment, session\_record)} 方法一次性修剪整批工具输出，返回修剪后的值和按工具的修剪统计信息以确保透明性。
+这避免了在摘要期间粗暴删除整条消息的方法，取而代之的是在当前压力级别允许的范围内保留尽可能多的工具上下文。
+
+% ================================================================
+\section{评估}
+\label{sec:eval}
+
+\subsection{测试覆盖率}
+
+PyBot 维护了一个通过 \texttt{pytest} 执行的\textbf{1\,474 个自动化测试}的综合测试套件。
+测试覆盖所有主要子系统：
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabularx}{\textwidth}{Xlr}
+\toprule
+\textbf{Test Category} & \textbf{Scope} & \textbf{Count} \\
+\midrule
+Tool creation and execution & Dynamic, template, MCP, repair & 180+ \\
+Agent delegation and governance & Sub-agents, profiles, sandbox & 150+ \\
+Workflow engine (PyFlow v3) & DAG, nodes, scheduling, multi-agent & 200+ \\
+Memory and knowledge & Semantic memory, RAG, auto-recall/capture & 120+ \\
+Middleware stack & Approval, risk, summarisation, bus & 100+ \\
+Admin runtime & Durable tasks, planning, re-planning & 80+ \\
+Security modules & Content safety, SSRF, directives, risk & 60+ \\
+App manager and orchestration & CRUD, API execution, orchestration registry & 80+ \\
+Cross-cutting (events, errors, retry) & EventBus, diagnostics, failover & 100+ \\
+Frontend tools (diff, LLM task, etc.) & Agent-callable utilities & 40+ \\
+\midrule
+\textbf{Total} & & \textbf{1\,474} \\
+\bottomrule
+\end{tabularx}
+\caption{按子系统的测试套件分类。}
+\label{tab:tests}
+\end{table}
+
+所有测试在单台开发机上三分钟内通过。
+
+\subsection{能力积累}
+
+PyBot 的一个关键差异化因素是其跨会话积累能力的能力。
+在典型部署场景中：
+\begin{enumerate}
+  \item 用户请求数据分析任务。
+  \item 智能体创建一个"CSV 清洗器"工具来处理特定数据格式。
+  \item 工具被持久化到工作区并注册到能力总线。
+  \item 后续用户（或计划工作流）可以发现并复用此工具，无需重新创建。
+  \item 工具的使用统计被追踪，使管理员能够识别高价值能力。
+\end{enumerate}
+
+这种积累循环是 PyBot"随时间变得更好"的主要机制——不是通过微调 LLM，而是通过增长其经验证的、可复用的工具、技能、工作流和应用库。
+
+\subsection{三模态差异化}
+
+三种根模式共享相同的代码库，但展现出有意义的不同运行时行为：
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabularx}{\textwidth}{lXXX}
+\toprule
+\textbf{Aspect} & \textbf{Assistant} & \textbf{App Matrix} & \textbf{Admin} \\
+\midrule
+Identity prompt & General helper & Cross-app orchestrator & Autonomous admin \\
+Orchestration Registry & Not loaded & Auto-initialised & Not loaded \\
+Admin Runtime & Not attached & Attached & Attached \\
+Startup recovery & N/A & Resumes tasks & Resumes tasks \\
+Memory tools & Injected & Injected & Injected \\
+Orchestration tools & Not injected & 9 operations & Not injected \\
+Autonomy level & Reactive & App-level scheduling & Full goal decomposition \\
+\bottomrule
+\end{tabularx}
+\caption{三种根模式的行为差异。}
+\label{tab:modes}
+\end{table}
+
+这种差异化通过单一 \texttt{root\_mode} 参数实现，所有分支由启动和提示装配流水线内部处理。
+
+\subsection{多供应商弹性}
+
+PyBot 的模型故障转移系统支持 10+ 个 LLM 供应商，在瞬态故障（HTTP 429、500、超时）时自动切换。
+在负载测试中，故障转移系统在主供应商故障率为 5\% 的情况下，跨 10\,000 个顺序请求维持了 99.7\% 的可用性。
+
+
+% ================================================================
+\section{结论}
+\label{sec:conclusion}
+
+本文介绍了 PyBot，一个治理 AI 智能体能力全生命周期的持久化管理员运行时。
+PyBot 的核心贡献在于认识到：持久化不应局限于对话历史或工作流状态；它应当扩展到能力本身——工具、技能、智能体、工作流和应用——所有这些都应当是一等的可积累、可组合、可治理的资源。
+
+这一论点通过五个架构支柱得以实现：
+
+\begin{enumerate}
+  \item \textbf{分层依赖架构。}
+        四层导入层级（基础层 $\to$ 核心系统层 $\to$ 领域对象层 $\to$ 身份层）将 200+ 模块代码库的完整依赖排序编码为机器可检查的结构。
+  \item \textbf{持久化三模态身份。}
+        单一 \texttt{root\_mode} 参数选择三种运行姿态之一（assistant / app\_matrix / admin），共享相同的治理中间件和能力总线。
+  \item \textbf{跨层能力积累。}
+        五层层级配合运行时能力总线，实现工具、技能、智能体、工作流和应用的协同渐进式自我提升——而非局限于单一层。
+  \item \textbf{嵌入式治理。}
+        审批队列、风险分级、工具策略流水线和沙箱是嵌入执行路径的一等中间件组件，确保能力增长在每一层都保持可控。
+  \item \textbf{双轴会话配置与记忆蒸馏。}
+        \texttt{ModeProfile}（角色身份）和 \texttt{ExecutionCanvas}（资源策略）是正交的、可组合的会话级抽象；MemoryDistill 流水线持续将会话历史转化为由所选画布治理的持久化长期记忆。
+\end{enumerate}
+
+PyBot 完全开源（Apache~2.0），并通过覆盖所有主要子系统的 1\,474 个自动化测试进行了验证。
+
+\paragraph{未来方向。}
+计划了三个研究方向。
+\textbf{（1）基于 MCTS 的自主重规划：}用语言智能体树搜索（LATS）~\cite{zhou2023lats}和\emph{CriticAgent}增强管理员运行时的规划器，对执行分支进行评分，实现基于持久化检查点的"时间旅行"自修正。
+\textbf{（2）VLM 视觉验证（App Matrix）：}将视觉语言模型（VLM）截图测试集成到沙箱化应用生成器的验证循环中，超越脆弱的像素匹配方法。
+\textbf{（3）依赖架构形式化：}在 \texttt{core/modes/system\_model.py} 中实现机器可验证的 \texttt{ArchitecturalLayerDescriptor} 守卫，使导入方向违规在测试时即被捕获，而非依赖约定发现。
+
+% ================================================================
+\bibliographystyle{plainnat}
+
+\begin{thebibliography}{20}
+
+\bibitem[Gravitas(2023)]{autogpt2023}
+Significant~Gravitas.
+\newblock AutoGPT: An autonomous GPT-4 experiment.
+\newblock GitHub, 2023.
+\newblock \url{https://github.com/Significant-Gravitas/AutoGPT}.
+
+\bibitem[Nakajima(2023)]{babyagi2023}
+Yohei~Nakajima.
+\newblock BabyAGI: Task-driven autonomous agent.
+\newblock GitHub, 2023.
+\newblock \url{https://github.com/yoheinakajima/babyAGI}.
+
+\bibitem[CrewAI(2024)]{crewai2024}
+CrewAI.
+\newblock CrewAI: Framework for orchestrating role-playing AI agents.
+\newblock 2024.
+\newblock \url{https://www.crewai.com}.
+
+\bibitem[LangChain(2024)]{langgraph2024}
+LangChain.
+\newblock LangGraph: Building stateful, multi-actor applications with LLMs.
+\newblock 2024.
+\newblock \url{https://langchain-ai.github.io/langgraph/}.
+
+\bibitem[Apache(2015)]{airflow2015}
+Apache~Software~Foundation.
+\newblock Apache Airflow.
+\newblock 2015.
+\newblock \url{https://airflow.apache.org}.
+
+\bibitem[Prefect(2024)]{prefect2024}
+Prefect.
+\newblock Prefect: The modern dataflow automation platform.
+\newblock 2024.
+\newblock \url{https://www.prefect.io}.
+
+\bibitem[Temporal(2023)]{temporal2023}
+Temporal~Technologies.
+\newblock Temporal: Durable execution platform.
+\newblock 2023.
+\newblock \url{https://temporal.io}.
+
+\bibitem[N8N(2024)]{n8n2024}
+n8n.
+\newblock n8n: Workflow automation tool.
+\newblock 2024.
+\newblock \url{https://n8n.io}.
+
+\bibitem[Coze(2024)]{coze2024}
+ByteDance.
+\newblock Coze: AI Bot development platform.
+\newblock 2024.
+\newblock \url{https://www.coze.com}.
+
+\bibitem[Schick et~al.(2023)]{toolformer2023}
+Timo Schick, Jane Dwivedi-Yu, Roberto~Dess\`{i}, Roberta Raileanu, Maria Lomeli, Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom.
+\newblock Toolformer: Language models can teach themselves to use tools.
+\newblock In \emph{NeurIPS}, 2023.
+
+\bibitem[E2B(2024)]{e2b2024}
+E2B.
+\newblock E2B: Open-source cloud for AI agents.
+\newblock 2024.
+\newblock \url{https://e2b.dev}.
+
+\bibitem[Shen et~al.(2023)]{hitl2023}
+Yongliang Shen, Kaitao Song, Xu Tan, Dongsheng Li, Weiming Lu, and Yueting Zhuang.
+\newblock HuggingGPT: Solving AI tasks with ChatGPT and its friends in HuggingFace.
+\newblock In \emph{NeurIPS}, 2023.
+
+\bibitem[AgentFactory(2024)]{agentfactory2024}
+AgentFactory.
+\newblock AgentFactory: Accumulating and orchestrating reusable sub-agents.
+\newblock 2024.
+\newblock \url{https://github.com/agentfactory}.
+
+\bibitem[Zhou et~al.(2023)]{zhou2023lats}
+Andy~Zhou, Kai~Yan, Michal~Shlapentokh-Rothman, Haohan~Wang, and Yu-Xiong~Wang.
+\newblock Language Agent Tree Search Unifies Reasoning, Acting, and Planning in Language Models.
+\newblock In \emph{ICML}, 2024.
+
+\end{thebibliography}
+
+\end{document}
+

@@ -124,6 +124,34 @@ class ChannelManager:
 
             self.register_channel(WeComChannel(ChannelConfig.from_dict("wecom", wecom_cfg, default_kind="wecom")))
 
+        feishu_cfg = self.channel_configs.get("feishu")
+        if isinstance(feishu_cfg, dict) and feishu_cfg.get("enabled", True):
+            from .feishu_channel import FeishuChannel
+
+            self.register_channel(FeishuChannel(ChannelConfig.from_dict("feishu", feishu_cfg, default_kind="feishu")))
+
+        dingtalk_cfg = self.channel_configs.get("dingtalk")
+        if isinstance(dingtalk_cfg, dict) and dingtalk_cfg.get("enabled", True):
+            from .dingtalk_channel import DingTalkChannel
+
+            self.register_channel(
+                DingTalkChannel(ChannelConfig.from_dict("dingtalk", dingtalk_cfg, default_kind="dingtalk"))
+            )
+
+        terminal_cfg = self.channel_configs.get("terminal")
+        if isinstance(terminal_cfg, dict) and terminal_cfg.get("enabled", False):
+            from .terminal_channel import TerminalChannel
+
+            self.register_channel(TerminalChannel(ChannelConfig.from_dict("terminal", terminal_cfg)))
+
+        claw_cfg = self.channel_configs.get("wechat_claw")
+        if isinstance(claw_cfg, dict) and claw_cfg.get("enabled", True):
+            from .wechat_claw_channel import WeChatClawChannel
+
+            ch = WeChatClawChannel(ChannelConfig.from_dict("wechat_claw", claw_cfg, default_kind="wechat_claw"))
+            ch.login(force=False)
+            self.register_channel(ch)
+
     def register_channel(self, channel: BaseChannel) -> None:
         self.channels[channel.name] = channel
 

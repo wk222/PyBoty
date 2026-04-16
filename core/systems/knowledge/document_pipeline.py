@@ -148,11 +148,17 @@ def _detect_format(path: str) -> str:
         ".html": "html",
         ".htm": "html",
         ".pdf": "pdf",
+        ".docx": "docx",
+        ".doc": "docx",
+        ".xlsx": "xlsx",
+        ".xls": "xlsx",
         ".yaml": "text",
         ".yml": "text",
         ".toml": "text",
         ".xml": "text",
         ".log": "text",
+        ".rst": "text",
+        ".tex": "text",
     }
     return format_map.get(ext, "text")
 
@@ -167,6 +173,10 @@ def _extract_text(path: str, fmt: str) -> str:
         return _read_html_file(path)
     if fmt == "pdf":
         return _read_pdf_file(path)
+    if fmt == "docx":
+        return _read_docx_file(path)
+    if fmt == "xlsx":
+        return _read_xlsx_file(path)
     return _read_text_file(path)
 
 
@@ -189,6 +199,57 @@ def _read_pdf_file(path: str) -> str:
         return "\n\n".join(pages)
     except ImportError:
         raise ImportError("PDF support requires pypdf or pdfplumber. Install with: pip install pypdf") from None
+
+
+def _read_docx_file(path: str) -> str:
+    """Extract text from Word documents. Requires python-docx."""
+    try:
+        from docx import Document as DocxDocument
+
+        doc = DocxDocument(path)
+        paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+
+        for table in doc.tables:
+            for row in table.rows:
+                cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                if cells:
+                    paragraphs.append(" | ".join(cells))
+
+        return "\n\n".join(paragraphs)
+    except ImportError:
+        raise ImportError(
+            "Word document support requires python-docx. Install with: pip install python-docx"
+        ) from None
+
+
+def _read_xlsx_file(path: str) -> str:
+    """Extract text from Excel files. Requires openpyxl."""
+    try:
+        from openpyxl import load_workbook
+
+        wb = load_workbook(path, read_only=True, data_only=True)
+        sections = []
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            rows = list(ws.iter_rows(values_only=True))
+            if not rows:
+                continue
+            header = [str(c) if c is not None else "" for c in rows[0]]
+            lines = [f"## Sheet: {sheet_name}\n"]
+            for row in rows[1:]:
+                entries = []
+                for h, v in zip(header, row, strict=False):
+                    if v is not None:
+                        entries.append(f"{h}: {v}")
+                if entries:
+                    lines.append("; ".join(entries))
+            sections.append("\n".join(lines))
+        wb.close()
+        return "\n\n".join(sections)
+    except ImportError:
+        raise ImportError(
+            "Excel support requires openpyxl. Install with: pip install openpyxl"
+        ) from None
 
 
 def chunk_text(text: str, config: ChunkConfig | None = None, fmt: str = "text") -> list[str]:

@@ -229,12 +229,13 @@ class ArchitecturalLayerDescriptor:
 _ARCHITECTURAL_LAYERS: tuple[ArchitecturalLayerDescriptor, ...] = (
     ArchitecturalLayerDescriptor(
         name="root",
-        label="Layer 0 — Root (Runtime Foundation)",
+        label="Layer 0 — 基础层 (Runtime Foundation)",
         level=0,
         purpose=(
-            "Config, paths, errors, event bus, model resolution, bootstrap, "
-            "session spine, workspace view, and context engine. "
-            "This is the tree trunk that all other capabilities grow from."
+            "配置、路径、错误、事件总线、模型解析、bootstrap；"
+            "Session Spine（事件序列、压缩边界、kernel）；"
+            "Workspace View 和 Context Engine。"
+            "这是所有能力生长的树干（THE TRUNK）。"
         ),
         packages=(
             "core/systems/runtime/",
@@ -246,11 +247,13 @@ _ARCHITECTURAL_LAYERS: tuple[ArchitecturalLayerDescriptor, ...] = (
     ),
     ArchitecturalLayerDescriptor(
         name="core_systems",
-        label="Layer 1 — First Branches (Core Systems)",
+        label="Layer 1 — 核心系统层 (Core Systems)",
         level=1,
         purpose=(
-            "Cross-cutting infrastructure that strengthens the five product concepts: "
-            "governance and safety, memory and knowledge, capability bus, and middleware."
+            "强化五个产品概念的横切基础设施："
+            "治理与安全（AgentControlPolicy、审批、沙箱）；"
+            "记忆与知识（Markdown Garden、语义记忆、MemoryDistill 三阶段蒸馏流水线）；"
+            "CapabilityBus + Registry；中间件链与推理框架。"
         ),
         packages=(
             "core/systems/governance/",
@@ -267,11 +270,13 @@ _ARCHITECTURAL_LAYERS: tuple[ArchitecturalLayerDescriptor, ...] = (
     ),
     ArchitecturalLayerDescriptor(
         name="asset_domains",
-        label="Layer 2 — Second Branches (Asset Domains)",
+        label="Layer 2 — 领域对象层 (Asset Domains)",
         level=2,
         purpose=(
-            "Atomic capability components: tools, skills, and workflows. "
-            "These are the building blocks used to construct agents and apps."
+            "原子能力组件：工具（tool 创建/运行时/模板/风险）、"
+            "技能（skill 注册表/市场）、子智能体（委派/隔离）、"
+            "工作流（PyFlow DAG/调度/暂停恢复）。"
+            "这些是构造 Agents 和 Apps 的基础积木。"
         ),
         packages=(
             "core/assets/tools/",
@@ -283,11 +288,12 @@ _ARCHITECTURAL_LAYERS: tuple[ArchitecturalLayerDescriptor, ...] = (
     ),
     ArchitecturalLayerDescriptor(
         name="product_modes",
-        label="Layer 3 — Crown (Product Modes)",
+        label="Layer 3 — 身份层 (Product Modes)",
         level=3,
         purpose=(
-            "Autonomous entities and operating modes: agents, apps, and mode packs. "
-            "This layer assembles L2 assets into functional, user-facing products."
+            "自治实体与运行模式：Agents、Apps、ModeProfile（职责角色：assistant/app_matrix/admin）、"
+            "ExecutionCanvas（资源策略：focused/balanced/deep）。"
+            "此层组装 L2 领域对象，形成面向用户的产品身份。"
         ),
         packages=(
             "core/modes/agents/",
@@ -320,12 +326,12 @@ def build_architectural_tree() -> dict[str, Any]:
         ),
         "layers": list_architectural_layers(),
         "layer_count": len(_ARCHITECTURAL_LAYERS),
-        "dependency_direction": "root -> core_systems -> asset_domains -> product_modes",
+        "dependency_direction": "基础层(L0) → 核心系统层(L1) → 领域对象层(L2) → 身份层(L3)",
         "tree_metaphor": (
-            "Layer 0 (runtime, session, context) is the trunk. "
-            "Layer 1 (governance, memory, bus) are the first branches. "
-            "Layer 2 (tools, skills, agents, workflows) are the second branches. "
-            "Layer 3 (apps, modes) is the crown."
+            "Layer 0 基础层（runtime, session, context）是树干。"
+            "Layer 1 核心系统层（governance, memory, bus）是一级枝干。"
+            "Layer 2 领域对象层（tools, skills, agents, workflows）是二级枝干。"
+            "Layer 3 身份层（apps, modes, canvas）是树冠。"
         ),
     }
 
@@ -839,9 +845,10 @@ def build_system_model() -> dict[str, Any]:
             "用户可见产品概念只有五种：tools / skills / agents / workflows / apps。",
             "MCP、RAG、approvals、middleware、observability 等属于横切支撑系统，不应再讲成额外平台层。",
             (
-                "代码按四层树形组织：root (runtime/session/context) -> core_systems (governance/memory/bus) "
-                "-> asset_domains (tools/skills/agents/workflows) -> product_modes (apps/modes)。"
-                "每层只依赖同层或更低层，绝不反向。"
+                "代码按四层树形组织：基础层 L0 (runtime/session/context) → "
+                "核心系统层 L1 (governance/memory/bus) → "
+                "领域对象层 L2 (tools/skills/agents/workflows) → "
+                "身份层 L3 (apps/modes/canvas)。每层只依赖同层或更低层，绝不反向。"
             ),
         ],
         "summary": build_system_summary(),

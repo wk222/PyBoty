@@ -2,9 +2,11 @@ import { ref, reactive, onMounted } from 'vue';
 import { API } from '/static/api/index.js';
 import { toast } from '/static/stores/global.js';
 import { t, locale } from '/static/i18n.js';
+import HelpTip from '/static/components/HelpTip.js';
 
 export default {
   name: 'DashboardView',
+  components: { HelpTip },
   setup() {
     const stats = ref({
       agents: { active: 0, total: 0 },
@@ -15,6 +17,7 @@ export default {
       capabilities: { providers: 0, events: 0 },
       memory: { lines: 0 },
       system: { version: 'v5.0', uptime: '-' },
+      cost: { llm_calls: 0, tokens: 0, cost_usd: 0 },
     });
     const events = ref([]);
     const loading = ref(true);
@@ -150,13 +153,14 @@ export default {
           };
         }
 
-        const [capRes, evtRes, memRes, systemRes, modesRes, governanceRes] = await Promise.allSettled([
+        const [capRes, evtRes, memRes, systemRes, modesRes, governanceRes, costRes] = await Promise.allSettled([
           API.getCapabilities(),
           API.getCapabilityEvents(),
           API.getMemory(),
           API.getSystemModel(),
           API.getSystemModes(),
           API.getGovernanceCenter(),
+          API.getCostStats(),
         ]);
         if (capRes.status === 'fulfilled' && capRes.value) {
           const c = capRes.value;
@@ -171,6 +175,14 @@ export default {
         }
         if (systemRes.status === 'fulfilled') {
           systemModel.value = systemRes.value;
+        }
+        if (costRes.status === 'fulfilled' && costRes.value) {
+          const c = costRes.value;
+          stats.value.cost = {
+            llm_calls: c.total_llm_calls || 0,
+            tokens: c.total_tokens || 0,
+            cost_usd: (c.total_cost_usd || 0).toFixed(4),
+          };
         }
         if (modesRes.status === 'fulfilled') {
           systemModes.value = modesRes.value;
@@ -200,6 +212,7 @@ export default {
   },
   template: `
     <div class="mx-page">
+      <HelpTip page="dashboard" />
       <div class="mx-page-header">
         <h1 class="mx-page-title">{{ d('title') }}</h1>
         <button class="mx-btn mx-btn--ghost" @click="loadAll">
@@ -249,6 +262,16 @@ export default {
               <div class="mx-stat-sub">{{ stats.capabilities.providers }} {{ d('providers') }}</div>
             </div>
           </router-link>
+          <div class="mx-stat-card" style="cursor:default;">
+            <div class="mx-stat-icon" style="color:#10b981;background:rgba(16,185,129,0.1)">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            </div>
+            <div class="mx-stat-body">
+              <div class="mx-stat-value">\${{ stats.cost.cost_usd }}</div>
+              <div class="mx-stat-title">Token Cost</div>
+              <div class="mx-stat-sub">{{ stats.cost.tokens.toLocaleString() }} tokens / {{ stats.cost.llm_calls }} calls</div>
+            </div>
+          </div>
         </div>
       </div>
 

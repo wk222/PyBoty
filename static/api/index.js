@@ -164,6 +164,7 @@ export const API = {
   }),
 
   getMemory: () => request('/api/memory'),
+  getMemoryOverview: () => request('/api/memory/overview'),
   addMemory: (content) => request('/api/memory', { method: 'POST', body: JSON.stringify({ content }) }),
 
   listScheduleTasks: () => request('/api/schedules'),
@@ -279,4 +280,38 @@ export const API = {
     method: 'POST', body: JSON.stringify({ mode }),
   }),
   getSwarmStatus: (sessionKey) => request(`/api/sessions/${encodeURIComponent(sessionKey)}/swarm`),
+
+  getCanvas: (threadId) => request(`/api/conversations/${encodeURIComponent(threadId)}/canvas`),
+  setCanvas: (threadId, canvas) => request(`/api/conversations/${encodeURIComponent(threadId)}/canvas`, {
+    method: 'PUT', body: JSON.stringify({ canvas }),
+  }),
+
+  getCostStats: () => request('/api/cost_stats'),
+
+  getGlobalTrace: (limit = 200, eventType = '') => {
+    let url = `/api/trace/global?limit=${limit}`;
+    if (eventType) url += `&event_type=${encodeURIComponent(eventType)}`;
+    return request(url);
+  },
+
+  getModelRouter: () => request('/api/model-router'),
+  updateModelRouter: (config) => request('/api/model-router', {
+    method: 'PUT', body: JSON.stringify(config)
+  }),
+  classifyPrompt: (prompt, canvas) => request('/api/model-router/classify', {
+    method: 'POST', body: JSON.stringify({ prompt, canvas })
+  }),
+
+  getContextBudget: (threadId) => request(`/api/conversations/${threadId}/context-budget`),
+
+  exportConversation: (threadId, fmt = 'markdown') =>
+    request(`/api/conversations/${threadId}/export?fmt=${fmt}`),
+
+  getAppMatrixTopology: () => request('/api/app-matrix/topology'),
+  registerAppMatrixNode: (data) => request('/api/app-matrix/register-node', {
+    method: 'POST', body: JSON.stringify(data),
+  }),
+  addAppMatrixBinding: (data) => request('/api/app-matrix/add-binding', {
+    method: 'POST', body: JSON.stringify(data),
+  }),
 };

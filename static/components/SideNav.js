@@ -1,21 +1,37 @@
+import { ref } from 'vue';
 import { t } from '/static/i18n.js';
 import { PRIMARY_SURFACES, UTILITY_SURFACES } from '/static/config/navigation.js';
+
+const STORAGE_KEY = 'pybot_sidenav_collapsed';
 
 export default {
   name: 'SideNav',
   setup() {
+    const collapsed = ref(localStorage.getItem(STORAGE_KEY) === 'true');
+
     function n(key) {
       return t(`nav.${key}`);
     }
 
+    function toggleCollapse() {
+      collapsed.value = !collapsed.value;
+      localStorage.setItem(STORAGE_KEY, collapsed.value);
+    }
+
     return {
-      n,
+      n, collapsed, toggleCollapse,
       primaryLinks: PRIMARY_SURFACES,
       utilityLinks: UTILITY_SURFACES,
     };
   },
   template: `
-    <nav class="mx-sidenav">
+    <nav :class="['mx-sidenav', collapsed && 'mx-sidenav--collapsed']">
+      <button class="mx-nav-collapse-btn" @click="toggleCollapse" :title="collapsed ? 'Expand sidebar' : 'Collapse sidebar'">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline v-if="collapsed" points="9 18 15 12 9 6"/>
+          <polyline v-else points="15 18 9 12 15 6"/>
+        </svg>
+      </button>
       <div style="padding:8px 0 4px;width:100%;">
         <router-link
           v-for="link in primaryLinks"
@@ -26,7 +42,7 @@ export default {
           :title="n(link.key)"
         >
           <svg class="mx-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" v-html="link.icon"></svg>
-          <span class="mx-nav-label">{{ n(link.key) }}</span>
+          <span class="mx-nav-label" v-show="!collapsed">{{ n(link.key) }}</span>
         </router-link>
       </div>
 
@@ -42,7 +58,7 @@ export default {
           :title="n(link.key)"
         >
           <svg class="mx-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" v-html="link.icon"></svg>
-          <span class="mx-nav-label">{{ n(link.key) }}</span>
+          <span class="mx-nav-label" v-show="!collapsed">{{ n(link.key) }}</span>
         </router-link>
       </div>
     </nav>

@@ -147,13 +147,22 @@ class ChromaVectorStore:
         logger.info("Added %d documents to collection %r", len(docs), collection)
         return ids
 
-    def search(self, query: str, collection: str = "default", top_k: int = 5) -> list[SearchResult]:
+    def search(
+        self,
+        query: str,
+        collection: str = "default",
+        top_k: int = 5,
+        *,
+        hybrid: bool = True,
+        vector_weight: float = 0.7,
+        keyword_weight: float = 0.3,
+    ) -> list[SearchResult]:
         col = self._get_collection(collection)
         if col.count() == 0:
             return []
 
-        effective_k = min(top_k, col.count())
-        results = col.query(query_texts=[query], n_results=effective_k)
+        fetch_k = min(top_k * 3, col.count()) if hybrid else min(top_k, col.count())
+        results = col.query(query_texts=[query], n_results=fetch_k)
 
         search_results = []
         if results and results.get("ids"):
@@ -161,17 +170,26 @@ class ChromaVectorStore:
                 content = results["documents"][0][i] if results.get("documents") else ""
                 metadata = results["metadatas"][0][i] if results.get("metadatas") else {}
                 distance = results["distances"][0][i] if results.get("distances") else 0.0
-                vector_score = 1.0 / (1.0 + distance)
+                vs = 1.0 / (1.0 + distance)
+                ks = keyword_score(query, content)
+
+                if hybrid:
+                    combined = vector_weight * vs + keyword_weight * ks
+                else:
+                    combined = vs
+
                 search_results.append(
                     SearchResult(
                         document=Document(page_content=content, metadata=metadata, doc_id=doc_id),
-                        score=vector_score,
-                        vector_score=vector_score,
-                        keyword_score=keyword_score(query, content),
+                        score=combined,
+                        vector_score=vs,
+                        keyword_score=ks,
                         collection=collection,
                     )
                 )
-        return search_results
+
+        search_results.sort(key=lambda r: r.score, reverse=True)
+        return search_results[:top_k]
 
     def delete(self, ids: list[str], collection: str = "default") -> int:
         col = self._get_collection(collection)

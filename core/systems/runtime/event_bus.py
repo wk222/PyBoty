@@ -71,6 +71,7 @@ class EventType(str, enum.Enum):
     CAPABILITY_ROLLOUT_EVALUATED = "capability_rollout_evaluated"
     CAPABILITY_GAP_RESOLVED = "capability_gap_resolved"
     APP_RUNTIME_ERROR = "app_runtime_error"
+    CANVAS_CHANGED = "canvas_changed"
 
 
 @dataclass

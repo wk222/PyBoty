@@ -147,6 +147,94 @@ async def get_memory(services: WebServices = Depends(get_services)) -> dict[str,
     return {"content": services.memory_mgr.load()}
 
 
+@router.get("/api/memory/overview")
+async def get_memory_overview(services: WebServices = Depends(get_services)) -> dict:
+    """Return structured memory data for the visualization page."""
+    import os
+    from pathlib import Path
+
+    distill_mgr = getattr(services, "distill_mgr", None) or getattr(services, "memory_distill", None)
+
+    result: dict = {
+        "long_term": {"content": "", "last_distill": None, "line_count": 0},
+        "journals": [],
+        "archives": [],
+        "garden": [],
+        "stats": {
+            "journal_count": 0,
+            "archive_count": 0,
+            "garden_count": 0,
+            "memory_lines": 0,
+            "vector_count": 0,
+        },
+    }
+
+    workspace_dir = Path(getattr(services, "workspace_dir", "."))
+
+    memory_path = workspace_dir / "MEMORY.md"
+    if memory_path.exists():
+        try:
+            text = memory_path.read_text(encoding="utf-8")
+            result["long_term"]["content"] = text
+            lines = [ln for ln in text.splitlines() if ln.strip()]
+            result["long_term"]["line_count"] = len(lines)
+            for ln in text.splitlines():
+                if ln.startswith("> 最后蒸馏：") or ln.startswith("> Last distill:"):
+                    result["long_term"]["last_distill"] = ln.split("：")[-1].split(":")[-1].strip()
+                    break
+        except Exception:
+            pass
+
+    daily_dir = workspace_dir / "memory" / "daily"
+    if daily_dir.exists():
+        for f in sorted(daily_dir.glob("*.md"), reverse=True):
+            try:
+                text = f.read_text(encoding="utf-8")
+                result["journals"].append({
+                    "date": f.stem,
+                    "content": text,
+                    "size": len(text),
+                })
+            except Exception:
+                pass
+    result["stats"]["journal_count"] = len(result["journals"])
+
+    archive_dir = workspace_dir / "memory" / "archive"
+    if archive_dir.exists():
+        for f in sorted(archive_dir.glob("*.md"), reverse=True):
+            try:
+                result["archives"].append({
+                    "date": f.stem,
+                    "size": os.path.getsize(f),
+                })
+            except Exception:
+                pass
+    result["stats"]["archive_count"] = len(result["archives"])
+
+    garden_dir = workspace_dir / "knowledge_garden"
+    if garden_dir.exists():
+        for f in sorted(garden_dir.glob("*.md"), reverse=True):
+            try:
+                text = f.read_text(encoding="utf-8")
+                preview = text[:200] if len(text) > 200 else text
+                result["garden"].append({
+                    "name": f.stem,
+                    "preview": preview,
+                    "size": len(text),
+                })
+            except Exception:
+                pass
+    result["stats"]["garden_count"] = len(result["garden"])
+    result["stats"]["memory_lines"] = result["long_term"]["line_count"]
+
+    from core.systems.memory.semantic_memory import SemanticMemoryManager
+    if isinstance(services.memory_mgr, SemanticMemoryManager):
+        mem_stats = services.memory_mgr.get_memory_stats()
+        result["stats"]["vector_count"] = mem_stats.get("vector_count", 0)
+
+    return result
+
+
 @router.post("/api/memory")
 async def add_memory(
     entry: MemoryEntry,
@@ -712,3 +800,98 @@ async def list_uploads(services: WebServices = Depends(get_services)) -> dict[st
             if entry.is_file():
                 files.append({"name": entry.name, "size": entry.stat().st_size})
     return {"files": files}
+
+
+@router.get("/api/app-matrix/topology")
+def get_app_matrix_topology(
+    services: WebServices = Depends(get_services),
+):
+    """Return the App Matrix orchestration topology for visualization."""
+    result = {
+        "nodes": [],
+        "edges": [],
+        "pipelines": [],
+        "stats": {"total_nodes": 0, "total_edges": 0, "total_pipelines": 0},
+    }
+
+    try:
+        registry = getattr(services, "app_orchestration_registry", None)
+        if registry is None:
+            from core.modes.apps.app_orchestration import AppOrchestrationRegistry
+            registry = AppOrchestrationRegistry(base_dir=services.paths.workspace_root)
+
+        nodes = registry.list_nodes()
+        result["nodes"] = [n.to_dict() for n in nodes]
+
+        topo = registry.get_topology()
+        result["edges"] = topo.get("bindings", [])
+        result["pipelines"] = topo.get("pipelines", [])
+
+        result["stats"] = {
+            "total_nodes": len(nodes),
+            "total_edges": len(result["edges"]),
+            "total_pipelines": len(result["pipelines"]),
+        }
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("App Matrix topology error: %s", exc)
+
+    try:
+        bus = getattr(services, "shared_data_bus", None)
+        if bus:
+            result["data_bus"] = bus.get_stats()
+            result["data_bus"]["channels"] = bus.list_channels()
+    except Exception:
+        pass
+
+    return result
+
+
+@router.post("/api/app-matrix/register-node")
+def register_app_matrix_node(
+    body: dict,
+    services: WebServices = Depends(get_services),
+):
+    """Register a node in the App Matrix topology."""
+    try:
+        from core.modes.apps.app_orchestration import AppOrchestrationRegistry, NodeType
+
+        registry = getattr(services, "app_orchestration_registry", None)
+        if registry is None:
+            registry = AppOrchestrationRegistry(base_dir=services.paths.workspace_root)
+
+        node_type = NodeType(body.get("node_type", "app"))
+        node = registry.upsert_node(
+            name=body.get("name", ""),
+            node_type=node_type,
+            description=body.get("description", ""),
+            domain=body.get("domain", ""),
+        )
+        return {"success": True, "node": node.to_dict()}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+@router.post("/api/app-matrix/add-binding")
+def add_app_matrix_binding(
+    body: dict,
+    services: WebServices = Depends(get_services),
+):
+    """Add a data binding between two nodes."""
+    try:
+        from core.modes.apps.app_orchestration import AppOrchestrationRegistry
+
+        registry = getattr(services, "app_orchestration_registry", None)
+        if registry is None:
+            registry = AppOrchestrationRegistry(base_dir=services.paths.workspace_root)
+
+        binding = registry.add_binding(
+            source_node=body.get("source", ""),
+            target_node=body.get("target", ""),
+            source_port=body.get("source_port", "default"),
+            target_port=body.get("target_port", "default"),
+            description=body.get("description", ""),
+        )
+        return {"success": True, "binding": binding.to_dict() if binding else None}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}

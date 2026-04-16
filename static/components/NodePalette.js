@@ -21,6 +21,7 @@ const NODE_LABELS = {
   http_request: 'HTTP Request', question_classifier: 'Classifier',
   variable_assigner: 'Set Variable', list_operator: 'List Op',
   parameter_extractor: 'Extract Params',
+  data_source: 'Data Source', notify: 'Notify', monitor: 'Monitor',
 };
 
 const NODE_COLORS = {
@@ -38,6 +39,7 @@ const NODE_COLORS = {
   http_request: '#38bdf8', question_classifier: '#fb7185',
   variable_assigner: '#94a3b8', list_operator: '#60a5fa',
   parameter_extractor: '#fbbf24',
+  data_source: '#14b8a6', notify: '#f97316', monitor: '#06b6d4',
 };
 
 const NODE_ICONS = {
@@ -55,6 +57,7 @@ const NODE_ICONS = {
   http_request: '\u{1F310}', question_classifier: '\u{1F3AF}',
   variable_assigner: '\u{1F4DD}', list_operator: '\u{1F4CB}',
   parameter_extractor: '\u{1F50D}',
+  data_source: '\u{1F4E5}', notify: '\u{1F514}', monitor: '\u{1F4C8}',
 };
 
 export { NODE_COLORS, NODE_LABELS, NODE_ICONS };

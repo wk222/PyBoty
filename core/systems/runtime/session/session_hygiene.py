@@ -17,6 +17,21 @@ from core.systems.runtime.session.session_compaction import create_compaction_bo
 class SessionHygieneMixin:
     """Mixin for SessionRuntime to handle budget, compaction, and trimming."""
 
+    def compact_session_by_thread(self, *, thread_id: str, reason: str = "canvas") -> dict[str, Any] | None:
+        """Compact the session associated with thread_id (if it exists).
+
+        Silently returns None if the thread has no associated session yet.
+        Used by canvas-change events to immediately trim context when switching
+        to the ``focused`` canvas.
+        """
+        session_key = self.session_key_for_thread(thread_id)
+        if not session_key:
+            return None
+        try:
+            return self.compact_session(session_key, reason=reason)
+        except KeyError:
+            return None
+
     def compact_session(self, session_key: str, *, reason: str = "manual") -> dict[str, Any]:
         with self._lock:
             record = self._sessions.get(str(session_key).strip())
