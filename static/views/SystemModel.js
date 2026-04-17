@@ -76,26 +76,6 @@ export default {
 
       <div v-else-if="model" style="display:grid;gap:20px;">
         <section class="mx-section">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
-            <div>
-              <h2 class="mx-section-title">{{ s('northStar') }}</h2>
-              <p style="margin:8px 0 0;color:var(--text-secondary);line-height:1.7;max-width:920px;">
-                {{ model.north_star }}
-              </p>
-            </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <span
-                v-for="mode in model.root_mode_progression"
-                :key="mode"
-                style="padding:6px 10px;border-radius:999px;background:var(--bg-tertiary);border:1px solid var(--border);font-size:12px;font-weight:700;color:var(--text-secondary);"
-              >
-                {{ mode }}
-              </span>
-            </div>
-          </div>
-        </section>
-
-        <section class="mx-section">
           <h2 class="mx-section-title">{{ s('interactionSurfaces') }}</h2>
           <div class="mx-stats-grid" style="margin-top:14px;">
             <article
@@ -240,90 +220,7 @@ export default {
           </div>
         </section>
 
-        <section class="mx-section">
-          <h2 class="mx-section-title">{{ s('internalDomains') }}</h2>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:14px;">
-            <article
-              v-for="domain in internalDomains"
-              :key="domain.name"
-              style="padding:16px;border:1px solid var(--border);border-radius:16px;background:var(--bg-secondary);"
-            >
-              <div style="font-size:15px;font-weight:700;color:var(--text-primary);">{{ domain.label }}</div>
-              <p style="margin:8px 0 0;color:var(--text-secondary);line-height:1.6;">{{ domain.purpose }}</p>
-            </article>
-          </div>
-        </section>
-
-        <section class="mx-section">
-          <h2 class="mx-section-title">{{ s('packageTargets') }}</h2>
-          <div style="display:grid;gap:12px;margin-top:14px;">
-            <article
-              v-for="target in packageTargets"
-              :key="target.name"
-              style="padding:16px;border:1px solid var(--border);border-radius:16px;background:var(--bg-secondary);"
-            >
-              <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
-                <div>
-                  <div style="font-size:16px;font-weight:700;color:var(--text-primary);">{{ target.label }}</div>
-                  <div style="margin-top:4px;color:var(--text-secondary);line-height:1.6;">{{ target.purpose }}</div>
-                </div>
-                <code style="padding:4px 8px;border-radius:10px;background:var(--bg-tertiary);color:var(--text-secondary);font-size:12px;">{{ target.path }}</code>
-              </div>
-              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;">
-                <span
-                  v-for="scope in target.migration_scope"
-                  :key="scope"
-                  style="padding:6px 10px;border-radius:999px;background:rgba(96,165,250,0.12);color:var(--text-primary);font-size:12px;"
-                >
-                  {{ scope }}
-                </span>
-              </div>
-            </article>
-          </div>
-        </section>
-
-        <section class="mx-section">
-          <h2 class="mx-section-title">{{ s('guardrails') }}</h2>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:14px;">
-            <div style="padding:16px;border:1px solid var(--border);border-radius:16px;background:var(--bg-secondary);">
-              <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:10px;">{{ s('notProductConcepts') }}</div>
-              <div style="display:flex;flex-wrap:wrap;gap:6px;">
-                <span
-                  v-for="item in notProductConcepts"
-                  :key="item"
-                  style="padding:6px 10px;border-radius:999px;background:rgba(244,114,182,0.10);color:var(--text-primary);font-size:12px;"
-                >
-                  {{ item }}
-                </span>
-              </div>
-            </div>
-            <div style="padding:16px;border:1px solid var(--border);border-radius:16px;background:var(--bg-secondary);">
-              <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:10px;">{{ s('canonicalRules') }}</div>
-              <div style="display:grid;gap:8px;">
-                <div
-                  v-for="rule in canonicalRules"
-                  :key="rule"
-                  style="padding:10px 12px;border-radius:12px;background:var(--bg-tertiary);color:var(--text-secondary);line-height:1.6;"
-                >
-                  {{ rule }}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="mx-section">
-          <h2 class="mx-section-title">{{ s('antiSprawl') }}</h2>
-          <div style="display:grid;gap:10px;margin-top:14px;">
-            <div
-              v-for="question in antiSprawlQuestions"
-              :key="question"
-              style="padding:14px 16px;border-radius:14px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-secondary);line-height:1.7;"
-            >
-              {{ question }}
-            </div>
-          </div>
-        </section>
+        
       </div>
     </div>
   `,

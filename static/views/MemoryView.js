@@ -49,10 +49,10 @@ export default {
     const pipelineStages = computed(() => {
       const s = data.value.stats;
       return [
-        { label: 'Conversations', icon: '💬', count: '-', desc: 'Source input' },
-        { label: 'Journal', icon: '📝', count: s.journal_count, desc: 'Daily digests' },
-        { label: 'Distill', icon: '🧪', count: s.memory_lines, desc: 'Long-term memory' },
-        { label: 'Archive', icon: '📦', count: s.archive_count, desc: 'Archived journals' },
+        { label: t('memory.pipelineConversations'), icon: '💬', count: '-', desc: t('memory.pipelineConvDesc') },
+        { label: t('memory.pipelineJournal'), icon: '📝', count: s.journal_count, desc: t('memory.pipelineJournalDesc') },
+        { label: t('memory.pipelineDistill'), icon: '🧪', count: s.memory_lines, desc: t('memory.pipelineDistillDesc') },
+        { label: t('memory.pipelineArchive'), icon: '📦', count: s.archive_count, desc: t('memory.pipelineArchiveDesc') },
       ];
     });
 
@@ -72,24 +72,26 @@ export default {
     return {
       loading, activeTab, data, expandedJournal, expandedGarden,
       memoryCategories, pipelineStages,
-      toggleJournal, toggleGarden, formatSize, loadData,
+      toggleJournal, toggleGarden, formatSize, loadData, t,
     };
   },
   template: `
 <div class="mem-view">
   <HelpTip page="memory" />
   <div class="mem-header">
-    <h2 class="mem-title">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/><line x1="9" y1="21" x2="15" y2="21"/></svg>
-      Memory System
-    </h2>
-    <button class="mem-refresh" @click="loadData" :disabled="loading">↻ Refresh</button>
+    <div>
+      <h2 class="mem-title">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/><line x1="9" y1="21" x2="15" y2="21"/></svg>
+        {{ t('memory.title') }}
+      </h2>
+      <p class="mem-subtitle">{{ t('memory.subtitle') }}</p>
+    </div>
+    <button class="mem-refresh" @click="loadData" :disabled="loading">↻ {{ t('memory.refresh') }}</button>
   </div>
 
-  <div v-if="loading" class="mem-loading">Loading...</div>
+  <div v-if="loading" class="mem-loading">{{ t('memory.loading') }}</div>
 
   <template v-else>
-    <!-- Pipeline -->
     <div class="mem-pipeline">
       <div v-for="(stage, i) in pipelineStages" :key="i" class="mem-stage">
         <div class="mem-stage-icon">{{ stage.icon }}</div>
@@ -100,25 +102,22 @@ export default {
       </div>
     </div>
 
-    <!-- Stats bar -->
     <div class="mem-stats-bar">
-      <div class="mem-stat-chip"><span class="mem-stat-n">{{ data.stats.memory_lines }}</span> memory entries</div>
-      <div class="mem-stat-chip"><span class="mem-stat-n">{{ data.stats.journal_count }}</span> journals</div>
-      <div class="mem-stat-chip"><span class="mem-stat-n">{{ data.stats.archive_count }}</span> archives</div>
-      <div class="mem-stat-chip"><span class="mem-stat-n">{{ data.stats.garden_count }}</span> garden notes</div>
-      <div class="mem-stat-chip" v-if="data.stats.vector_count"><span class="mem-stat-n">{{ data.stats.vector_count }}</span> vectors</div>
+      <div class="mem-stat-chip"><span class="mem-stat-n">{{ data.stats.memory_lines }}</span> {{ t('memory.memoryEntries') }}</div>
+      <div class="mem-stat-chip"><span class="mem-stat-n">{{ data.stats.journal_count }}</span> {{ t('memory.journals') }}</div>
+      <div class="mem-stat-chip"><span class="mem-stat-n">{{ data.stats.archive_count }}</span> {{ t('memory.archives') }}</div>
+      <div class="mem-stat-chip"><span class="mem-stat-n">{{ data.stats.garden_count }}</span> {{ t('memory.gardenNotes') }}</div>
+      <div class="mem-stat-chip" v-if="data.stats.vector_count"><span class="mem-stat-n">{{ data.stats.vector_count }}</span> {{ t('memory.vectors') }}</div>
     </div>
 
-    <!-- Tabs -->
     <div class="mem-tabs">
-      <button :class="['mem-tab', activeTab==='overview' && 'active']" @click="activeTab='overview'">Long-term Memory</button>
-      <button :class="['mem-tab', activeTab==='journals' && 'active']" @click="activeTab='journals'">Journals ({{ data.journals.length }})</button>
-      <button :class="['mem-tab', activeTab==='garden' && 'active']" @click="activeTab='garden'">Knowledge Garden ({{ data.garden.length }})</button>
+      <button :class="['mem-tab', activeTab==='overview' && 'active']" @click="activeTab='overview'">{{ t('memory.tabOverview') }}</button>
+      <button :class="['mem-tab', activeTab==='journals' && 'active']" @click="activeTab='journals'">{{ t('memory.tabJournals') }} ({{ data.journals.length }})</button>
+      <button :class="['mem-tab', activeTab==='garden' && 'active']" @click="activeTab='garden'">{{ t('memory.tabGarden') }} ({{ data.garden.length }})</button>
     </div>
 
-    <!-- Long-term Memory -->
     <div v-if="activeTab==='overview'" class="mem-section">
-      <div v-if="data.long_term.last_distill" class="mem-distill-time">Last distilled: {{ data.long_term.last_distill }}</div>
+      <div v-if="data.long_term.last_distill" class="mem-distill-time">{{ t('memory.lastDistilled') }}: {{ data.long_term.last_distill }}</div>
       <div v-if="Object.keys(memoryCategories).length" class="mem-categories">
         <div v-for="(items, cat) in memoryCategories" :key="cat" class="mem-cat-card">
           <div class="mem-cat-header">
@@ -133,12 +132,11 @@ export default {
       <div v-else-if="data.long_term.content" class="mem-raw-content">
         <pre>{{ data.long_term.content }}</pre>
       </div>
-      <div v-else class="mem-empty">No long-term memory yet. It will be generated as conversations accumulate.</div>
+      <div v-else class="mem-empty">{{ t('memory.noLongTerm') }}</div>
     </div>
 
-    <!-- Journals -->
     <div v-if="activeTab==='journals'" class="mem-section">
-      <div v-if="!data.journals.length" class="mem-empty">No journal entries yet.</div>
+      <div v-if="!data.journals.length" class="mem-empty">{{ t('memory.noJournals') }}</div>
       <div v-for="j in data.journals" :key="j.date" class="mem-journal-card" @click="toggleJournal(j.date)">
         <div class="mem-journal-header">
           <span class="mem-journal-date">📝 {{ j.date }}</span>
@@ -151,9 +149,8 @@ export default {
       </div>
     </div>
 
-    <!-- Knowledge Garden -->
     <div v-if="activeTab==='garden'" class="mem-section">
-      <div v-if="!data.garden.length" class="mem-empty">No knowledge garden notes yet.</div>
+      <div v-if="!data.garden.length" class="mem-empty">{{ t('memory.noGarden') }}</div>
       <div v-for="g in data.garden" :key="g.name" class="mem-garden-card" @click="toggleGarden(g.name)">
         <div class="mem-garden-header">
           <span class="mem-garden-name">🌿 {{ g.name }}</span>

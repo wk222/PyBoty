@@ -649,7 +649,13 @@ except Exception as exc:
         self._write_text(self._static_dir(name) / "pybot-helpers.js", APP_HELPERS_JS)
         self._write_text(self._static_dir(name) / "app.js", js_content)
 
-        return {"success": True, "app_name": name, "mode": mode, "path": str(app_dir)}
+        return {
+            "success": True,
+            "app_name": name,
+            "mode": mode,
+            "path": str(app_dir),
+            "app_url": f"/apps/{name}/",
+        }
 
     def update_app_topology_metadata(
         self,

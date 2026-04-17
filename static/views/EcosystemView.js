@@ -449,10 +449,7 @@ export default {
               <div style="margin-top:10px;font-size:28px;font-weight:800;">{{ ecosystem.capabilities.events }}</div>
               <div style="margin-top:6px;color:var(--text-secondary);">{{ label('eventsHint') }}</div>
             </div>
-            <div style="padding:16px;border:1px solid var(--border);border-radius:16px;background:var(--bg-secondary);">
-              <div style="font-size:12px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">{{ label('designRule') }}</div>
-              <div style="margin-top:10px;font-size:15px;font-weight:700;line-height:1.6;">{{ label('designRuleBody') }}</div>
-            </div>
+            
           </div>
         </div>
 

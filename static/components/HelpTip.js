@@ -41,6 +41,12 @@ const TIPS = {
       'Policy tab lets you configure agent control presets',
       'Gateway tab manages device pairings and channel routes',
     ]},
+    appMatrix: { title: 'App Matrix Tips', items: [
+      'Register apps, agents, workflows, and tools as nodes',
+      'Create data bindings between nodes to enable cross-app data flow',
+      'Use pipelines to define multi-step processing chains',
+      'Shared Data Channels allow publish-subscribe messaging between apps',
+    ]},
   },
   zh: {
     chat: { title: '对话提示', items: [
@@ -78,6 +84,12 @@ const TIPS = {
       '调用高风险工具时会出现待审批项',
       '策略标签页可配置智能体控制预设',
       '网关标签页管理设备配对和渠道路由',
+    ]},
+    appMatrix: { title: '应用矩阵提示', items: [
+      '将应用、智能体、工作流、工具注册为节点',
+      '创建数据绑定使节点间的数据能跨应用流通',
+      '使用流水线定义多步处理链',
+      '共享数据通道支持应用间的发布-订阅消息机制',
     ]},
   },
 };

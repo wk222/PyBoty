@@ -247,11 +247,35 @@ async def get_trace(
     limit: int = 100,
     services: WebServices = SERVICES_DEPENDENCY,
 ) -> dict[str, Any]:
+    """Return trace events for a conversation.
+
+    First tries to filter by session_id matching the thread. If nothing is
+    found (most events lack session_id), falls back to recent global events.
+    """
     from core.systems.runtime.event_bus import event_bus
-    
+
     events = event_bus.persistent_history(limit=limit, session_id=thread_id)
+
+    fallback_used = False
+    if not events:
+        history = services.conversations.get_history(thread_id)
+        if history:
+            earliest_ts = None
+            for msg in history:
+                ts = msg.get("timestamp")
+                if ts and (earliest_ts is None or ts < earliest_ts):
+                    earliest_ts = ts
+            if earliest_ts:
+                events = event_bus.persistent_history(limit=limit, since=earliest_ts)
+                fallback_used = True
+
+        if not events:
+            events = event_bus.persistent_history(limit=limit)
+            fallback_used = True
+
     return {
         "thread_id": thread_id,
+        "scope": "session" if not fallback_used else "global",
         "events": [
             {
                 "id": i,
@@ -259,6 +283,7 @@ async def get_trace(
                 "source": e.source,
                 "payload": e.payload,
                 "timestamp": e.timestamp,
+                "session_id": e.session_id,
             }
             for i, e in enumerate(events)
         ]

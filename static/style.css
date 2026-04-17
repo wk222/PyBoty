@@ -3481,6 +3481,7 @@ html, body {
 /* --------------------------------------------------------------------------------
    Trace Log Overlay
 -------------------------------------------------------------------------------- */
+/* ─── Chat Trace Overlay (scoped to ChatView) ─── */
 .trace-overlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
@@ -3493,7 +3494,7 @@ html, body {
   padding: 40px;
 }
 
-.trace-modal {
+.chat-trace-modal {
   width: 100%;
   max-width: 1000px;
   height: 100%;
@@ -3507,39 +3508,42 @@ html, body {
   overflow: hidden;
 }
 
-.trace-header {
+.chat-trace-header {
   padding: 16px 20px;
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;
   background: var(--bg-secondary);
+  flex-shrink: 0;
 }
 
-.trace-header h3 {
+.chat-trace-header h3 {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
 }
 
-.trace-body {
+.chat-trace-body {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 16px 20px;
   background: var(--bg-tertiary);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
+  min-height: 0;
 }
 
-.trace-event {
+.chat-trace-event {
   background: var(--bg-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
+  flex-shrink: 0;
 }
 
-.trace-event-header {
+.chat-trace-event-header {
   padding: 8px 12px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
@@ -3547,52 +3551,69 @@ html, body {
   align-items: center;
   gap: 12px;
   font-size: 11px;
+  flex-wrap: wrap;
 }
 
-.trace-event-type {
+.chat-trace-event-type {
   text-transform: uppercase;
   font-weight: 700;
   padding: 2px 6px;
   border-radius: 4px;
   background: var(--bg-tertiary);
+  white-space: nowrap;
 }
+.chat-trace-event-type.type-llm_start,
+.chat-trace-event-type.type-llm_end { color: #8b5cf6; background: #8b5cf615; }
+.chat-trace-event-type.type-tool_call { color: #3b82f6; background: #3b82f615; }
+.chat-trace-event-type.type-tool_result { color: #10b981; background: #10b98115; }
+.chat-trace-event-type.type-error { color: #ef4444; background: #ef444415; }
+.chat-trace-event-type.type-memory_distill { color: #f59e0b; background: #f59e0b15; }
+.chat-trace-event-type.type-session_start { color: #06b6d4; background: #06b6d415; }
 
-.trace-event-type.llm_end { color: #8b5cf6; background: #8b5cf615; }
-.trace-event-type.tool_call { color: #3b82f6; background: #3b82f615; }
-.trace-event-type.tool_result { color: #10b981; background: #10b98115; }
-.trace-event-type.error { color: #ef4444; background: #ef444415; }
-
-.trace-event-source {
+.chat-trace-event-source {
   color: var(--text-muted);
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.trace-event-time {
+.chat-trace-event-time {
   color: var(--text-muted);
-}
-
-.trace-event-payload {
-  margin: 0;
-  padding: 12px;
+  white-space: nowrap;
   font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.5;
-  overflow-x: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
+  font-size: 10px;
 }
 
-.trace-empty {
+.chat-trace-event-payload {
+  padding: 10px 12px;
+  max-height: 200px;
+  overflow: auto;
+}
+
+.chat-trace-event-payload pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+}
+
+.chat-trace-empty {
   text-align: center;
-  padding: 40px;
+  padding: 48px 24px;
   color: var(--text-muted);
-  font-style: italic;
+  font-size: 0.9rem;
 }
 
 /* ─── Memory View ─── */
 .mem-view { padding: 24px 32px; max-width: 960px; margin: 0 auto; }
-.mem-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.mem-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; gap: 16px; }
 .mem-title { display: flex; align-items: center; gap: 10px; font-size: 1.4rem; font-weight: 600; margin: 0; }
+.mem-subtitle { font-size: .82rem; color: var(--text-muted); margin: 6px 0 0; line-height: 1.5; max-width: 640px; }
 .mem-refresh { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: .85rem; }
 .mem-refresh:hover { background: var(--hover); }
 .mem-loading { text-align: center; padding: 60px; color: var(--text-muted); }
@@ -3775,8 +3796,9 @@ html, body {
 
 /* ─── App Matrix View ─── */
 .am-view { padding: 24px 32px; max-width: 1000px; margin: 0 auto; }
-.am-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.am-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; gap: 16px; }
 .am-title { display: flex; align-items: center; gap: 10px; font-size: 1.3rem; font-weight: 600; margin: 0; }
+.am-subtitle { font-size: .82rem; color: var(--text-muted); margin: 6px 0 0; line-height: 1.5; max-width: 640px; }
 .am-actions { display: flex; gap: 8px; }
 .am-btn { background: var(--accent, #6366f1); color: #fff; border: none; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: .82rem; transition: opacity .15s; }
 .am-btn:hover { opacity: .85; }

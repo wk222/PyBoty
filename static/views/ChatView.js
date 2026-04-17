@@ -154,12 +154,15 @@ export default {
       );
     });
 
+    const traceScope = ref('session');
+
     async function loadTrace() {
       if (!currentThreadId.value) return;
       traceLoading.value = true;
       try {
         const data = await API.getTrace(currentThreadId.value);
         traceEvents.value = data.events || [];
+        traceScope.value = data.scope || 'session';
       } catch (e) { console.error(e); }
       finally { traceLoading.value = false; }
     }
@@ -203,6 +206,7 @@ export default {
       messages.value = [];
       steps.value = [];
       showSteps.value = false;
+      traceEvents.value = [];
       try {
         const data = await API.getHistory(id);
         messages.value = (data.messages || []).map(m => ({
@@ -218,6 +222,7 @@ export default {
 
       await resolveSessionKey(id);
       await loadCanvas(id);
+      if (traceVisible.value) await loadTrace();
       if (inputEl.value) inputEl.value.focus();
     }
 
@@ -544,7 +549,7 @@ export default {
       MODE_META, BUDGET_META,
       formatTime, escapeHtml, formatBytes, t,
       swarmPanelVisible,
-      traceVisible, traceEvents, traceLoading, loadTrace,
+      traceVisible, traceEvents, traceLoading, traceScope, loadTrace,
       slashMenuVisible, slashQuery, slashActiveIdx, filteredSlashCommands,
       selectSlashCommand, clickExampleCard,
       EXAMPLE_CARDS,
@@ -599,11 +604,11 @@ export default {
           </div>
 
           <!-- Session Spine Bar -->
-          <div v-if="currentSessionKey" class="session-spine-bar" style="display:flex;align-items:center;gap:12px;flex-shrink:0;">
+          <div v-if="currentThreadId" class="session-spine-bar" style="display:flex;align-items:center;gap:12px;flex-shrink:0;">
 
             <!-- Trace Log Toggle -->
             <button class="mx-btn-icon" @click="traceVisible = !traceVisible"
-                    :class="{'active': traceVisible}" title="Execution Trace"
+                    :class="{'active': traceVisible}" :title="t('chat.traceLog') || 'Execution Trace'"
                     style="color: var(--text-muted);">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
@@ -613,7 +618,7 @@ export default {
 
             <!-- Context Budget -->
             <button class="mx-btn-icon" @click="loadContextBudget"
-                    title="Context Budget" style="color: var(--text-muted);">
+                    :title="t('chat.contextBudget') || 'Context Budget'" style="color: var(--text-muted);">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>
               </svg>
@@ -621,14 +626,14 @@ export default {
 
             <!-- Export -->
             <button class="mx-btn-icon" @click="exportChat('markdown')"
-                    title="Export as Markdown" style="color: var(--text-muted);">
+                    :title="t('chat.export') || 'Export as Markdown'" style="color: var(--text-muted);">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
               </svg>
             </button>
 
             <!-- Swarm Toggle -->
-            <button class="mx-btn-icon" @click="swarmPanelVisible = !swarmPanelVisible"
+            <button v-if="currentSessionKey" class="mx-btn-icon" @click="swarmPanelVisible = !swarmPanelVisible"
                     :class="{'active': swarmPanelVisible}" title="Swarm Observability"
                     style="color: var(--text-muted);">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" :style="{color: swarmPanelVisible ? 'var(--accent)' : 'inherit'}">
@@ -869,25 +874,34 @@ export default {
       <SwarmPanel :session-key="currentSessionKey" :visible="swarmPanelVisible" />
 
       <!-- Trace Overlay -->
-      <div v-if="traceVisible" class="trace-overlay">
-        <div class="trace-modal">
-          <div class="trace-header">
-            <h3>Execution Trace Log</h3>
+      <div v-if="traceVisible" class="trace-overlay" @click.self="traceVisible = false">
+        <div class="chat-trace-modal">
+          <div class="chat-trace-header">
+            <h3>{{ t('chat.traceTitle') || 'Execution Trace Log' }}</h3>
             <div style="display:flex;gap:8px;">
-              <button class="mx-btn mx-btn--ghost mx-btn--sm" @click="loadTrace">Refresh</button>
+              <button class="mx-btn mx-btn--ghost mx-btn--sm" @click="loadTrace">{{ t('common.refresh') || 'Refresh' }}</button>
               <button class="mx-btn mx-btn--ghost mx-btn--sm" @click="traceVisible = false">×</button>
             </div>
           </div>
-          <div class="trace-body">
-            <div v-if="traceLoading" class="mx-loading">Loading trace...</div>
-            <div v-else-if="traceEvents.length === 0" class="trace-empty">No events found for this session.</div>
-            <div v-for="e in traceEvents" :key="e.id" class="trace-event">
-              <div class="trace-event-header">
-                <span class="trace-event-type" :class="e.type">{{ e.type }}</span>
-                <span class="trace-event-source">{{ e.source }}</span>
-                <span class="trace-event-time">{{ formatTime(e.timestamp) }}</span>
+          <div class="chat-trace-body">
+            <div v-if="traceLoading" class="mx-loading">{{ t('common.loading') || 'Loading...' }}</div>
+            <div v-else-if="traceEvents.length === 0" class="chat-trace-empty">
+              <div style="font-size:2rem;margin-bottom:12px;">📭</div>
+              {{ t('chat.traceEmpty') || 'No trace events found for this conversation.' }}
+            </div>
+            <div v-if="traceScope === 'global' && traceEvents.length > 0"
+              style="padding:8px 12px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);border-radius:6px;font-size:0.78rem;color:#fbbf24;margin-bottom:8px;">
+              {{ t('chat.traceGlobalHint') || 'Showing recent global events (no session-specific trace available for this conversation)' }}
+            </div>
+            <div v-for="e in traceEvents" :key="e.id" class="chat-trace-event">
+              <div class="chat-trace-event-header">
+                <span class="chat-trace-event-type" :class="'type-' + e.type">{{ e.type }}</span>
+                <span class="chat-trace-event-source">{{ e.source }}</span>
+                <span class="chat-trace-event-time">{{ formatTime(e.timestamp) }}</span>
               </div>
-              <pre class="trace-event-payload"><code>{{ JSON.stringify(e.payload, null, 2) }}</code></pre>
+              <div class="chat-trace-event-payload">
+                <pre><code>{{ JSON.stringify(e.payload, null, 2) }}</code></pre>
+              </div>
             </div>
           </div>
         </div>

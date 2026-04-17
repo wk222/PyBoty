@@ -48,6 +48,11 @@ _CORE_CAPABILITIES = """\
 <script src="static/pybot-helpers.js"></script>
 （在 app.js 之前），否则 helpers 会丢失。
 
+**关键：应用构建完成后，必须在回复中包含访问链接。** 格式：
+- 中文：`访问地址：/apps/<app_name>/`
+- 英文：`Access URL: /apps/<app_name>/`
+无论通过 create_app 工具还是 iterative_app_builder，都必须在最终回复中明确给出链接，让用户可以直接点击访问。
+
 ### 五、需求澄清能力
 analyze_requirement → ask_clarification → 确保需求理解准确
 

@@ -44,11 +44,12 @@ uv_envs/
 # Tools workspace (isolated execution sandbox)
 .tools_workspace/
 
-# Plans
+# Plans & internal docs
 plan.md
 PROJECT_PLAN.md
-replit.md
+shu.md
 *_PLAN.md
+INTERNAL_DESIGN.md
 
 # LaTeX
 *.aux
