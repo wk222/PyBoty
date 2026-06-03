@@ -2,20 +2,24 @@
 
 from __future__ import annotations
 
+import logging
 import traceback
 from typing import Any
 
-from core.modes.agents import (
+logger = logging.getLogger(__name__)
+
+from core.assets.agents import (
     AgentCapabilityProfile,
     AgentMiddlewareProfile,
     build_agent_tool_inventory,
+)
+from core.systems.agents import (
     build_subagent_governance_snapshot,
     resume_persisted_agent_approval,
 )
 from core.assets.tools.tool_storage import ToolStorage
 from core.modes import (
     attach_mode_surface_methods,
-    build_mode_subclasses,
     create_mode_agent,
     get_mode_api_capability,
     get_mode_capability_label,
@@ -40,10 +44,15 @@ from core.systems.integration import get_plugin_registry
 from core.systems.runtime import (
     ProjectPaths,
     assemble_primary_tools,
+    bind_runtime_shortcuts,
     build_runtime,
+    collect_lc_middleware_names,
     create_llm_client,
     create_root_agent,
+    extract_final_reply,
+    invoke_agent,
     invoke_sub_agent,
+    make_invoke_config,
     stream_chat_events,
 )
 
@@ -123,14 +132,8 @@ class PyBot:
         print_startup_summary(self)
 
     def _bind_runtime(self) -> None:
-        """Legacy shim for backward compatibility. 
-        Most services should be accessed via self.runtime.
-        """
-        # We only keep common shortcuts used in external scripts/tests
-        self.workspace = self.runtime.workspace
-        self.memory = self.runtime.memory
-        self.capability_bus = self.runtime.capability_bus
-        self.llm = self.runtime.llm
+        """Expose the historical runtime shortcuts on this PyBot instance."""
+        bind_runtime_shortcuts(self, self.runtime)
 
     def __getattr__(self, name: str) -> Any:
         """Delegate to runtime or resolve mode surface methods."""
@@ -147,35 +150,32 @@ class PyBot:
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
     def _dispatch_mode_method(self, name: str, *args: Any, **kwargs: Any) -> Any:
-        """Legacy test helper to manually trigger mode-specific surface logic."""
-        surface = resolve_mode_surface_method(self, name)
-        if surface is None:
-            raise AttributeError(f"Mode method '{name}' not found")
-        return surface(*args, **kwargs)
+        """Resolve and call a mode-pack API by name.
 
-    def _dispatch_mode_method(self, name: str, *args: Any, **kwargs: Any) -> Any:
-        """Legacy test helper to manually trigger mode-specific surface logic."""
-        surface = resolve_mode_surface_method(self, name)
-        if surface is None:
-            raise AttributeError(f"Mode method '{name}' not found")
-        return surface(*args, **kwargs)
+        This is the *terminal* dispatch point: ``attach_mode_surface_methods``
+        and ``resolve_mode_surface_method`` both produce thin wrappers that
+        delegate here. We must therefore execute the registered handler
+        directly rather than re-entering the surface lookup (which would
+        trigger infinite recursion since the resolver returns a wrapper that
+        calls back into ``_dispatch_mode_method``).
+        """
+        from core.modes.builtin_packs import ensure_builtin_packs
+        from core.modes.pack import get_global_registry
+
+        ensure_builtin_packs()
+        for pack in get_global_registry().list_all():
+            handlers = pack.get_api_methods()
+            if name in handlers:
+                return handlers[name](self, *args, **kwargs)
+        raise AttributeError(f"Mode method '{name}' not found in any registered pack")
 
     def _lc_middleware_names(self) -> list[str]:
         """Return display names for the active LangChain middleware stack."""
-        # Use a cached version or resolve once
         if hasattr(self, "_cached_middleware_names"):
             return self._cached_middleware_names
-            
-        try:
-            # We only build names once to avoid heavy factory overhead in summary printing
-            from core.systems.middleware.agent_middleware_factory import build_root_langchain_middleware
-
-            mws = build_root_langchain_middleware(runtime=self.runtime)
-            names = [getattr(m, "name", None) or type(m).__name__ for m in mws]
-            self._cached_middleware_names = names
-            return names
-        except Exception:
-            return getattr(self.runtime.middleware_stack, "layers", [])
+        names = collect_lc_middleware_names(self.runtime)
+        self._cached_middleware_names = names
+        return names
 
     def _create_llm(self, model: str | None = None, temperature: float | None = None):
         """Create LLM instances for delegated sub-agents."""
@@ -203,14 +203,13 @@ class PyBot:
             chat_callback=self.chat,
         )
         for label, count in assembly.tool_groups:
-            print(f"   {label}: {count} 个已注入")
+            logger.info("Tool group injected: %s (%d)", label, count)
         self.agent = create_root_agent(runtime=self.runtime, assembly=assembly)
 
     def _do_invoke(self, message: str, *, tools_before: int) -> dict[str, Any]:
-        """Single invoke call."""
+        """Send a message through the root agent and finalize the response."""
         config = self._invoke_config()
-        invoke_state = {"messages": [{"role": "user", "content": message}]}
-        response = self.agent.invoke(invoke_state, config=config)
+        response = invoke_agent(self.agent, message, config=config)
         return self._finalize_invoke_response(response, config=config, tools_before=tools_before)
 
     def _finalize_invoke_response(
@@ -231,23 +230,8 @@ class PyBot:
 
     @staticmethod
     def _extract_final_reply(messages: list[Any]) -> str:
-        """Extract the best text reply from a finished agent message list."""
-        from langchain_core.messages import AIMessage, ToolMessage
-
-        last_tool_content: str | None = None
-        for msg in reversed(messages):
-            if isinstance(msg, AIMessage):
-                text = (msg.content or "").strip()
-                if text:
-                    return _deduplicate_response(text)
-            elif isinstance(msg, ToolMessage) and last_tool_content is None:
-                text = (msg.content or "").strip()
-                if text:
-                    last_tool_content = text
-
-        if last_tool_content:
-            return last_tool_content
-        return "（无回复）"
+        """Pick the best textual reply, applying PyBot's dedup heuristic."""
+        return extract_final_reply(messages, deduplicate=_deduplicate_response)
 
     def _register_tool_approval(
         self,
@@ -336,10 +320,7 @@ class PyBot:
         return self._finalize_invoke_response(response, config=config, tools_before=tools_before)
 
     def _invoke_config(self, *, thread_id: str | None = None) -> dict[str, Any]:
-        return {
-            "configurable": {"thread_id": thread_id or self.thread_id},
-            "recursion_limit": 100,
-        }
+        return make_invoke_config(thread_id=thread_id or self.thread_id)
 
     @staticmethod
     def _is_recorded_resolution(payload: Any) -> bool:
@@ -458,9 +439,9 @@ class PyBot:
         if tools_after <= tools_before:
             return
         new_tool_name = self.middleware.last_created_tool or "未知"
-        print(f"[INFO] 新全局工具创建成功: {new_tool_name}")
+        logger.info("New global tool created successfully: %s", new_tool_name)
         self._initialize_agent()
-        print("[INFO] Agent 已更新，新工具可用")
+        logger.info("Agent refreshed; new tool is available")
 
     @staticmethod
     def _apply_message_plugin_hooks(message: str, *, thread_id: str) -> tuple[str, str | None]:
@@ -495,7 +476,7 @@ class PyBot:
                 err_str = str(invoke_err)
                 tools_after = len(self.storage.tools)
                 if "unknown tool" in err_str.lower() and tools_after > tools_before:
-                    print("[INFO] 新工具创建后触发了 unknown tool 错误，重启 Agent 并重试...")
+                    logger.info("Unknown tool error after creation; restarting agent and retrying")
                     self._initialize_agent()
                     result = self._do_invoke(message, tools_before=len(self.storage.tools))
                 else:
@@ -505,7 +486,7 @@ class PyBot:
             return str(result.get("response", "（无回复）"))
         except Exception as exc:
             error_trace = traceback.format_exc()
-            print(f"[ERROR] 对话出错:\n{error_trace}")
+            logger.error("Chat invocation failed: %s\n%s", exc, error_trace)
             self.capability_bus.record_invocation("chat", False)
 
             from core.systems.runtime.event_bus import Event, EventType, event_bus
@@ -748,7 +729,26 @@ def create_tool_creator_agent(
     )
 
 
-AdminPyBot, UltimatePyBot, AppMatrixPyBot = build_mode_subclasses(PyBot)
+class AdminPyBot(PyBot):
+    """Separate root runtime for long-running admin orchestration."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("root_mode", "admin")
+        kwargs.setdefault("attach_admin_runtime", True)
+        super().__init__(*args, **kwargs)
+
+
+class UltimatePyBot(AdminPyBot):
+    """User-facing alias for the ultimate-agent mode."""
+
+
+class AppMatrixPyBot(PyBot):
+    """Root runtime for APP-level orchestration and central scheduling."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("root_mode", "app_matrix")
+        kwargs.setdefault("attach_admin_runtime", True)
+        super().__init__(*args, **kwargs)
 
 
 def create_admin_agent(

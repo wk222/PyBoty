@@ -1,33 +1,17 @@
-"""Version helpers for user-facing services."""
+"""Backwards-compatible re-export of :func:`core.get_pybot_version`.
+
+The implementation now lives at the package root (``core/_version.py``)
+so that ``import core`` does not need to load the heavyweight
+``core.systems`` subpackage just for the version string.
+"""
 
 from __future__ import annotations
 
-import re
-from importlib.metadata import PackageNotFoundError
-from importlib.metadata import version as package_version
-from pathlib import Path
+from core._version import _FALLBACK_VERSION, _VERSION_PATTERN, _version_from_pyproject, get_pybot_version
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_FALLBACK_VERSION = "0.0.0"
-_VERSION_PATTERN = re.compile(r'^version\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
-
-
-def _version_from_pyproject() -> str:
-    pyproject = _PROJECT_ROOT / "pyproject.toml"
-    try:
-        content = pyproject.read_text(encoding="utf-8")
-    except OSError:
-        return _FALLBACK_VERSION
-
-    match = _VERSION_PATTERN.search(content)
-    if match:
-        return match.group(1)
-    return _FALLBACK_VERSION
-
-
-def get_pybot_version() -> str:
-    """Return the installed package version, or fall back to pyproject metadata."""
-    try:
-        return package_version("pybot")
-    except PackageNotFoundError:
-        return _version_from_pyproject()
+__all__ = [
+    "_FALLBACK_VERSION",
+    "_VERSION_PATTERN",
+    "_version_from_pyproject",
+    "get_pybot_version",
+]

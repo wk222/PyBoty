@@ -1,0 +1,18 @@
+version: "3.8"
+
+services:
+  pybot:
+    build: .
+    container_name: pybot_service
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./workspace:/app/workspace
+      - ./logs:/app/logs
+      - ./workspace/.runtime:/app/workspace/.runtime
+    environment:
+      - PYBOT_WEB_PORT=8000
+      # Required for API access — set a strong key before production deploy:
+      # - PYBOT_API_KEYS=your-secret:admin,chat
+      - PYBOT_RUNTIME_HOME=/app/workspace/.runtime
+    restart: unless-stopped

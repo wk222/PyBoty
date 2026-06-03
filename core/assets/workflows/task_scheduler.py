@@ -160,6 +160,7 @@ class TaskScheduler:
         self._state_path = Path(workspace_dir) / "data" / "scheduler_state.json"
         self.tasks: dict[str, ScheduledTask] = {}
         self._running = False
+        self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._agent_callback: Callable | None = None
         self._approval_queue: Any | None = None
@@ -322,18 +323,20 @@ class TaskScheduler:
         if self._running:
             return
         self._running = True
+        self._stop_event.clear()
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
         print("[Scheduler] 定时任务调度器已启动")
 
     def stop(self):
         self._running = False
+        self._stop_event.set()
         if self._thread:
             self._thread.join(timeout=5)
         print("[Scheduler] 定时任务调度器已停止")
 
     def _run_loop(self):
-        while self._running:
+        while self._running and not self._stop_event.is_set():
             # 1. 检查 SCHEDULE.md 中的任务
             for task in list(self.tasks.values()):
                 if self._should_run(task):
@@ -378,7 +381,9 @@ class TaskScheduler:
             # 4. 恢复到期的持久定时器
             self._check_timer_resumes()
 
-            time.sleep(30)
+            # Wait for 30s or until stopped (prevents blocking shutdown)
+            if self._stop_event.wait(timeout=30):
+                break
 
     def _check_approval_timeouts(self) -> None:
         if self._approval_queue is None:

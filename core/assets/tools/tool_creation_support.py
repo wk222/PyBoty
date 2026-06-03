@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from core.modes.agents.agent_storage import AgentStorage
+from core.assets.agents.storage import AgentStorage
 
 from .tool_storage import ToolStorage
 

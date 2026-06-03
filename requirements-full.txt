@@ -1,0 +1,10 @@
+# Full install (core + dev + all LLM + RAG) without editable metadata.
+# Equivalent to: pip install -e ".[dev,all-llm,rag]"
+-r requirements-dev.txt
+langchain-anthropic>=0.3.0
+langchain-google-genai>=2.0.0
+langchain-ollama>=0.3.0
+langchain-mistralai>=0.2.0
+langchain-groq>=0.2.0
+chromadb>=0.5.0
+langchain-text-splitters>=0.3.0

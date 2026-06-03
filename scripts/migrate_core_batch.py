@@ -34,7 +34,7 @@ BATCHES: dict[str, dict[str, str]] = {
         "core/diagnostics.py": "core/systems/runtime/diagnostics.py",
         "core/cost_tracker.py": "core/systems/runtime/cost_tracker.py",
         "core/observability.py": "core/systems/runtime/observability.py",
-        "core/private_state.py": "core/systems/runtime/private_state.py",
+        "core/private_state.py": "core/systems/context/private_state.py",
     },
 }
 

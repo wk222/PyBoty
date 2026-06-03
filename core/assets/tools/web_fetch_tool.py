@@ -167,66 +167,68 @@ _MAX_REDIRECTS = 5
 
 def _fetch_url(url: str, timeout: int = _DEFAULT_TIMEOUT) -> tuple[str | None, str | None]:
     current_url = url
-    session = requests.Session()
-    session.headers.update({"User-Agent": _USER_AGENT})
+    with requests.Session() as session:
+        session.headers.update({"User-Agent": _USER_AGENT})
 
-    for hop in range(_MAX_REDIRECTS + 1):
-        if hop > 0:
-            rejection = _validate_url(current_url)
-            if rejection:
-                return None, f"{rejection} (redirect hop {hop})"
+        for hop in range(_MAX_REDIRECTS + 1):
+            if hop > 0:
+                rejection = _validate_url(current_url)
+                if rejection:
+                    return None, f"{rejection} (redirect hop {hop})"
 
-        try:
-            resp = session.get(
-                current_url,
-                timeout=timeout,
-                stream=True,
-                allow_redirects=False,
-            )
-        except requests.exceptions.Timeout:
-            return None, f"❌ 请求超时（{timeout}s）"
-        except requests.exceptions.ConnectionError as e:
-            return None, f"❌ 连接失败: {e}"
-        except Exception as e:
-            return None, f"❌ 请求失败: {type(e).__name__}: {e}"
+            try:
+                resp = session.get(
+                    current_url,
+                    timeout=timeout,
+                    stream=True,
+                    allow_redirects=False,
+                )
+            except requests.exceptions.Timeout:
+                return None, f"❌ 请求超时（{timeout}s）"
+            except requests.exceptions.ConnectionError as e:
+                return None, f"❌ 连接失败: {e}"
+            except Exception as e:
+                return None, f"❌ 请求失败: {type(e).__name__}: {e}"
 
-        if resp.is_redirect or resp.is_permanent_redirect:
-            location = resp.headers.get("Location")
-            if not location:
-                return None, "❌ 重定向缺少 Location 头"
-            from urllib.parse import urljoin
-            current_url = urljoin(current_url, location)
-            resp.close()
-            continue
+            try:
+                if resp.is_redirect or resp.is_permanent_redirect:
+                    location = resp.headers.get("Location")
+                    if not location:
+                        return None, "❌ 重定向缺少 Location 头"
+                    from urllib.parse import urljoin
+                    current_url = urljoin(current_url, location)
+                    continue
 
-        if resp.status_code >= 400:
-            resp.close()
-            return None, f"❌ HTTP 错误: {resp.status_code}"
+                if resp.status_code >= 400:
+                    return None, f"❌ HTTP 错误: {resp.status_code}"
 
-        content_type = resp.headers.get("content-type", "")
-        if not any(ct in content_type.lower() for ct in ("text/", "application/json", "application/xml", "+xml", "+json")):
-            resp.close()
-            return None, f"❌ 不支持的内容类型: {content_type}（仅支持文本/HTML/JSON/XML）"
+                content_type = resp.headers.get("content-type", "")
+                if not any(
+                    ct in content_type.lower()
+                    for ct in ("text/", "application/json", "application/xml", "+xml", "+json")
+                ):
+                    return None, f"❌ 不支持的内容类型: {content_type}（仅支持文本/HTML/JSON/XML）"
 
-        chunks = []
-        total = 0
-        for chunk in resp.iter_content(chunk_size=8192, decode_unicode=False):
-            chunks.append(chunk)
-            total += len(chunk)
-            if total > _MAX_DOWNLOAD_BYTES:
-                break
-        raw = b"".join(chunks)
+                chunks = []
+                total = 0
+                for chunk in resp.iter_content(chunk_size=8192, decode_unicode=False):
+                    chunks.append(chunk)
+                    total += len(chunk)
+                    if total > _MAX_DOWNLOAD_BYTES:
+                        break
+                raw = b"".join(chunks)
 
-        encoding = resp.encoding or "utf-8"
-        try:
-            body = raw.decode(encoding, errors="replace")
-        except (LookupError, UnicodeDecodeError):
-            body = raw.decode("utf-8", errors="replace")
+                encoding = resp.encoding or "utf-8"
+                try:
+                    body = raw.decode(encoding, errors="replace")
+                except (LookupError, UnicodeDecodeError):
+                    body = raw.decode("utf-8", errors="replace")
 
-        resp.close()
-        return body, None
+                return body, None
+            finally:
+                resp.close()
 
-    return None, f"❌ 重定向次数过多（超过 {_MAX_REDIRECTS} 次）"
+        return None, f"❌ 重定向次数过多（超过 {_MAX_REDIRECTS} 次）"
 
 
 class WebFetchInput(BaseModel):

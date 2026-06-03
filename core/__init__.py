@@ -3,288 +3,30 @@
 Canonical product model:
   Tools -> Skills -> Agents -> Workflows -> Apps
 
-This module uses a finer-grained internal export map for contributor
-navigation. Those groups are implementation domains, not extra
-user-facing product layers.
+Subpackages:
+  - ``core.assets``   user-creatable artifacts (tools / skills / workflows / agents / apps)
+  - ``core.systems``  runtime systems (llm / session / memory / observability / agents / apps / ...)
+  - ``core.modes``    operating modes (chat / admin / system_model / ...)
 
-See ``core/modes/system_model.py`` and ``docs/ARCHITECTURE.md`` for the canonical project model.
+The package itself is a *thin* facade: it lazily exposes the three
+subpackages plus the top-level :class:`PyBot` agent class so that
+existing user code can still ``import core`` and reach the version
+metadata. **All other symbols must be imported from their canonical
+``core.<subpackage>....`` path.**
 """
 
 from __future__ import annotations
 
 from importlib import import_module
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from .systems.runtime.version import get_pybot_version
+from ._version import get_pybot_version
 
-_EXPORTS: dict[str, tuple[str, str]] = {
-    "assets": (".assets", ""),
-    "systems": (".systems", ""),
-    "modes": (".modes", ""),
-    "PyBot": ("agent", "PyBot"),
-    # ── Domain 1: Infrastructure ─────────────────────────────────────
-    "get_config": (".systems.runtime.config_impl", "get_config"),
-    "get_agent_control_config": (".systems.runtime.config_impl", "get_agent_control_config"),
-    "get_channels_config": (".systems.runtime.config_impl", "get_channels_config"),
-    "get_llm_config": (".systems.runtime.config_impl", "get_llm_config"),
-    "reload_config": (".systems.runtime.config_impl", "reload_config"),
-    "save_config": (".systems.runtime.config_impl", "save_config"),
-    "ToolError": (".systems.runtime.errors", "ToolError"),
-    "ToolInputError": (".systems.runtime.errors", "ToolInputError"),
-    "ToolAuthorizationError": (".systems.runtime.errors", "ToolAuthorizationError"),
-    "ToolNotFoundError": (".systems.runtime.errors", "ToolNotFoundError"),
-    "ToolTimeoutError": (".systems.runtime.errors", "ToolTimeoutError"),
-    "ToolRateLimitError": (".systems.runtime.errors", "ToolRateLimitError"),
-    "extract_error_code": (".systems.runtime.errors", "extract_error_code"),
-    "redact_sensitive_text": (".systems.runtime.errors", "redact_sensitive_text"),
-    "format_error": (".systems.runtime.errors", "format_error"),
-    "RetryPolicy": (".systems.runtime.retry_policy", "RetryPolicy"),
-    "RetryConfig": (".systems.runtime.retry_policy", "RetryConfig"),
-    "create_default_retry_policy": (".systems.runtime.retry_policy", "create_default_retry_policy"),
-    "ProjectPaths": (".systems.runtime.project_paths", "ProjectPaths"),
-    "safe_resolve": (".systems.runtime.path_utils", "safe_resolve"),
-    "safe_join": (".systems.runtime.path_utils", "safe_join"),
-    "SessionEventQueue": (".systems.runtime.session_events", "SessionEventQueue"),
-    "EventBus": (".systems.runtime.event_bus", "EventBus"),
-    "event_bus": (".systems.runtime.event_bus", "event_bus"),
-    "Event": (".systems.runtime.event_bus", "Event"),
-    "EventType": (".systems.runtime.event_bus", "EventType"),
-    # ── Domain 2: LLM & Model ───────────────────────────────────────
-    "build_system_prompt": (".systems.runtime.prompts", "build_system_prompt"),
-    "build_system_model": (".modes.system_model", "build_system_model"),
-    "build_system_summary": (".modes.system_model", "build_system_summary"),
-    "normalize_root_mode": (".modes.system_model", "normalize_root_mode"),
-    "get_root_mode_label": (".modes.system_model", "get_root_mode_label"),
-    # ── Domain 3: Knowledge & Memory ────────────────────────────────
-    "Document": (".systems.knowledge.vector_store", "Document"),
-    "SearchResult": (".systems.knowledge.vector_store", "SearchResult"),
-    "VectorStoreBackend": (".systems.knowledge.vector_store", "VectorStoreBackend"),
-    "ChromaVectorStore": (".systems.knowledge.vector_store", "ChromaVectorStore"),
-    "InMemoryVectorStore": (".systems.knowledge.vector_store", "InMemoryVectorStore"),
-    "create_vector_store": (".systems.knowledge.vector_store", "create_vector_store"),
-    "DocumentPipeline": (".systems.knowledge.document_pipeline", "DocumentPipeline"),
-    "ChunkConfig": (".systems.knowledge.document_pipeline", "ChunkConfig"),
-    "KnowledgeSource": (".systems.knowledge.knowledge_sources", "KnowledgeSource"),
-    "FileSource": (".systems.knowledge.knowledge_sources", "FileSource"),
-    "DirectorySource": (".systems.knowledge.knowledge_sources", "DirectorySource"),
-    "TextSource": (".systems.knowledge.knowledge_sources", "TextSource"),
-    "URLSource": (".systems.knowledge.knowledge_sources", "URLSource"),
-    "GitRepoSource": (".systems.knowledge.knowledge_sources", "GitRepoSource"),
-    "KnowledgeManager": (".systems.knowledge.knowledge_sources", "KnowledgeManager"),
-    "RetrievalConfig": (".systems.knowledge.knowledge_retrieval", "RetrievalConfig"),
-    "retrieve_and_format": (".systems.knowledge.knowledge_retrieval", "retrieve_and_format"),
-    "get_knowledge_tools": (".systems.knowledge.knowledge_tools", "get_knowledge_tools"),
-    "MemoryManager": (".systems.memory.memory_manager", "MemoryManager"),
-    "extract_key_facts": (".systems.memory.memory_manager", "extract_key_facts"),
-    "SemanticMemoryManager": (".systems.memory.semantic_memory", "SemanticMemoryManager"),
-    "encode_memory": (".systems.memory.memory_scoring", "encode_memory"),
-    "composite_score": (".systems.memory.memory_scoring", "composite_score"),
-    # ── Domain 4: Tool System ───────────────────────────────────────
-    "ToolStorage": (".assets.tools.tool_storage", "ToolStorage"),
-    "ToolContext": (".assets.tools.tool_storage", "ToolContext"),
-    "ToolCreatorTool": (".assets.tools.tool_creator", "ToolCreatorTool"),
-    "TemplateToolCreator": (".assets.tools.tool_creator", "TemplateToolCreator"),
-    "ListTemplatesTool": (".assets.tools.tool_creator", "ListTemplatesTool"),
-    "create_dynamic_tool": (".assets.tools.tool_creator", "create_dynamic_tool"),
-    "get_tool_creator_tools": (".assets.tools.tool_creator", "get_tool_creator_tools"),
-    "get_dynamic_tools": (".assets.tools.tool_creator", "get_dynamic_tools"),
-    "TOOL_TEMPLATES": (".assets.tools.tool_templates", "TOOL_TEMPLATES"),
-    "get_template": (".assets.tools.tool_templates", "get_template"),
-    "list_templates": (".assets.tools.tool_templates", "list_templates"),
-    "get_templates_by_category": (".assets.tools.tool_templates", "get_templates_by_category"),
-    "get_template_prompt_section": (".assets.tools.tool_templates", "get_template_prompt_section"),
-    "DynamicToolMiddleware": (".assets.tools.tool_middleware", "DynamicToolMiddleware"),
-    "ToolChainExecutor": (".assets.tools.tool_chain", "ToolChainExecutor"),
-    "get_tool_chain_tools": (".assets.tools.tool_chain", "get_tool_chain_tools"),
-    "ToolCache": (".assets.tools.tool_cache", "ToolCache"),
-    "cached_tool_call": (".assets.tools.tool_cache", "cached_tool_call"),
-    "get_clarification_tools": (".assets.tools.clarification_tool", "get_clarification_tools"),
-    "AskClarificationTool": (".assets.tools.clarification_tool", "AskClarificationTool"),
-    "AnalyzeRequirementTool": (".assets.tools.clarification_tool", "AnalyzeRequirementTool"),
-    # ── Domain 5: Agents ────────────────────────────────────────────
-    "AgentControlPolicy": (".systems.governance.agent_control", "AgentControlPolicy"),
-    "ToolRiskLevel": (".systems.governance.agent_control", "ToolRiskLevel"),
-    "AgentCapabilityProfile": (".assets.agents.agent_capability_profile", "AgentCapabilityProfile"),
-    "AgentMiddlewareProfile": (".assets.agents.agent_middleware_profile", "AgentMiddlewareProfile"),
-    "AgentStorage": (".assets.agents.agent_storage", "AgentStorage"),
-    "AgentDefinition": (".assets.agents.agent_storage", "AgentDefinition"),
-    "AgentContext": (".assets.agents.agent_storage", "AgentContext"),
-    "SubagentRegistry": (".assets.agents.subagent_registry", "SubagentRegistry"),
-    "SubagentDepthLimitError": (".assets.agents.subagent_registry", "SubagentDepthLimitError"),
-    "SubagentConcurrencyLimitError": (".assets.agents.subagent_registry", "SubagentConcurrencyLimitError"),
-    "get_global_subagent_registry": (".assets.agents.subagent_registry", "get_global_subagent_registry"),
-    "reset_global_subagent_registry": (".assets.agents.subagent_registry", "reset_global_subagent_registry"),
-    "invoke_persisted_agent": (".assets.agents.agent_services", "invoke_persisted_agent"),
-    "AgentCreatorTool": (".assets.agents.agent_creator", "AgentCreatorTool"),
-    "DelegateToAgentTool": (".assets.agents.agent_creator", "DelegateToAgentTool"),
-    "AskAgentTool": (".assets.agents.agent_creator", "AskAgentTool"),
-    "ListAgentsTool": (".assets.agents.agent_creator", "ListAgentsTool"),
-    "RemoveAgentTool": (".assets.agents.agent_creator", "RemoveAgentTool"),
-    "get_agent_creator_tools": (".assets.agents.agent_creator", "get_agent_creator_tools"),
-    "create_sub_agent_instance": (".assets.agents.subagent_runtime", "create_sub_agent_instance"),
-    "ApprovalQueue": (".systems.governance.approval_queue", "ApprovalQueue"),
-    "AgentTool": (".assets.agents.agent_as_tool", "AgentTool"),
-    "TeamTool": (".assets.agents.agent_as_tool", "TeamTool"),
-    "create_agent_tool": (".assets.agents.agent_as_tool", "create_agent_tool"),
-    "create_team_tool": (".assets.agents.agent_as_tool", "create_team_tool"),
-    "FeedbackStore": (".systems.runtime.training", "FeedbackStore"),
-    "FeedbackRecord": (".systems.runtime.training", "FeedbackRecord"),
-    "SocietyOfMind": (".assets.agents.society_of_mind", "SocietyOfMind"),
-    "MindAgent": (".assets.agents.society_of_mind", "MindAgent"),
-    "SocietyConfig": (".assets.agents.society_of_mind", "SocietyConfig"),
-    # ── Domain 6: Orchestration & Workflow ──────────────────────────
-    "PyFlowEngine": (".assets.workflows.pyflow_engine", "PyFlowEngine"),
-    "get_pyflow_tools": (".assets.workflows.workflow_tools", "get_pyflow_tools"),
-    "get_execution_loop_tools": (".systems.execution.execution_loop", "get_execution_loop_tools"),
-    "TaskScheduler": (".assets.workflows.task_scheduler", "TaskScheduler"),
-    "ScheduledTask": (".assets.workflows.task_scheduler", "ScheduledTask"),
-    "TaskQueue": (".assets.workflows.task_queue", "TaskQueue"),
-    "TaskStatus": (".assets.workflows.task_queue", "TaskStatus"),
-    "TaskInfo": (".assets.workflows.task_queue", "TaskInfo"),
-    "PersistentAdminRuntime": (".modes.admin_runtime", "PersistentAdminRuntime"),
-    "admin_runtime": (".modes.admin_runtime", ""),
-    "build_admin_step_prompt": (".modes.admin_runtime", "build_admin_step_prompt"),
-    "AdminPlan": (".modes.admin_planner", "AdminPlan"),
-    "AdminPlanner": (".modes.admin_planner", "AdminPlanner"),
-    "AdminMemoryManager": (".systems.memory.admin_memory", "AdminMemoryManager"),
-    "AdminMemoryConfig": (".systems.memory.admin_memory", "AdminMemoryConfig"),
-    "create_llm_summarizer": (".systems.memory.admin_memory", "create_llm_summarizer"),
-    "BatchProcessor": (".systems.runtime.batch_processor", "BatchProcessor"),
-    "BatchCheckpointStore": (".systems.runtime.batch_processor", "BatchCheckpointStore"),
-    "BatchResult": (".systems.runtime.batch_processor", "BatchResult"),
-    "BatchCheckpoint": (".systems.runtime.batch_processor", "BatchCheckpoint"),
-    "model_failover": (".systems.runtime.model_failover", ""),
-    "model_resolver": (".systems.runtime.model_resolver", ""),
-    "SpeakerSelector": (".assets.agents.speaker_selection", "SpeakerSelector"),
-    "RoundRobinSelector": (".assets.agents.speaker_selection", "RoundRobinSelector"),
-    "LLMSelector": (".assets.agents.speaker_selection", "LLMSelector"),
-    "RuleBasedSelector": (".assets.agents.speaker_selection", "RuleBasedSelector"),
-    "RandomSelector": (".assets.agents.speaker_selection", "RandomSelector"),
-    "TerminationCondition": (".systems.runtime.termination", "TerminationCondition"),
-    "MaxMessages": (".systems.runtime.termination", "MaxMessages"),
-    "MaxTokens": (".systems.runtime.termination", "MaxTokens"),
-    "Timeout": (".systems.runtime.termination", "Timeout"),
-    "TextMatch": (".systems.runtime.termination", "TextMatch"),
-    "AnyCondition": (".systems.runtime.termination", "AnyCondition"),
-    "AllConditions": (".systems.runtime.termination", "AllConditions"),
-    "ExternalSignal": (".systems.runtime.termination", "ExternalSignal"),
-    "PauseManager": (".systems.runtime.pause_resume", "PauseManager"),
-    "SimplePausableAgent": (".systems.runtime.pause_resume", "SimplePausableAgent"),
-    "PauseState": (".systems.runtime.pause_resume", "PauseState"),
-    # ── Domain 7: Safety & Governance ───────────────────────────────
-    "Guardrail": (".systems.governance.guardrails", "Guardrail"),
-    "run_with_guardrails": (".systems.governance.guardrails", "run_with_guardrails"),
-    "LengthGuardrail": (".systems.governance.guardrails", "LengthGuardrail"),
-    "JsonGuardrail": (".systems.governance.guardrails", "JsonGuardrail"),
-    "RegexGuardrail": (".systems.governance.guardrails", "RegexGuardrail"),
-    "InterventionHandler": (".systems.governance.intervention", "InterventionHandler"),
-    "InterventionChain": (".systems.governance.intervention", "InterventionChain"),
-    "ContentFilterHandler": (".systems.governance.intervention", "ContentFilterHandler"),
-    "RateLimitHandler": (".systems.governance.intervention", "RateLimitHandler"),
-    "LoggingHandler": (".systems.governance.intervention", "LoggingHandler"),
-    # ── Domain 8: Middleware & Context ──────────────────────────────
-    "MiddlewareStack": (".systems.middleware.middleware_stack", "MiddlewareStack"),
-    "ContextMiddleware": (".systems.middleware.middleware_stack", "ContextMiddleware"),
-    "MemoryMiddleware": (".systems.middleware.middleware_stack", "MemoryMiddleware"),
-    "ToolEvictionMiddleware": (".systems.middleware.middleware_stack", "ToolEvictionMiddleware"),
-    "BusMiddleware": (".systems.middleware.middleware_stack", "BusMiddleware"),
-    "PromptCachingMiddleware": (".systems.middleware.middleware_stack", "PromptCachingMiddleware"),
-    "PatchToolCallsMiddleware": (".systems.runtime.patch_tool_calls", "PatchToolCallsMiddleware"),
-    "TodoListMiddleware": (".systems.middleware.todo_middleware", "TodoListMiddleware"),
-    "SummarizationMiddleware": (".systems.middleware.summarization_middleware", "SummarizationMiddleware"),
-    "SummarizationConfig": (".systems.middleware.summarization_middleware", "SummarizationConfig"),
-    "LCToolEvictionMiddleware": (".assets.tools.tool_eviction_middleware", "LCToolEvictionMiddleware"),
-    "LCMemoryMiddleware": (".systems.middleware.lc_memory_middleware", "LCMemoryMiddleware"),
-    "LCBusMiddleware": (".systems.bus.lc_bus_middleware", "LCBusMiddleware"),
-    "LoopGuardMiddleware": (".systems.middleware.loop_guard_middleware", "LoopGuardMiddleware"),
-    "LoopGuardConfig": (".systems.middleware.loop_guard_middleware", "LoopGuardConfig"),
-    "InsightVaultMiddleware": (".systems.middleware.insight_vault_middleware", "InsightVaultMiddleware"),
-    "InsightVaultConfig": (".systems.middleware.insight_vault_middleware", "InsightVaultConfig"),
-    "ReasoningFrameMiddleware": (".systems.middleware.reasoning_frame_middleware", "ReasoningFrameMiddleware"),
-    "ReasoningFrameConfig": (".systems.middleware.reasoning_frame_middleware", "ReasoningFrameConfig"),
-    "MIDDLEWARE_REGISTRY": (".systems.middleware.middleware_registry", "MIDDLEWARE_REGISTRY"),
-    "query_middlewares": (".systems.middleware.middleware_registry", "query_middlewares"),
-    "get_middleware_summary_for_agent": (".systems.middleware.middleware_registry", "get_middleware_summary_for_agent"),
-    "MiddlewareDescriptor": (".systems.middleware.middleware_registry", "MiddlewareDescriptor"),
-    "NodeExceptionConfig": (".assets.workflows.workflow_models", "NodeExceptionConfig"),
-    "discover_workflow_tools": (".assets.workflows.workflow_as_tool", "discover_workflow_tools"),
-    "InterruptKind": (".systems.governance.approval_queue", "InterruptKind"),
-    "ResumePayload": (".systems.governance.approval_queue", "ResumePayload"),
-    "BufferedChatContext": (".systems.context.context_strategies", "BufferedChatContext"),
-    "TokenLimitedChatContext": (".systems.context.context_strategies", "TokenLimitedChatContext"),
-    "HeadAndTailChatContext": (".systems.context.context_strategies", "HeadAndTailChatContext"),
-    "CompositeContextStrategy": (".systems.context.context_strategies", "CompositeContextStrategy"),
-    # ── Domain 9: Backend & IO ──────────────────────────────────────
-    "BackendProtocol": (".systems.runtime.backend_protocol", "BackendProtocol"),
-    "SandboxBackendProtocol": (".systems.runtime.backend_protocol", "SandboxBackendProtocol"),
-    "LocalFilesystemBackend": (".systems.runtime.backend_protocol", "LocalFilesystemBackend"),
-    "LocalSandboxBackend": (".systems.runtime.backend_protocol", "LocalSandboxBackend"),
-    "CompositeBackend": (".systems.runtime.backend_protocol", "CompositeBackend"),
-    "FileInfo": (".systems.runtime.backend_protocol", "FileInfo"),
-    "ExecResult": (".systems.runtime.backend_protocol", "ExecResult"),
-    "FileOperationError": (".systems.runtime.backend_protocol", "FileOperationError"),
-    "WriteResult": (".systems.runtime.backend_protocol", "WriteResult"),
-    "EditResult": (".systems.runtime.backend_protocol", "EditResult"),
-    "BackendFactory": (".systems.runtime.backend_protocol", "BackendFactory"),
-    "resolve_backend": (".systems.runtime.backend_protocol", "resolve_backend"),
-    "DockerSandboxBackend": (".systems.governance.docker_sandbox", "DockerSandboxBackend"),
-    "SkillRegistry": (".assets.skills.skill_registry", "SkillRegistry"),
-    "SkillDefinition": (".assets.skills.skill_models", "SkillDefinition"),
-    "SkillMarketplace": (".assets.skills.skill_marketplace", "SkillMarketplace"),
-    "get_marketplace_tools": (".assets.skills.skill_marketplace", "get_marketplace_tools"),
-    "WorkspaceManager": (".systems.runtime.workspace_manager", "WorkspaceManager"),
-    "UvEnvManager": (".systems.runtime.uv_env_manager", "UvEnvManager"),
-    "UvEnvDefinition": (".systems.runtime.uv_env_manager", "UvEnvDefinition"),
-    "PyHubClient": (".systems.integration.pyhub_client", "PyHubClient"),
-    # ── Domain 10: Application & Integration ────────────────────────
-    "AppManager": (".assets.apps.app_manager", "AppManager"),
-    "AppDefinition": (".assets.apps.app_manager", "AppDefinition"),
-    "AppMatrixRuntime": (".assets.apps.app_matrix_runtime", "AppMatrixRuntime"),
-    "AppMatrixPlanner": (".assets.apps.app_matrix_planner", "AppMatrixPlanner"),
-    "AppMatrixTopologyPlan": (".assets.apps.app_matrix_planner", "AppMatrixTopologyPlan"),
-    "AppMatrixBindingProposal": (".assets.apps.app_matrix_planner", "AppMatrixBindingProposal"),
-    "AppMatrixPipelineProposal": (".assets.apps.app_matrix_planner", "AppMatrixPipelineProposal"),
-    "fallback_app_matrix_plan": (".assets.apps.app_matrix_planner", "fallback_app_matrix_plan"),
-    "AppPackager": (".assets.apps.app_packager", "AppPackager"),
-    "get_app_creator_tools": (".assets.apps.app_creator", "get_app_creator_tools"),
-    "set_app_manager": (".assets.apps.app_creator", "set_app_manager"),
-    "get_app_verifier_tools": (".assets.apps.app_verifier", "get_app_verifier_tools"),
-    "VerifyAppTool": (".assets.apps.app_verifier", "VerifyAppTool"),
-    "ReadAppFileTool": (".assets.apps.app_verifier", "ReadAppFileTool"),
-    "set_verifier_app_manager": (".assets.apps.app_verifier", "set_verifier_app_manager"),
-    "CapabilityBus": (".systems.bus.capability_bus", "CapabilityBus"),
-    "CapabilityLayer": (".systems.bus.capability_bus", "CapabilityLayer"),
-    "get_capability_bus_tools": (".systems.bus.capability_bus", "get_capability_bus_tools"),
-    "CapabilityRegistry": (".systems.bus.capability_registry", "CapabilityRegistry"),
-    "get_capability_registry_tools": (".systems.bus.capability_registry", "get_capability_registry_tools"),
-    "ContextWindowManager": (".systems.context.context_manager", "ContextWindowManager"),
-    "ContextConfig": (".systems.context.context_manager", "ContextConfig"),
-    "WorkspaceViewService": (".systems.context.workspace_view", "WorkspaceViewService"),
-    "WorkspaceViewEntry": (".systems.context.workspace_view", "WorkspaceViewEntry"),
-    "count_tokens_approx": (".systems.context.context_manager", "count_tokens_approx"),
-    "EvalFramework": (".systems.eval.eval_framework", "EvalFramework"),
-    "get_eval_tools": (".systems.eval.eval_framework", "get_eval_tools"),
-    "get_garden_tools": (".systems.memory.garden_tools", "get_garden_tools"),
-    "get_private_keys": (".systems.runtime.private_state", "get_private_keys"),
-    "register_private_keys": (".systems.runtime.private_state", "register_private_keys"),
-    "ApprovalDashboard": (".systems.governance.approval_dashboard", "ApprovalDashboard"),
-    "DashboardFilter": (".systems.governance.approval_dashboard", "DashboardFilter"),
-    "build_delegation_chain": (".assets.agents.subagent_governance", "build_delegation_chain"),
-    "format_delegation_tree": (".assets.agents.subagent_governance", "format_delegation_tree"),
-    "load_agents_yaml": (".systems.runtime.yaml_config", "load_agents_yaml"),
-    "load_tasks_yaml": (".systems.runtime.yaml_config", "load_tasks_yaml"),
-    "auto_discover_yaml": (".systems.runtime.yaml_config", "auto_discover_yaml"),
-    "AgentSpec": (".systems.runtime.component_serialization", "AgentSpec"),
-    "ToolSpec": (".systems.runtime.component_serialization", "ToolSpec"),
-    "TeamSpec": (".systems.runtime.component_serialization", "TeamSpec"),
-    "WorkflowSpec": (".systems.runtime.component_serialization", "WorkflowSpec"),
-    "serialize_component": (".systems.runtime.component_serialization", "serialize_component"),
-    "deserialize_component": (".systems.runtime.component_serialization", "deserialize_component"),
-    "to_json": (".systems.runtime.component_serialization", "to_json"),
-    "from_json": (".systems.runtime.component_serialization", "from_json"),
-}
+if TYPE_CHECKING:
+    from . import assets, modes, systems
+    from .agent import PyBot
 
-__all__ = list(_EXPORTS)
+__all__ = ["assets", "systems", "modes", "PyBot", "get_pybot_version"]
 
 __version__ = get_pybot_version()
 __author__ = "Patent Applicant"
@@ -292,20 +34,18 @@ __patent__ = "一种具有自主工具创建和智能体创建能力的智能体
 
 
 def __getattr__(name: str) -> Any:
-    """Resolve legacy exports and core submodules lazily on first access."""
+    """Lazily expose subpackages and the :class:`PyBot` class only."""
     if name in {"assets", "systems", "modes"}:
-        return import_module(f".{name}", __name__)
+        module = import_module(f".{name}", __name__)
+        globals()[name] = module
+        return module
+    if name == "PyBot":
+        from agent import PyBot as _PyBot
 
-    if name not in _EXPORTS:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-    module_name, attr_name = _EXPORTS[name]
-    module = import_module(module_name, __name__)
-    value = getattr(module, attr_name)
-    globals()[name] = value
-    return value
+        globals()[name] = _PyBot
+        return _PyBot
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def __dir__() -> list[str]:
-    """Expose lazy exports in interactive environments."""
     return sorted(set(globals()) | set(__all__))

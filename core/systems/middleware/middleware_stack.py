@@ -16,13 +16,16 @@ are still called via ``mw_stack.after_invoke()`` in ``agent.py``.
 Will be fully removed once those two are also migrated to LangChain hooks.
 """
 
+import logging
 import os
 import threading
+
+logger = logging.getLogger(__name__)
 import time
 from abc import ABC, abstractmethod
 from typing import Any
 
-from core.systems.bus.capability_reporting import CapabilityBusReporter
+from core.systems.capability.capability_reporting import CapabilityBusReporter
 
 try:
     from langchain.agents.middleware.types import AgentMiddleware as LCAgentMiddleware  # noqa: F401
@@ -87,22 +90,17 @@ class MemoryMiddleware(MiddlewareBase):
 
     def after_invoke(self, state: dict[str, Any], response: Any) -> Any:
         try:
-            from core.systems.memory.memory_manager import extract_key_facts
-
             messages = state.get("messages", [])
-            if messages and len(messages) >= 2:
-                last_two = messages[-2:]
-                conversation = []
-                for m in last_two:
+            if messages and len(messages) >= 2 and hasattr(self.memory_manager, "auto_capture"):
+                conversation: list[dict[str, str]] = []
+                for m in messages[-4:]:
                     if hasattr(m, "content"):
                         role = "user" if getattr(m, "type", "") == "human" else "assistant"
                         conversation.append({"role": role, "content": m.content})
                 if len(conversation) >= 2:
-                    facts = extract_key_facts(conversation)
-                    for fact in facts:
-                        self.memory_manager.append_memory(fact["section"], fact["content"])
+                    self.memory_manager.auto_capture(conversation)
         except Exception as e:
-            print(f"[MemoryMW] 记忆提取失败: {e}")
+            logger.warning("[MemoryMW] auto_capture failed: %s", e)
         return response
 
 

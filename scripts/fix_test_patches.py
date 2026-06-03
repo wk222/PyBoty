@@ -14,8 +14,8 @@ def run():
                 
             new_content = content
             # Correct any form of core.assets.apps/agents
-            new_content = new_content.replace('core.assets.agents', 'core.modes.agents')
-            new_content = new_content.replace('core.assets.apps', 'core.modes.apps')
+            new_content = new_content.replace('core.assets.agents', 'core.systems.agents')
+            new_content = new_content.replace('core.assets.apps', 'core.systems.apps')
 
             if new_content != content:
                 p.write_text(new_content, encoding='utf-8')

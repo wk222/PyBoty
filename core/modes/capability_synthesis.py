@@ -423,7 +423,7 @@ def _validate_app_draft(
     candidate: Any,
     artifact: dict[str, Any],
 ) -> dict[str, Any]:
-    from core.modes.apps.app_verifier import AppVerificationService
+    from core.systems.apps.app_verifier import AppVerificationService
 
     app_manager = getattr(host_agent, "app_manager", None)
     app_name = str(artifact.get("name") or getattr(candidate, "suggested_capability_name", "")).strip()
@@ -552,7 +552,7 @@ def _publish_app_draft(
     version: str,
     changelog: str,
 ) -> dict[str, Any]:
-    from core.modes.apps.app_packager import AppPackager
+    from core.assets.apps.packager import AppPackager
     from core.systems.runtime.event_bus import Event, EventType, event_bus
 
     app_manager = getattr(host_agent, "app_manager", None)
