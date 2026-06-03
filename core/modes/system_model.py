@@ -28,27 +28,72 @@ Three principles drive every architectural decision:
    systems/ (foundation) → assets/ (domain objects) → modes/ (identity) → web/
    (consumers). Each layer depends only on layers below it.
 
-Physical layout (post-migration):
-    core/systems/runtime/      — config, paths, errors, events, model, bootstrap
-    core/systems/governance/   — approvals, guardrails, sandbox, agent control
-    core/systems/memory/       — semantic memory, scoring, knowledge retrieval
-    core/systems/knowledge/    — document pipeline, vector store, embedding
-    core/systems/middleware/   — agent/tool middleware chain
-    core/systems/execution/    — code execution sandbox and analysis
-    core/systems/eval/         — evaluation framework and storage
-    core/systems/context/      — context windowing strategies
-    core/systems/integration/  — channels, MCP, external content, PyHub
-    core/systems/bus/          — capability bus runtime
-    core/assets/tools/         — tool creation, runtime, storage, templates
-    core/assets/skills/        — skill loading, registry, HTTP backends
-    core/modes/agents/        — agent definition, delegation, profiles
-    core/modes/apps/          — app manager, brain planner, orchestration
-    core/assets/workflows/     — DAG execution, scheduling, pause/resume
-    core/modes/                — root mode profiles and admin runtime
-    web/                       — FastAPI surfaces (consumer layer)
+Physical layout (post 2026-04 reorg):
 
-Backward compatibility: every moved module keeps a one-line stub at its original
-core/foo.py path, so from core.foo import X continues to work.
+  Layer 0 — Runtime Foundation (the trunk)
+    core/systems/runtime/       bootstrap + foundation: config, paths, errors, event bus,
+                                version, retry, multi_tenant, protocol adapters
+                                (a2a, structured_output, patch_tool_calls, etc.),
+                                runtime orchestrator, capability bundle, env/CLI
+    core/systems/session/       session spine (event ledger, compaction, kernel)
+    core/systems/context/       workspace view, context engine, prompts assembly,
+                                projected runtime view, context budget/hygiene,
+                                instruction assembly, private state registry
+    core/systems/llm/           model resolver, failover, router
+    core/plugin_sdk/            third-party plugin SDK (decorators, hook contexts, file lock)
+
+  Layer 1 — Core Systems (cross-cutting infrastructure)
+    core/systems/governance/    approvals, guardrails, sandbox, agent control
+    core/systems/memory/        MemoryEngine + MemoryPipeline three-stage distillation
+    core/systems/knowledge/     RAG pipeline, vector store, embedding
+    core/systems/middleware/    agent/tool middleware chain, reasoning frame
+    core/systems/execution/     code execution sandbox, swarm scheduler
+    core/systems/capability/           capability bus runtime + registry
+    core/systems/observability/ cost tracker, diagnostics, tracing setup
+    core/systems/eval/          evaluation framework
+    core/systems/integration/   channels, MCP, external content, PyHub
+    core/systems/tasks/         long-running task registry — uniform facade over
+                                PersistentAgentRunner, MonitorTask, TaskScheduler
+
+  Layer 2 — Asset Domains (user-creatable, serializable resources)
+    core/assets/tools/          tool creation, runtime, storage, templates
+    core/assets/skills/         skill loading, registry, HTTP backends
+    core/assets/agents/         agent storage, capability/middleware profiles, role policies
+    core/assets/workflows/      DAG execution, scheduling, pause/resume
+    core/assets/apps/           app templates, packager (HTML/CSS/JS bundles)
+
+  Layer 3 — Product Modes (orchestration runtimes + identities)
+    core/systems/agents/        subagent registry, persistent runner, team orchestrator,
+                                agent creator, agent services, governance helpers
+                                (orchestration runtime; depends on assets/agents)
+    core/systems/apps/          app manager, matrix runtime/planner, orchestration tools,
+                                verifier, iterative builder, marketplace tools
+                                (orchestration runtime; depends on assets/apps)
+    core/modes/                 ModeProfile (assistant/app_matrix/admin),
+                                ExecutionCanvas (focused/balanced/deep),
+                                packs, lifecycle, system_model, factories
+
+  Layer 4 (consumer) — surfaces, not part of the core layering
+    agent.py / api_server.py    public PyBot factory + FastAPI entrypoint
+    web/                        FastAPI routers
+    tests/ scripts/             may import from any layer
+
+The strict rule: every module under ``core/`` may only import from layers at
+its own level or below. The dataclasses in this file are the machine-readable
+source of truth for that rule and feed the architectural-layer guard test.
+
+Two explicit exemptions are recognized by the guard:
+
+* **Namespace facades** (``core/__init__.py``, ``core/assets/__init__.py``,
+  ``core/systems/__init__.py``) — pure re-export entry points consumed by the
+  outermost layer. They cross-cut by design.
+* **Assembly entrypoints** (``_ASSEMBLY_ENTRYPOINTS``) — bootstrap / capability
+  bundle / orchestration / protocol-adapter files that legitimately stitch
+  multiple layers together. Physically they live inside one layer; semantically
+  they sit *above* L3 as the "L4 / consumer" wiring layer.
+
+Reverse imports guarded by ``if TYPE_CHECKING:`` are also skipped (they have
+no runtime effect on the dependency graph).
 """
 
 from __future__ import annotations
@@ -232,15 +277,21 @@ _ARCHITECTURAL_LAYERS: tuple[ArchitecturalLayerDescriptor, ...] = (
         label="Layer 0 — 基础层 (Runtime Foundation)",
         level=0,
         purpose=(
-            "配置、路径、错误、事件总线、模型解析、bootstrap；"
-            "Session Spine（事件序列、压缩边界、kernel）；"
-            "Workspace View 和 Context Engine。"
+            "启动与基础设施：bootstrap、事件总线、路径与错误、orchestrator、capability bundle、"
+            "协议适配（a2a、structured_output、patch_tool_calls 等）、环境与 CLI；"
+            "Session Spine（事件账本、压缩边界、kernel）；"
+            "Workspace View、Context Engine、Prompts 组装、Projected Runtime View、"
+            "Context Budget/Hygiene、Instruction Assembly、Private State 注册表；"
+            "LLM 模型解析、failover 与 router；"
+            "第三方插件 SDK（decorators、hook contexts、file lock）。"
             "这是所有能力生长的树干（THE TRUNK）。"
         ),
         packages=(
             "core/systems/runtime/",
-            "core/systems/runtime/session/",
+            "core/systems/session/",
             "core/systems/context/",
+            "core/systems/llm/",
+            "core/plugin_sdk/",
         ),
         public_api_module="core.systems.runtime",
         depends_on_layers=(),
@@ -252,18 +303,21 @@ _ARCHITECTURAL_LAYERS: tuple[ArchitecturalLayerDescriptor, ...] = (
         purpose=(
             "强化五个产品概念的横切基础设施："
             "治理与安全（AgentControlPolicy、审批、沙箱）；"
-            "记忆与知识（Markdown Garden、语义记忆、MemoryDistill 三阶段蒸馏流水线）；"
-            "CapabilityBus + Registry；中间件链与推理框架。"
+            "记忆与知识（MemoryEngine + MemoryPipeline 三阶段蒸馏流水线、RAG）；"
+            "CapabilityBus + Registry；中间件链与推理框架；"
+            "代码执行沙箱、可观测（成本/诊断/tracing）、评估、外部集成。"
         ),
         packages=(
             "core/systems/governance/",
             "core/systems/memory/",
             "core/systems/knowledge/",
-            "core/systems/bus/",
+            "core/systems/capability/",
             "core/systems/middleware/",
             "core/systems/execution/",
+            "core/systems/observability/",
             "core/systems/eval/",
             "core/systems/integration/",
+            "core/systems/tasks/",
         ),
         public_api_module="core.systems",
         depends_on_layers=("root",),
@@ -273,15 +327,17 @@ _ARCHITECTURAL_LAYERS: tuple[ArchitecturalLayerDescriptor, ...] = (
         label="Layer 2 — 领域对象层 (Asset Domains)",
         level=2,
         purpose=(
-            "原子能力组件：工具（tool 创建/运行时/模板/风险）、"
-            "技能（skill 注册表/市场）、子智能体（委派/隔离）、"
-            "工作流（PyFlow DAG/调度/暂停恢复）。"
-            "这些是构造 Agents 和 Apps 的基础积木。"
+            "用户可创建/编辑/复用的资产：工具（创建/运行时/模板/风险）、"
+            "技能（注册表/市场/HTTP 后端）、智能体（capability/middleware/role policy/storage）、"
+            "工作流（PyFlow DAG/调度/暂停恢复）、应用（HTML/CSS/JS 模板/打包）。"
+            "这些是构造 L3 编排实体的可序列化积木。"
         ),
         packages=(
             "core/assets/tools/",
             "core/assets/skills/",
+            "core/assets/agents/",
             "core/assets/workflows/",
+            "core/assets/apps/",
         ),
         public_api_module="core.assets",
         depends_on_layers=("root", "core_systems"),
@@ -291,19 +347,83 @@ _ARCHITECTURAL_LAYERS: tuple[ArchitecturalLayerDescriptor, ...] = (
         label="Layer 3 — 身份层 (Product Modes)",
         level=3,
         purpose=(
-            "自治实体与运行模式：Agents、Apps、ModeProfile（职责角色：assistant/app_matrix/admin）、"
-            "ExecutionCanvas（资源策略：focused/balanced/deep）。"
-            "此层组装 L2 领域对象，形成面向用户的产品身份。"
+            "自治实体与编排运行时：subagent 注册/runner/orchestrator、"
+            "AppManager + 应用矩阵 runtime/planner/orchestration tools、"
+            "ModeProfile（assistant/app_matrix/admin 身份）、"
+            "ExecutionCanvas（focused/balanced/deep 资源策略）、"
+            "AdminWatcher 守护进程与 mode pack。"
+            "此层组装 L0/L1/L2 形成面向用户的产品身份。"
+            "注意：core/systems/agents/ 与 core/systems/apps/ 物理位置在 systems/ 下，"
+            "但语义归 L3（编排运行时），其纯数据/定义部分已下沉到 core/assets/agents/、"
+            "core/assets/apps/。"
         ),
         packages=(
-            "core/modes/agents/",
-            "core/modes/apps/",
+            "core/systems/agents/",
+            "core/systems/apps/",
             "core/modes/",
         ),
         public_api_module="core.modes",
         depends_on_layers=("root", "core_systems", "asset_domains"),
     ),
 )
+
+
+# --------------------------------------------------------------------------- #
+# Architectural-guard exemptions
+# --------------------------------------------------------------------------- #
+# Namespace facades: pure re-export entry points consumed by the outermost
+# (consumer / L4) layer. They cross-cut all inner layers by design.
+_NAMESPACE_FACADES: frozenset[str] = frozenset(
+    {
+        "core/__init__.py",
+        "core/assets/__init__.py",
+        "core/systems/__init__.py",
+    }
+)
+
+# Assembly entrypoints: bootstrap / capability bundle / orchestration / protocol
+# adapters that legitimately stitch multiple layers together. Physically they
+# live inside one layer; semantically they sit *above* L3 as the L4 consumer
+# wiring layer. Reverse imports from these files are excluded from the guard.
+_ASSEMBLY_ENTRYPOINTS: frozenset[str] = frozenset(
+    {
+        # Runtime bootstrap & top-level wiring (compose every layer)
+        "core/systems/runtime/pybot_bootstrap.py",
+        "core/systems/runtime/runtime_capability_bundle.py",
+        "core/systems/runtime/runtime_orchestrator.py",
+        # Top-level context projections (assemble runtime + session + memory + agents)
+        "core/systems/context/projected_runtime_view.py",
+        "core/systems/context/prompts.py",
+        # Session top-level engines (compose modes + memory + context)
+        "core/systems/session/session_engine.py",
+        "core/systems/session/session_memory_policy.py",
+        # Middleware factory (assembles middleware stack across all layers)
+        "core/systems/middleware/agent_middleware_factory.py",
+        # Protocol/integration adapters (translate external protocols → modes)
+        "core/systems/integration/openresponses.py",
+        # Mode factories (compose multi-layer assets into mode-bound runtimes)
+        "core/modes/factories.py",
+    }
+)
+
+
+def list_namespace_facades() -> list[str]:
+    """Return the ``__init__.py`` files that act as cross-layer facades."""
+
+    return sorted(_NAMESPACE_FACADES)
+
+
+def list_assembly_entrypoints() -> list[str]:
+    """Return the bootstrap/orchestration files exempted from the guard."""
+
+    return sorted(_ASSEMBLY_ENTRYPOINTS)
+
+
+def is_guard_exempt(relative_path: str) -> bool:
+    """True if ``relative_path`` (forward-slashed, relative to repo root) is exempt."""
+
+    normalized = relative_path.replace("\\", "/")
+    return normalized in _NAMESPACE_FACADES or normalized in _ASSEMBLY_ENTRYPOINTS
 
 
 def list_architectural_layers() -> list[dict[str, Any]]:
@@ -328,11 +448,18 @@ def build_architectural_tree() -> dict[str, Any]:
         "layer_count": len(_ARCHITECTURAL_LAYERS),
         "dependency_direction": "基础层(L0) → 核心系统层(L1) → 领域对象层(L2) → 身份层(L3)",
         "tree_metaphor": (
-            "Layer 0 基础层（runtime, session, context）是树干。"
-            "Layer 1 核心系统层（governance, memory, bus）是一级枝干。"
-            "Layer 2 领域对象层（tools, skills, agents, workflows）是二级枝干。"
-            "Layer 3 身份层（apps, modes, canvas）是树冠。"
+            "Layer 0 基础层（runtime, session, context, llm, plugin_sdk）是树干。"
+            "Layer 1 核心系统层（governance, memory, knowledge, capability, middleware, "
+            "execution, observability, eval, integration）是一级枝干。"
+            "Layer 2 领域对象层（tools, skills, agents, workflows, apps）是二级枝干。"
+            "Layer 3 身份层（systems/agents 编排、systems/apps 矩阵运行时、modes/"
+            "profile/canvas/packs/admin）是树冠。"
         ),
+        "exemptions": {
+            "namespace_facades": list_namespace_facades(),
+            "assembly_entrypoints": list_assembly_entrypoints(),
+            "type_checking_imports": "Imports inside ``if TYPE_CHECKING:`` blocks are skipped.",
+        },
     }
 
 
@@ -421,7 +548,7 @@ _PRODUCT_CONCEPTS: tuple[ProductConceptDescriptor, ...] = (
         question="谁来承担任务与角色？",
         responsibility="承载 persona、记忆、工具访问、委派关系和治理边界。",
         capability_examples=("root agents", "subagents", "agent profiles", "delegation"),
-        typical_modules=("core/modes/agents/",),
+        typical_modules=("core/assets/agents/", "core/systems/agents/"),
     ),
     ProductConceptDescriptor(
         name="workflows",
@@ -437,7 +564,7 @@ _PRODUCT_CONCEPTS: tuple[ProductConceptDescriptor, ...] = (
         question="最终如何面向用户交付？",
         responsibility="承载 Web 控制台、工作区应用、交付入口和应用级协作表面。",
         capability_examples=("workspace apps", "web console", "API/CLI surfaces", "app brain topology"),
-        typical_modules=("core/modes/apps/", "web/", "static/"),
+        typical_modules=("core/systems/apps/", "web/", "static/"),
     ),
 )
 
@@ -587,7 +714,7 @@ _INTERNAL_DOMAINS: tuple[InternalDomainDescriptor, ...] = (
         name="agents",
         label="Agents",
         purpose="根智能体、子智能体、能力画像和委派运行时。",
-        examples=("core/modes/agents/",),
+        examples=("core/assets/agents/", "core/systems/agents/"),
     ),
     InternalDomainDescriptor(
         name="orchestration",
@@ -605,7 +732,7 @@ _INTERNAL_DOMAINS: tuple[InternalDomainDescriptor, ...] = (
         name="surfaces",
         label="Surfaces",
         purpose="应用、通道、评估和用户交付面。",
-        examples=("core/modes/apps/", "web/", "static/", "core/systems/integration/", "core/systems/eval/"),
+        examples=("core/systems/apps/", "core/assets/apps/", "web/", "static/", "core/systems/integration/", "core/systems/eval/"),
     ),
 )
 
@@ -634,8 +761,8 @@ _PACKAGE_TARGETS: tuple[PackageTargetDescriptor, ...] = (
     PackageTargetDescriptor(
         name="assets_agents",
         label="Assets / Agents",
-        path="core/modes/agents/",
-        purpose="智能体资产的定义、存储、委派、画像、治理桥接和子智能体运行时。",
+        path="core/assets/agents/",
+        purpose="智能体资产的定义、存储、委派画像与 role policy（运行时编排见 core/systems/agents/）。",
         migration_scope=("agent_*", "subagent_*", "society_of_mind.py"),
     ),
     PackageTargetDescriptor(
@@ -648,8 +775,8 @@ _PACKAGE_TARGETS: tuple[PackageTargetDescriptor, ...] = (
     PackageTargetDescriptor(
         name="assets_apps",
         label="Assets / Apps",
-        path="core/modes/apps/",
-        purpose="应用资产的定义、编排、打包、验证与 APP Brain 绑定。",
+        path="core/systems/apps/",
+        purpose="应用编排运行时、矩阵规划、验证与 APP Brain 绑定（资产模板见 core/assets/apps/）。",
         migration_scope=("app_*",),
     ),
     PackageTargetDescriptor(
@@ -846,7 +973,7 @@ def build_system_model() -> dict[str, Any]:
             "MCP、RAG、approvals、middleware、observability 等属于横切支撑系统，不应再讲成额外平台层。",
             (
                 "代码按四层树形组织：基础层 L0 (runtime/session/context) → "
-                "核心系统层 L1 (governance/memory/bus) → "
+                "核心系统层 L1 (governance/memory/capability) → "
                 "领域对象层 L2 (tools/skills/agents/workflows) → "
                 "身份层 L3 (apps/modes/canvas)。每层只依赖同层或更低层，绝不反向。"
             ),

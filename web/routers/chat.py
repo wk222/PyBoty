@@ -114,14 +114,45 @@ async def chat_stream(
 
     def event_generator():
         final_content = None
-        for event in agent.chat_stream(request.message):
-            evt_type = event.get("type")
-            if evt_type in {"step", "schedule", "done", "error"}:
-                if evt_type in {"done", "error"}:
-                    final_content = event.get("content", "")
-                if evt_type == "done" and session_key:
-                    event = {**event, "session_key": session_key}
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        # Subscribe to global EventBus during the chat stream to capture real-time events
+        from core.systems.runtime.event_bus import event_bus, Event, EventType
+        import queue
+        
+        event_queue = queue.Queue()
+        subscribed_types = list(EventType)
+        
+        def on_event(evt: Event):
+            # Only stream events related to this thread/session
+            if evt.session_id == thread_id or getattr(evt, "session_id", None) == session_key:
+                event_queue.put({
+                    "type": "event",
+                    "event_type": evt.type.value,
+                    "source": evt.source,
+                    "payload": evt.payload,
+                    "timestamp": evt.timestamp
+                })
+                
+        # Subscribe to every EventType — not only types with pre-existing handlers
+        for et in subscribed_types:
+            event_bus.subscribe(et, on_event)
+            
+        try:
+            for event in agent.chat_stream(request.message):
+                # Drain event queue and yield to client
+                while not event_queue.empty():
+                    yield f"data: {json.dumps(event_queue.get(), ensure_ascii=False)}\n\n"
+                    
+                evt_type = event.get("type")
+                if evt_type in {"step", "schedule", "done", "error"}:
+                    if evt_type in {"done", "error"}:
+                        final_content = event.get("content", "")
+                    if evt_type == "done" and session_key:
+                        event = {**event, "session_key": session_key}
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        finally:
+            # Unsubscribe to prevent leaks
+            for et in subscribed_types:
+                event_bus.unsubscribe(et, on_event)
 
         if final_content:
             services.conversations.append_message(thread_id, "assistant", final_content)
@@ -132,21 +163,21 @@ async def chat_stream(
                 root_mode="assistant",
                 source="chat.stream",
             )
-            # Deep Digest: 异步归纳本次对话（依据 ExecutionCanvas 策略）
+            # 记忆蒸馏：通过 MemoryEngine / MemoryPipeline 触发
             try:
                 history = services.conversations.get_history(thread_id)
                 canvas_name = services.conversations.get_canvas(thread_id)
                 canvas_profile = get_canvas_profile(canvas_name)
-                if services.memory_distill and len(history) >= 4:
-                    services.memory_distill.journal_async(history[-20:])
+                if services.memory_engine is not None and len(history) >= 4:
+                    services.memory_engine.schedule_journal(history[-20:])
                     should_distill = canvas_profile.digest_on_every_turn or (
                         canvas_profile.digest_interval > 0
                         and len(history) % canvas_profile.digest_interval == 0
                     )
                     if should_distill:
-                        services.memory_distill.distill_async()
+                        services.memory_engine.distill_now()
             except Exception as _dd_e:
-                logger.debug("MemoryDistill trigger error: %s", _dd_e)
+                logger.debug("Memory distill trigger error: %s", _dd_e)
 
     return StreamingResponse(
         event_generator(),
@@ -485,6 +516,65 @@ def _handle_slash_command(cmd: str, services: WebServices) -> dict:
     return {"output": f"Unknown command: {command}\nType /help for available commands.", "type": "error"}
 
 
+class ForkConversationRequest(BaseModel):
+    fork_at_index: int | None = None  # message index to fork at; None = fork all
+
+
+@router.post("/api/conversations/{thread_id}/fork")
+async def fork_conversation(
+    thread_id: str,
+    req: ForkConversationRequest | None = None,
+    services: WebServices = SERVICES_DEPENDENCY,
+) -> dict[str, Any]:
+    """Fork a conversation: copy messages up to *fork_at_index* into a new session.
+
+    If ``fork_at_index`` is None, all messages are copied.
+    """
+    history = services.conversations.get_history(thread_id)
+    if not history:
+        raise HTTPException(status_code=404, detail="Conversation has no messages")
+
+    fork_idx = len(history)
+    if req and req.fork_at_index is not None:
+        if req.fork_at_index < 0 or req.fork_at_index > len(history):
+            raise HTTPException(status_code=400, detail="fork_at_index out of range")
+        fork_idx = req.fork_at_index
+
+    old_meta = next(
+        (c for c in services.conversations.list_conversations() if c["thread_id"] == thread_id),
+        {},
+    )
+    canvas = old_meta.get("canvas", "balanced")
+    base_title = old_meta.get("title", "Untitled")
+    new_title = f"{base_title} (fork)"
+
+    new_conv = services.conversations.create_conversation(title=new_title, canvas=canvas)
+    new_id = new_conv["thread_id"]
+
+    for msg in history[:fork_idx]:
+        services.conversations.append_message(
+            new_id,
+            msg.get("role", "user"),
+            msg.get("content", ""),
+        )
+
+    session = services.session_runtime.bind_conversation(
+        thread_id=new_id,
+        title=new_title,
+        root_mode="assistant",
+        source="chat.fork",
+    )
+
+    return {
+        "success": True,
+        "source_thread_id": thread_id,
+        "new_thread_id": new_id,
+        "new_title": new_title,
+        "forked_messages": fork_idx,
+        "session_key": str(session.get("session_key", "")),
+    }
+
+
 @router.get("/api/conversations/{thread_id}/context-budget")
 def get_context_budget(
     thread_id: str,
@@ -512,9 +602,9 @@ def get_context_budget(
     tool_defs_est = 0
 
     try:
-        mem_facade = getattr(services, "memory_facade", None)
-        if mem_facade:
-            ctx = mem_facade.get_context_prompt(canvas_name, "")
+        unified = getattr(services, "unified_memory", None)
+        if unified is not None:
+            ctx = unified.get_context_prompt(canvas_name, "")
             memory_est = len(ctx) // 4
     except Exception:
         pass

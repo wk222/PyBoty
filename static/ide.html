@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PyBot Workspace</title>
+  <script>
+    (function() {
+      var t = localStorage.getItem('pybot_theme') || 'dark';
+      if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    })();
+  </script>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/ide.css?v=20260531-3">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>P</text></svg>">
+  <script type="importmap">
+  {
+    "imports": {
+      "vue": "https://unpkg.com/vue@3/dist/vue.esm-browser.prod.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="/static/ide-app.js?v=20260531-3"></script>
+</body>
+</html>

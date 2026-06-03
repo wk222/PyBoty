@@ -75,7 +75,7 @@ Five first-class capability layers (Tools, Skills, Agents, Workflows, Apps) are 
 The architecture is formally structured as a \emph{four-layer dependency tree}---Runtime Foundation, Core Systems, Asset Domains, Product Modes---where higher layers may only depend on lower ones.
 Two orthogonal session-level abstractions sit at the apex of this tree: \emph{ModeProfile}, which encodes the agent's role identity (assistant / app\_matrix / admin), and \emph{ExecutionCanvas}, which configures resource depth (focused / balanced / deep) including LLM parameters, agent control policy, and memory distillation frequency.
 A three-stage \emph{MemoryDistill} pipeline continuously converts raw conversation history into durable long-term knowledge via daily journalling, LLM-based distillation, and archival.
-We validate the system against 1\,474 automated tests covering all major subsystems and report that the governance middleware successfully enforces monotonic capability constraints across hierarchical multi-agent swarms.
+We validate the system against 2\,071 automated tests covering all major subsystems and report that the governance middleware successfully enforces monotonic capability constraints across hierarchical multi-agent swarms.
 \end{abstract}
 
 % ================================================================
@@ -500,24 +500,54 @@ To support long-running tasks and complex reasoning, PyBot implements an enterpr
 \subsection{Advanced RAG and Query Expansion}
 The vector retrieval pipeline goes beyond naive similarity search. It features a \textbf{Markdown-first chunking} strategy that respects document semantics by splitting along header boundaries rather than arbitrary character counts. Additionally, a \textbf{Query Expansion Engine} leverages the LLM to rewrite user queries into multiple semantic variants, significantly improving retrieval recall. A \textbf{Context Compactor} then dynamically truncates and formats the retrieved documents to maximize relevance within the LLM's strict context window limits.
 
-\subsection{Semantic Long-Term Memory}
-The \texttt{SemanticMemoryManager} persists agent observations, facts, and decisions. It employs a composite scoring mechanism (recency, relevance, importance) and incorporates deduplication (skipping near-identical entries) and prompt-injection guards to ensure the memory store remains clean, secure, and highly relevant over time.
+\subsection{Semantic Long-Term Memory and Adaptive Decay}
+\label{sec:semantic-memory}
+
+The \texttt{MemoryEngine} (\texttt{core/systems/memory/engine.py}) persists agent observations, facts, and decisions. Moving away from a flat memory model, PyBot implements a unified SQLite-backed storage engine (\texttt{SqliteMemoryStore}) and introduces an **Adaptive Forgetting Rate Consolidation** mechanism. Inspired by the Ebbinghaus forgetting curve, the decay rate of a memory record dynamically adjusts and consolidates as its recall frequency (\texttt{recall\_count}) increases.
+
+Formally, for a given memory record, the adaptive time-decay weight $\gamma$ is computed as:
+\begin{equation}
+  \alpha_{\text{adaptive}} \;=\; \alpha + (1.0 - \alpha) \cdot \left(1.0 - e^{-c \cdot \kappa}\right),
+\end{equation}
+\begin{equation}
+  \gamma \;=\; \max\left(a_{\text{min}},\, \alpha_{\text{adaptive}}^{\Delta t}\right),
+\end{equation}
+where $\alpha$ is the base decay rate (default $0.95$), $a_{\text{min}}$ is the lower bound of decay (default $0.05$), $\kappa$ represents the cumulative recall count (\texttt{recall\_count}), $c$ is the consolidation constant (default $0.15$), and $\Delta t$ is the number of days elapsed since the last recall. This formulation guarantees that highly consolidated common-sense facts ($\kappa \to \infty, \alpha_{\text{adaptive}} \to 1.0$) remain virtually permanent in memory, while transient episodic details decay rapidly, optimizing high-value knowledge retention within the strict context window.
+
+\subsection{Graph-Lite Association and Counterfactual Correction}
+\label{sec:graph-lite}
+
+To overcome the logical isolation of traditional vector databases, PyBot incorporates **Graph-Lite**, a lightweight in-database graph structure. Graph-Lite is implemented via the \texttt{memory\_links} table in SQLite, storing bidirectional logical relationships (e.g., \texttt{associated\_via}, \texttt{supersedes}) between memory nodes.
+During retrieval, after initial FTS5 and vector pre-filtering, the system triggers **1-hop Association Expansion** via a bidirectional breadth-first search (BFS). This pulls in background facts strongly linked to the retrieved nodes, applying an association decay factor:
+\begin{equation}
+  R_{\text{assoc}} \;=\; R_{\text{parent}} \cdot \beta,
+\end{equation}
+where $\beta = 0.8$ is the association decay factor. This enables the agent to automatically reconstruct the contextual graph surrounding any retrieved fact.
+
+Furthermore, to address memory drift and factual contradictions in long-running deployments, the engine features a **Counterfactual Correction \& Truth Maintenance** mechanism. Upon ingesting a new fact, the engine scans active memories:
+1. It calculates the Cosine similarity $S_{\text{cos}}$ (using embeddings) or a token-based Jaccard similarity $S_{\text{jac}}$ (fallback) between the new fact and existing active records.
+2. If similarity exceeds the threshold ($S_{\text{cos}} \ge 0.70$ or $S_{\text{jac}} \ge 0.60$), a contradiction is detected.
+3. The old record is soft-archived by updating its status to \texttt{forgotten}, and bidirectional evolution links are created in Graph-Lite:
+   \[
+     (e_{\text{old}}) \xrightarrow{\text{contradicted\_by}} (e_{\text{new}}),\quad (e_{\text{new}}) \xrightarrow{\text{supersedes}} (e_{\text{old}}).
+   \]
+This ensures the agent's world view remains logically consistent and up-to-date, eliminating cognitive friction.
 
 \subsection{MemoryDistill: Memory Distillation Pipeline}
 \label{sec:deep-digest}
 
 The Markdown Garden and semantic memory layers provide durable storage, but they do not address the problem of continuously converting the raw stream of conversation messages into structured, compact long-term knowledge.
-PyBot introduces the \textbf{MemoryDistillManager} (\texttt{core/systems/memory/memory\_distill.py}, Layer~1) as a three-stage asynchronous pipeline that bridges the gap between raw session history and long-term memory.
+PyBot introduces \textbf{MemoryPipeline} (\texttt{core/systems/memory/pipeline.py}, Layer~1) as a three-stage asynchronous pipeline. All writes go through the unified \texttt{MemoryEngine} SQLite store, bridging raw session history and long-term memory.
 
 \begin{enumerate}[label=\textbf{Stage~\arabic*.}]
-  \item \textbf{Journal.} After each assistant turn (triggered by the ExecutionCanvas digest strategy), a subset of the recent conversation messages is passed to an LLM-backed summariser that produces an ``event diary'' entry for the current day (\texttt{memory/daily/YYYY-MM-DD.md}). The summariser is instructed to coalesce related turns into events, suppress trivial exchanges, and preserve key decisions and artefact paths. Duplicate diary writes are prevented through a content hash set.
-  \item \textbf{Distill.} Periodically (or when the \texttt{deep} canvas triggers it on every turn), the pipeline reads the most recent $N$ daily diary files and the current \texttt{MEMORY.md}, invokes a second LLM pass to merge, deduplicate, and resolve conflicts between new observations and existing long-term facts, and overwrites \texttt{MEMORY.md} with the resulting canonical fact set (capped at 60 entries).
-  \item \textbf{Archive.} Processed daily diary files are moved to \texttt{memory/archive/} to prevent re-processing on subsequent distillation runs.
+  \item \textbf{Journal.} After each assistant turn (triggered by the ExecutionCanvas digest strategy), a subset of recent messages is passed to an LLM-backed summariser that produces structured diary entries (\texttt{modality=journal}). The summariser coalesces related turns into events, suppresses trivial exchanges, and preserves key decisions. Duplicate writes are prevented through content hashing.
+  \item \textbf{Distill.} Periodically (or when the \texttt{deep} canvas triggers it on every turn), the pipeline reads the most recent $N$ journal records and the active fact set, invokes a second LLM pass to merge, deduplicate, and resolve conflicts, and upserts the canonical fact set (capped at 60 entries).
+  \item \textbf{Archive.} Processed journal records are marked \texttt{archived} to prevent re-processing on subsequent distillation runs.
 \end{enumerate}
 
 The distillation frequency is governed by the ExecutionCanvas profile: the \texttt{focused} canvas triggers distillation every 30 messages (minimising LLM overhead), \texttt{balanced} every 20, and \texttt{deep} on every conversation turn (prioritising recall quality).
 Both stages execute in daemon threads and never block the main SSE response stream.
-The pipeline integrates with the existing \texttt{MemoryManager.get\_context\_prompt()} path: the distilled \texttt{MEMORY.md} is injected into the system prompt via the standard Session Spine context assembly, closing the loop between ephemeral conversation and durable memory.
+The pipeline integrates with \texttt{MemoryEngine.get\_context\_prompt()}: distilled facts are injected via Session Spine context assembly, with canvas-governed top-$k$ soft selection when a user query is present, closing the loop between ephemeral conversation and durable memory.
 
 \subsection{Context Budget Manager}
 The \textbf{Context Budget Manager} provides per-tool output cost accounting across a session.
@@ -532,7 +562,7 @@ This avoids the blunt approach of cutting entire messages during summarisation a
 
 \subsection{Test Coverage}
 
-PyBot maintains a comprehensive test suite of \textbf{1\,474 automated tests} executed via \texttt{pytest}.
+PyBot maintains a comprehensive test suite of \textbf{2\,071 automated tests} executed via \texttt{pytest}.
 The tests cover all major subsystems:
 
 \begin{table}[h]
@@ -553,7 +583,7 @@ App manager and orchestration & CRUD, API execution, orchestration registry & 80
 Cross-cutting (events, errors, retry) & EventBus, diagnostics, failover & 100+ \\
 Frontend tools (diff, LLM task, etc.) & Agent-callable utilities & 40+ \\
 \midrule
-\textbf{Total} & & \textbf{1\,474} \\
+\textbf{Total} & & \textbf{2\,071} \\
 \bottomrule
 \end{tabularx}
 \caption{Test suite breakdown by subsystem.}
@@ -630,7 +660,7 @@ This thesis is realised through five architectural pillars:
         \texttt{ModeProfile} (role identity) and \texttt{ExecutionCanvas} (resource strategy) are orthogonal, composable session-level abstractions; the MemoryDistill pipeline continuously converts session history into durable long-term memory governed by the chosen canvas.
 \end{enumerate}
 
-PyBot is fully open-source (Apache~2.0) and is validated by a suite of 1\,474 automated tests spanning all major subsystems.
+PyBot is fully open-source (Apache~2.0) and is validated by a suite of 2\,071 automated tests spanning all major subsystems.
 
 \paragraph{Future directions.}
 Three research tracks are planned.

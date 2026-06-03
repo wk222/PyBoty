@@ -61,3 +61,9 @@ INTERNAL_DESIGN.md
 
 # Logs
 *.log
+
+# Test artifacts
+test_failures.log
+test_results.txt
+test_summary.txt
+tmp_*.txt

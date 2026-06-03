@@ -123,7 +123,7 @@ PyBot can use **PyHub** as a package marketplace:
 - **Observability**: `observability.py` integrates LangSmith (env-based), Langfuse (callback handler), or Console tracing. `cost_tracker.py` records token usage per model with USD estimates.
 - **MCP Protocol**: Full JSON-RPC 2.0 over stdio subprocess — initialize handshake, tools/list, tools/call, resources/list, resources/read. Dynamic tool discovery and LangChain wrapping.
 - **Structured Output**: `invoke_structured()` auto-falls through 3 strategies: native `.with_structured_output()`, JSON mode, text extraction. Built-in `TaskAnalysis` and `CodeReview` schemas.
-- **Semantic Memory**: `SemanticMemoryManager` extends file-based MEMORY.md with vector search. Falls back to keyword matching without vector store.
+- **Semantic Memory**: `MemoryEngine` (SQLite + FTS5/embedding hybrid recall, Graph-Lite associations, counterfactual correction). Falls back to keyword matching without vector store.
 - **Task Queue**: `TaskQueue` with ThreadPoolExecutor for background operations — RAG ingestion, long workflows, webhook processing. `CheckpointerFactory` for SQLite/PostgreSQL.
 - **Middleware**: LangChain memory + event bus for cross-component capability sharing; stack is composable.
 - **Errors**: Typed tool errors (`ToolInputError`/`ToolAuthorizationError`/`ToolNotFoundError`/`ToolTimeoutError`/`ToolRateLimitError`), truncation, retry with backoff/jitter, self-healing.
@@ -196,12 +196,12 @@ pre-commit run --all-files
 ```
 pybot/
 ├── agent.py                 # Core agent and tool orchestration
-├── service_mode.py          # Web console (Flask)
+├── service_mode.py          # Web console (FastAPI + Vue static UI)
 ├── api_server.py            # REST API (FastAPI)
 ├── interactive_cli.py       # Terminal REPL
 ├── onboard.py               # Setup wizard
 ├── core/                    # Engine: model_resolver, model_failover, vector_store, document_pipeline,
-│                            #   knowledge_tools, observability, cost_tracker, mcp_hub, semantic_memory,
+│                            #   knowledge_tools, observability, cost_tracker, mcp_hub, memory engine,
 │                            #   structured_output, task_queue, capability_bus, approvals, errors, retry, ...
 ├── static/                  # Vue 3 SPA (app.js, style.css, views/, components/, api/)
 ├── web/                     # FastAPI routers (chat, admin, workflows, apps, workspace, debug panel)

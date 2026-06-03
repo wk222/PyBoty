@@ -16,7 +16,15 @@ if TYPE_CHECKING:
     from .skill_registry import SkillRegistry
 
 _DEFAULT_OPENCLAW_CONFIG = Path.home() / ".openclaw" / "openclaw.json"
-_PYBOT_SUPPORTED_OPENCLAW_CHANNELS = {"webhook", "wechat", "wecom"}
+_PYBOT_SUPPORTED_OPENCLAW_CHANNELS = {
+    "webhook",
+    "wechat",
+    "wecom",
+    "feishu",
+    "dingtalk",
+    "wechat_claw",
+    "terminal",
+}
 
 
 def resolve_openclaw_config_path(
@@ -271,9 +279,13 @@ def build_openclaw_channel_compatibility(openclaw_config: dict[str, Any] | None)
 
 
 def normalize_openclaw_channel_config(name: str, config: dict[str, Any]) -> dict[str, Any]:
-    """Normalize a supported OpenClaw channel block into PyBot's simpler channel schema."""
+    """Normalize a supported OpenClaw channel block into PyBot's channel schema."""
     payload = dict(config)
     payload.setdefault("kind", name)
+    if "dmPolicy" in payload and "dm_policy" not in payload:
+        payload["dm_policy"] = payload["dmPolicy"]
+    if "allowFrom" in payload and "allow_from" not in payload:
+        payload["allow_from"] = payload["allowFrom"]
     return payload
 
 

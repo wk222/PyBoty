@@ -1,0 +1,7 @@
+# All LLM provider adapters — sync with pyproject.toml [project.optional-dependencies.all-llm]
+-r requirements.txt
+langchain-anthropic>=0.3.0
+langchain-google-genai>=2.0.0
+langchain-ollama>=0.3.0
+langchain-mistralai>=0.2.0
+langchain-groq>=0.2.0

@@ -12,7 +12,9 @@ block_cipher = None
 # Collect all dynamic imports that PyInstaller might miss
 hidden_imports = []
 hidden_imports += collect_submodules('core.assets.tools')
-hidden_imports += collect_submodules('core.modes.agents')
+hidden_imports += collect_submodules('core.assets.agents')
+hidden_imports += collect_submodules('core.systems.agents')
+hidden_imports += collect_submodules('core.systems.apps')
 hidden_imports += collect_submodules('core.assets.workflows')
 hidden_imports += collect_submodules('core.systems.integration')
 hidden_imports += collect_submodules('web.routers')
@@ -25,7 +27,7 @@ datas += collect_data_files('web.static')
 datas += collect_data_files('core.assets.workflows')
 
 a = Analysis(
-    ['cli.py'],
+    ['service_mode.py'],
     pathex=[],
     binaries=[],
     datas=datas,

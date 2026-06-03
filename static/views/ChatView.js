@@ -508,6 +508,25 @@ export default {
       }
     }
 
+    async function forkConversation(forkAtIndex = null) {
+      if (!currentThreadId.value) return;
+      try {
+        const data = await API.forkConversation(currentThreadId.value, forkAtIndex);
+        if (data.success) {
+          toast(`对话已分叉: ${data.new_title}`, 'success');
+          await loadConversations();
+          await switchConversation(data.new_thread_id);
+        }
+      } catch (e) {
+        toast('分叉失败: ' + e.message, 'error');
+      }
+    }
+
+    async function forkAtMessage(messageIndex) {
+      if (!currentThreadId.value) return;
+      await forkConversation(messageIndex + 1);
+    }
+
     async function exportChat(fmt = 'markdown') {
       if (!currentThreadId.value) return;
       try {
@@ -555,6 +574,7 @@ export default {
       EXAMPLE_CARDS,
       currentCanvas, canvasOpen, switchCanvas, CANVAS_META,
       contextBudget, showContextBudget, loadContextBudget, exportChat,
+      forkConversation, forkAtMessage,
     };
   },
   components: { SwarmPanel, HelpTip },
@@ -624,6 +644,15 @@ export default {
               </svg>
             </button>
 
+            <!-- Fork -->
+            <button class="mx-btn-icon" @click="forkConversation()"
+                    :title="t('chat.fork') || 'Fork Conversation'" style="color: var(--text-muted);">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/>
+                <path d="M18 9v1a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9"/><line x1="12" y1="12" x2="12" y2="15"/>
+              </svg>
+            </button>
+
             <!-- Export -->
             <button class="mx-btn-icon" @click="exportChat('markdown')"
                     :title="t('chat.export') || 'Export as Markdown'" style="color: var(--text-muted);">
@@ -634,7 +663,7 @@ export default {
 
             <!-- Swarm Toggle -->
             <button v-if="currentSessionKey" class="mx-btn-icon" @click="swarmPanelVisible = !swarmPanelVisible"
-                    :class="{'active': swarmPanelVisible}" title="Swarm Observability"
+                    :class="{'active': swarmPanelVisible}" :title="t('chat.swarm') || 'Swarm Observability'"
                     style="color: var(--text-muted);">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" :style="{color: swarmPanelVisible ? 'var(--accent)' : 'inherit'}">
                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
@@ -801,7 +830,16 @@ export default {
                 </div>
               </div>
               <div class="bubble md-content" v-html="msg.html"></div>
-              <div class="timestamp">{{ msg.timestamp }}</div>
+              <div class="msg-actions">
+                <span class="timestamp">{{ msg.timestamp }}</span>
+                <button class="msg-fork-btn" @click.stop="forkAtMessage(i)"
+                        :title="t('chat.forkHere') || 'Fork from here'">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/>
+                    <path d="M18 9v1a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9"/><line x1="12" y1="12" x2="12" y2="15"/>
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
 

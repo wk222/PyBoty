@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+import logging
 import os
 import re
 from pathlib import Path
@@ -12,6 +13,8 @@ from pydantic import BaseModel, Field, PrivateAttr
 
 from core.systems.context import WorkspaceViewEntry, WorkspaceViewService
 
+logger = logging.getLogger(__name__)
+
 _FILE_UNCHANGED_STUB = (
     "[FILE_UNCHANGED] 文件自上次读取后未修改 (mtime + size 一致)。"
     "\n路径: {path}\n视图: {view_label}\n行数: {line_count} | 大小: {file_size} bytes"
@@ -20,27 +23,54 @@ _FILE_UNCHANGED_STUB = (
 
 ReadFileState = WorkspaceViewService
 
+_INITIAL_WORKING_DIR = os.path.realpath(os.getcwd())
+
+
+def _resolve_root(allowed_root: Optional[str]) -> str:
+    """Return the absolute root directory used for path validation.
+
+    Prefers the explicit ``allowed_root`` argument. When it is not provided we
+    fall back to the working directory captured at module import time. This
+    avoids subtle bugs where a concurrent tool changes ``os.getcwd()`` between
+    operations and causes path validation to drift.
+    """
+    if allowed_root:
+        return os.path.realpath(allowed_root)
+    cwd = os.path.realpath(os.getcwd())
+    if cwd != _INITIAL_WORKING_DIR:
+        logger.debug(
+            "_resolve_root: allowed_root missing and cwd drifted (initial=%s, current=%s); "
+            "using initial working dir",
+            _INITIAL_WORKING_DIR,
+            cwd,
+        )
+    return _INITIAL_WORKING_DIR
+
 
 def _check_path(path: str, allowed_root: Optional[str] = None) -> tuple[bool, str]:
     """Validate that path resolves inside the allowed root.
 
     Args:
         path: The file path to validate. Relative paths are resolved against
-            ``allowed_root`` when provided, otherwise against ``os.getcwd()``.
-        allowed_root: The root directory to enforce. When *None*, the process
-            working directory at call time is used.
+            ``allowed_root`` when provided, otherwise against the working
+            directory captured at module import time.
+        allowed_root: The root directory to enforce. When *None*, the cached
+            initial working directory is used to keep behavior stable across
+            concurrent tool calls.
 
     Returns:
         (True, resolved_absolute_path) on success.
         (False, error_message) when the path escapes the root.
     """
-    root = os.path.realpath(allowed_root if allowed_root else os.getcwd())
-    if os.path.isabs(path):
-        candidate = path
-    else:
-        candidate = os.path.join(root, path)
+    root = _resolve_root(allowed_root)
+    candidate = path if os.path.isabs(path) else os.path.join(root, path)
     resolved = os.path.realpath(candidate)
-    if resolved != root and not resolved.startswith(root + os.sep):
+    
+    # Standardize path separators and casing for robust Windows path checking
+    norm_resolved = os.path.normpath(resolved).lower()
+    norm_root = os.path.normpath(root).lower()
+    
+    if norm_resolved != norm_root and not norm_resolved.startswith(norm_root + os.sep):
         return False, f"❌ 路径越界: '{path}' 超出了允许的工作目录"
     return True, resolved
 
@@ -366,7 +396,7 @@ class GrepFilesTool(BaseTool):
             cap = min(max_results, _MAX_GREP_RESULTS)
             matches: list[str] = []
             truncated = False
-            effective_root = os.path.realpath(self.allowed_root if self.allowed_root else os.getcwd())
+            effective_root = _resolve_root(self.allowed_root)
             anchor = Path(effective_root)
 
             for dirpath, dirnames, filenames in os.walk(search_root):
@@ -444,7 +474,7 @@ class GlobFilesTool(BaseTool):
             if not os.path.isdir(search_root):
                 return f"❌ 查找失败: 路径不是目录 ({path})"
 
-            effective_root = os.path.realpath(self.allowed_root if self.allowed_root else os.getcwd())
+            effective_root = _resolve_root(self.allowed_root)
             anchor = Path(effective_root)
             search_path = Path(search_root)
             matched: list[str] = []

@@ -113,7 +113,7 @@ def _check_memory_dir() -> tuple[str, str]:
 
 def _check_mcp() -> tuple[str, str]:
     try:
-        from core.systems.integration.mcp_hub import MCPHub
+        from core.systems.integration.mcp.mcp_hub import MCPHub
         return PASS, "MCPHub module available"
     except ImportError:
         return WARN, "MCPHub module not found"
@@ -122,12 +122,12 @@ def _check_mcp() -> tuple[str, str]:
 def _check_channels() -> tuple[str, str]:
     available = []
     for name, mod in [
-        ("WeChat", "core.systems.integration.wechat_channel"),
-        ("WeCom", "core.systems.integration.wecom_channel"),
-        ("Feishu", "core.systems.integration.feishu_channel"),
-        ("DingTalk", "core.systems.integration.dingtalk_channel"),
-        ("Terminal", "core.systems.integration.terminal_channel"),
-        ("ClawBot", "core.systems.integration.wechat_claw_channel"),
+        ("WeChat", "core.systems.integration.channels.wechat_channel"),
+        ("WeCom", "core.systems.integration.channels.wecom_channel"),
+        ("Feishu", "core.systems.integration.channels.feishu_channel"),
+        ("DingTalk", "core.systems.integration.channels.dingtalk_channel"),
+        ("Terminal", "core.systems.integration.channels.terminal_channel"),
+        ("ClawBot", "core.systems.integration.channels.wechat_claw_channel"),
     ]:
         try:
             importlib.import_module(mod)

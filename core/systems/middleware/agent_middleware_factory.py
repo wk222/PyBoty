@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import Any
 
-from core.systems.bus.lc_bus_middleware import LCBusMiddleware
+from core.systems.capability.lc_bus_middleware import LCBusMiddleware
 from core.systems.runtime.patch_tool_calls import PatchToolCallsMiddleware
-from core.systems.runtime.instruction_assembly import InstructionAssembly
+from core.systems.context.instruction_assembly import InstructionAssembly
+
+logger = logging.getLogger(__name__)
 
 from .agent_prompt_middleware import PromptSectionMiddleware
 from .insight_vault_middleware import InsightVaultConfig, InsightVaultMiddleware
@@ -105,11 +108,11 @@ def build_root_langchain_middleware(
         task_runtime_projection = _resolve_task_runtime_projection()
         if todo_projection is None and tool_projection is None and task_runtime_projection is None:
             return base_artifacts
-        from core.systems.runtime.session.session_runtime_view import (
+        from core.systems.session.session_runtime_view import (
             compile_runtime_resume_view,
             runtime_view_from_resume_dict,
         )
-        from core.systems.runtime.projected_runtime_view import (
+        from core.systems.context.projected_runtime_view import (
             build_projected_runtime_view,
             build_runtime_task_section,
             merge_projected_runtime_views,
@@ -140,6 +143,15 @@ def build_root_langchain_middleware(
         runtime_view = artifacts.get("projected_runtime_view")
         return dict(runtime_view) if isinstance(runtime_view, dict) and runtime_view else None
 
+    def _resolve_memory_context() -> str:
+        if runtime.memory is None:
+            return ""
+        try:
+            return runtime.memory.get_context_prompt(canvas=None, query=None)
+        except Exception as exc:
+            logger.debug("memory.get_context_prompt failed: %s", exc)
+            return ""
+
     stack: list[Any] = [
         LoopGuardMiddleware(config=loop_guard_config),
         todo_middleware,
@@ -147,7 +159,7 @@ def build_root_langchain_middleware(
             name="RootPromptContextMiddleware",
             prompt_builder=lambda: InstructionAssembly.build_runtime_sections(
                 workspace_context=runtime.workspace.build_system_context(),
-                memory_context=runtime.memory.get_context_prompt(),
+                memory_context=_resolve_memory_context(),
                 skill_extensions=runtime.skill_registry.get_active_prompt_extensions(progressive=True),
                 projected_runtime_view=_resolve_resume_runtime_view(),
                 hooks_runtime=getattr(runtime, "hooks_runtime", None),
@@ -170,10 +182,10 @@ def build_root_langchain_middleware(
         LCBusMiddleware(runtime.capability_bus),
     ]
     if eviction_dir:
-        from core.assets.tools import LCToolEvictionMiddleware
+        from .tool_eviction_middleware import LCToolEvictionMiddleware
         stack.append(LCToolEvictionMiddleware(eviction_dir=eviction_dir))
 
-    from core.assets.tools import ToolArgRepairMiddleware
+    from .tool_arg_repair_middleware import ToolArgRepairMiddleware
     arg_repair = ToolArgRepairMiddleware()
     stack.append(arg_repair)
 

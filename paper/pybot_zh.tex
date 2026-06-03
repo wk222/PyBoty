@@ -76,7 +76,7 @@ PyBot 不仅仅是一个常驻智能体，也不仅仅是一个工作流编排�
 架构被形式化地组织为\emph{四层依赖树}——基础层、核心系统层、领域对象层、身份层——高层只能依赖低层。
 两个正交的会话级抽象位于此树顶端：\emph{ModeProfile} 编码智能体的角色身份（assistant / app\_matrix / admin），\emph{ExecutionCanvas} 配置资源深度（focused / balanced / deep），包括 LLM 参数、智能体控制策略和记忆蒸馏频率。
 三阶段 \emph{MemoryDistill} 流水线通过每日日记、LLM 驱动的蒸馏和归档，持续将原始对话历史转化为持久化长期知识。
-我们通过 1\,474 个自动化测试验证了系统的所有主要子系统，并报告治理中间件成功地在层级化多智能体集群中执行了单调能力约束。
+我们通过 2\,071 个自动化测试验证了系统的所有主要子系统，并报告治理中间件成功地在层级化多智能体集群中执行了单调能力约束。
 \end{abstract}
 
 % ================================================================
@@ -501,24 +501,54 @@ PyBot 在形式化的四层记忆分类体系中组织持久化状态：
 \subsection{高级 RAG 与查询扩展}
 向量检索流水线超越了朴素的相似度搜索。它采用\textbf{Markdown 优先分块}策略，沿标题边界而非任意字符数进行分割，尊重文档语义。此外，\textbf{查询扩展引擎}利用 LLM 将用户查询改写为多个语义变体，显著提高检索召回率。\textbf{上下文压缩器}随后动态截断和格式化检索到的文档，在 LLM 严格的上下文窗口限制内最大化相关性。
 
-\subsection{语义长期记忆}
-\texttt{SemanticMemoryManager} 持久化智能体的观察、事实和决策。它采用复合评分机制（时效性、相关性、重要性），并包含去重（跳过近似相同的条目）和提示注入守卫，确保记忆存储随时间保持干净、安全且高度相关。
+\subsection{语义长期记忆与自适应遗忘}
+\label{sec:semantic-memory}
+
+\texttt{MemoryEngine}（\texttt{core/systems/memory/engine.py}）持久化智能体的观察、事实和决策。系统放弃了传统的扁平记忆存储，采用统一的单表 SQLite 存储引擎（\texttt{SqliteMemoryStore}），并引入了**自适应遗忘率固化机制（Adaptive Forgetting Rate Consolidation）**。该机制模拟人类大脑的艾宾浩斯遗忘曲线，记忆的衰减率随其被召回次数（\texttt{recall\_count}）的增加而动态收敛。
+
+形式化地，对于一条记忆条目，其自适应时间衰减权重 $\gamma$ 计算如下：
+\begin{equation}
+  \alpha_{\text{adaptive}} \;=\; \alpha + (1.0 - \alpha) \cdot \left(1.0 - e^{-c \cdot \kappa}\right),
+\end{equation}
+\begin{equation}
+  \gamma \;=\; \max\left(a_{\text{min}},\, \alpha_{\text{adaptive}}^{\Delta t}\right),
+\end{equation}
+其中 $\alpha$ 为基础衰减率（默认 $0.95$），$a_{\text{min}}$ 为衰减下限（默认 $0.05$），$\kappa$ 为该记忆的累计召回次数（\texttt{recall\_count}），$c$ 为固化常数（默认 $0.15$），$\Delta t$ 为自上次召回以来的天数。该机制确保高频召回的核心常识（$\kappa \to \infty, \alpha_{\text{adaptive}} \to 1.0$）几乎不发生衰减，而偶发性临时记忆则快速衰减，从而在有限的上下文窗口内最大化高价值知识的留存。
+
+\subsection{Graph-Lite 关联图谱与反事实修正}
+\label{sec:graph-lite}
+
+为克服传统向量检索缺乏逻辑关联和推导能力的缺陷，PyBot 引入了轻量级图数据库引擎 **Graph-Lite**。Graph-Lite 在 SQLite 内部通过 \texttt{memory\_links} 关联表实现，存储记忆实体间的双向逻辑边（如 \texttt{associated\_via}、\texttt{supersedes} 等）。
+在检索阶段，系统在 FTS5 与向量初筛后，自动触发 **1阶关联图谱语义联想（1-hop Association Expansion）**，通过双向广度优先搜索（BFS）将与初筛记忆强关联的背景事实一同召回，并赋予其衰减的相关性得分：
+\begin{equation}
+  R_{\text{assoc}} \;=\; R_{\text{parent}} \cdot \beta,
+\end{equation}
+其中 $\beta = 0.8$ 为关联衰减因子。这使得智能体在提到某一实体时，能够自动联想到其背后的完整逻辑网络。
+
+同时，针对智能体长期运行中面临的信息冲突与记忆漂移问题，系统配备了**反事实修正与真相维护机制（Counterfactual Correction \& Truth Maintenance）**。当新事实被摄入（Ingest）时，系统自动扫描现有的活跃（Active）记忆：
+1. 计算新事实与旧事实的 Cosine 相似度 $S_{\text{cos}}$（若有向量）或 CJK 混合分词 Jaccard 相似度 $S_{\text{jac}}$。
+2. 若相似度超过设定阈值（$S_{\text{cos}} \ge 0.70$ 或 $S_{\text{jac}} \ge 0.60$），则判定发生事实冲突。
+3. 系统自动将冲突的旧事实状态变更为 \texttt{forgotten}（软归档），并在 Graph-Lite 中建立双向演化边：
+   \[
+     (e_{\text{old}}) \xrightarrow{\text{contradicted\_by}} (e_{\text{new}}),\quad (e_{\text{new}}) \xrightarrow{\text{supersedes}} (e_{\text{old}}).
+   \]
+这确保了智能体的世界观始终保持最新且自洽，消除了认知摩擦。
 
 \subsection{MemoryDistill：记忆蒸馏流水线}
 \label{sec:deep-digest}
 
 Markdown 知识园林和语义记忆层提供了持久化存储，但它们没有解决持续将原始对话消息流转化为结构化、紧凑的长期知识的问题。
-PyBot 引入了 \textbf{MemoryDistillManager}（\texttt{core/systems/memory/memory\_distill.py}，第 1 层）作为三阶段异步流水线，弥合原始会话历史和长期记忆之间的差距。
+PyBot 引入了 \textbf{MemoryPipeline}（\texttt{core/systems/memory/pipeline.py}，第 1 层）作为三阶段异步流水线，所有写入经 \texttt{MemoryEngine} 统一 SQLite 存储，弥合原始会话历史和长期记忆之间的差距。
 
 \begin{enumerate}[label=\textbf{阶段~\arabic*.}]
-  \item \textbf{日记（Journal）。}在每个助手回合之后（由执行画布的蒸馏策略触发），最近对话消息的子集被传递给 LLM 驱动的摘要器，生成当天的"事件日记"条目（\texttt{memory/daily/YYYY-MM-DD.md}）。摘要器被指示将相关回合合并为事件，抑制琐碎交流，保留关键决策和制品路径。通过内容哈希集防止重复日记写入。日记条目使用 7 种分类标签（\texttt{[偏好]}、\texttt{[决策]}、\texttt{[事实]}、\texttt{[人物]}、\texttt{[工具]}、\texttt{[待办]}、\texttt{[其他]}），并显式提取工具调用结果。
-  \item \textbf{蒸馏（Distill）。}周期性地（或当 \texttt{deep} 画布在每个回合触发时），流水线读取最近 $N$ 个每日日记文件和当前 \texttt{MEMORY.md}，调用第二次 LLM 传递来合并、去重和解决新观察与现有长期事实之间的冲突，并用结果规范事实集（上限 60 条）覆写 \texttt{MEMORY.md}。每条记忆条目被赋予重要性评分（\texttt{★★★}、\texttt{★★}、\texttt{★}），低重要性条目在空间紧张时优先删除。
-  \item \textbf{归档（Archive）。}已处理的每日日记文件被移至 \texttt{memory/archive/}，防止在后续蒸馏运行中重新处理。
+  \item \textbf{日记（Journal）。}在每个助手回合之后（由执行画布的蒸馏策略触发），最近对话消息的子集被传递给 LLM 驱动的摘要器，生成结构化日记条目（\texttt{modality=journal}）。摘要器被指示将相关回合合并为事件，抑制琐碎交流，保留关键决策和制品路径。通过内容哈希集防止重复日记写入。日记条目使用 7 种分类标签（\texttt{[偏好]}、\texttt{[决策]}、\texttt{[事实]}、\texttt{[人物]}、\texttt{[工具]}、\texttt{[待办]}、\texttt{[其他]}），并显式提取工具调用结果。
+  \item \textbf{蒸馏（Distill）。}周期性地（或当 \texttt{deep} 画布在每个回合触发时），流水线读取最近 $N$ 个日记记录和当前活跃事实集，调用第二次 LLM 传递来合并、去重和解决新观察与现有长期事实之间的冲突，并 upsert 规范事实集（上限 60 条）。每条记忆条目被赋予重要性评分（\texttt{★★★}、\texttt{★★}、\texttt{★}），低重要性条目在空间紧张时优先删除。
+  \item \textbf{归档（Archive）。}已处理的日记记录被标记为 \texttt{archived}，防止在后续蒸馏运行中重新处理。
 \end{enumerate}
 
 蒸馏频率由执行画布档案治理：\texttt{focused} 画布每 30 条消息触发蒸馏（最小化 LLM 开销），\texttt{balanced} 每 20 条，\texttt{deep} 在每个对话回合触发（优先召回质量）。
 两个阶段都在守护线程中执行，永远不阻塞主 SSE 响应流。
-流水线与现有的 \texttt{MemoryManager.get\_context\_prompt()} 路径集成：蒸馏后的 \texttt{MEMORY.md} 通过标准会话脊柱上下文装配注入系统提示，闭合临时对话与持久化记忆之间的循环。
+流水线与 \texttt{MemoryEngine.get\_context\_prompt()} 路径集成：蒸馏后的事实经会话脊柱上下文装配注入系统提示；当存在 user query 时，按 canvas 配置的 top-$k$ 软选择相关事实，闭合临时对话与持久化记忆之间的循环。
 
 \subsection{上下文预算管理器}
 \textbf{上下文预算管理器}提供跨会话的按工具输出成本核算。
@@ -533,7 +563,7 @@ PyBot 引入了 \textbf{MemoryDistillManager}（\texttt{core/systems/memory/memo
 
 \subsection{测试覆盖率}
 
-PyBot 维护了一个通过 \texttt{pytest} 执行的\textbf{1\,474 个自动化测试}的综合测试套件。
+PyBot 维护了一个通过 \texttt{pytest} 执行的\textbf{2\,071 个自动化测试}的综合测试套件。
 测试覆盖所有主要子系统：
 
 \begin{table}[h]
@@ -554,7 +584,7 @@ App manager and orchestration & CRUD, API execution, orchestration registry & 80
 Cross-cutting (events, errors, retry) & EventBus, diagnostics, failover & 100+ \\
 Frontend tools (diff, LLM task, etc.) & Agent-callable utilities & 40+ \\
 \midrule
-\textbf{Total} & & \textbf{1\,474} \\
+\textbf{Total} & & \textbf{2\,071} \\
 \bottomrule
 \end{tabularx}
 \caption{按子系统的测试套件分类。}
@@ -631,7 +661,7 @@ PyBot 的核心贡献在于认识到：持久化不应局限于对话历史或�
         \texttt{ModeProfile}（角色身份）和 \texttt{ExecutionCanvas}（资源策略）是正交的、可组合的会话级抽象；MemoryDistill 流水线持续将会话历史转化为由所选画布治理的持久化长期记忆。
 \end{enumerate}
 
-PyBot 完全开源（Apache~2.0），并通过覆盖所有主要子系统的 1\,474 个自动化测试进行了验证。
+PyBot 完全开源（Apache~2.0），并通过覆盖所有主要子系统的 2\,071 个自动化测试进行了验证。
 
 \paragraph{未来方向。}
 计划了三个研究方向。

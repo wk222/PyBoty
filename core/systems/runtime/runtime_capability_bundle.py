@@ -14,7 +14,7 @@ if TYPE_CHECKING:
         SubagentRegistryProtocol,
     )
 
-from core.systems.bus import CapabilityBus, CapabilityRegistry
+from core.systems.capability import CapabilityBus, CapabilityRegistry
 from core.systems.context import ContextConfig, ContextWindowManager
 from core.systems.governance import AgentControlPolicy, ApprovalQueue
 from core.systems.middleware.middleware_stack import MiddlewareStack
@@ -62,7 +62,7 @@ def build_capability_runtime_bundle(
     from core.assets.workflows import workflow_runtime
     from core.assets.tools import ToolChainExecutor
     from core.systems.eval.eval_framework import EvalFramework
-    from core.modes.agents.subagent_registry import SubagentRegistry
+    from core.systems.agents.subagent_registry import SubagentRegistry
 
     pyflow_engine = workflow_runtime.engine_class(
         str(paths.workspace_dir),

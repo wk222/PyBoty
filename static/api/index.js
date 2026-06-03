@@ -23,9 +23,9 @@ async function request(path, options = {}) {
     const newKey = promptForApiKey();
     if (newKey) {
       localStorage.setItem('pybot_api_key', newKey);
-      // Retry the request with the new key
       return request(path, options);
     }
+    throw new Error('Unauthorized — API key required');
   }
   
   if (!res.ok) {
@@ -138,6 +138,7 @@ export const API = {
     method: 'POST', body: JSON.stringify({ node_type: nodeType, config })
   }),
   getWorkflowRuns: (name) => request(`/api/workflows/runs?workflow_name=${encodeURIComponent(name || '')}`),
+  getWorkflowRun: (runId) => request(`/api/workflows/runs/${encodeURIComponent(runId)}`),
 
   listApprovals: () => request('/api/approvals'),
   resolveApproval: (approvalId, approved, note = '', approver = '') => request(`/api/approvals/${encodeURIComponent(approvalId)}/resolve`, {
@@ -157,15 +158,46 @@ export const API = {
   getStatus: (threadId) => request(`/api/status/${threadId}`),
   getTrace: (threadId) => request(`/api/conversations/${encodeURIComponent(threadId)}/trace`),
 
-  listWorkspaceFiles: () => request('/api/workspace/files'),
-  getWorkspaceFile: (name) => request(`/api/workspace/${encodeURIComponent(name)}`),
-  updateWorkspaceFile: (name, content) => request(`/api/workspace/${encodeURIComponent(name)}`, {
-    method: 'PUT', body: JSON.stringify({ content })
+  listWorkspaceFiles: (workspaceId) => {
+    const qs = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : '';
+    return request(`/api/workspace/files${qs}`);
+  },
+  getWorkspaceFile: (name, workspaceId) => {
+    const qs = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : '';
+    return request(`/api/workspace/${encodeURIComponent(name)}${qs}`);
+  },
+  updateWorkspaceFile: (name, content, workspaceId) => {
+    const qs = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : '';
+    return request(`/api/workspace/${encodeURIComponent(name)}${qs}`, {
+      method: 'PUT', body: JSON.stringify({ content })
+    });
+  },
+  listWorkspaces: () => request('/api/workspaces'),
+  createWorkspace: (name, path) => request('/api/workspaces', {
+    method: 'POST',
+    body: JSON.stringify({ name, path: path || null }),
+  }),
+  deleteWorkspace: (workspaceId) => request(`/api/workspaces/${encodeURIComponent(workspaceId)}`, {
+    method: 'DELETE',
   }),
 
   getMemory: () => request('/api/memory'),
   getMemoryOverview: () => request('/api/memory/overview'),
   addMemory: (content) => request('/api/memory', { method: 'POST', body: JSON.stringify({ content }) }),
+  listMemoryRecords: (modality = 'fact', status = 'active', limit = 200) =>
+    request(`/api/memory/records?modality=${encodeURIComponent(modality)}&status=${encodeURIComponent(status)}&limit=${limit}`),
+  updateMemoryRecord: (recordId, content) =>
+    request(`/api/memory/records/${encodeURIComponent(recordId)}`, {
+      method: 'PUT', body: JSON.stringify({ content })
+    }),
+  deleteMemoryRecord: (recordId) =>
+    request(`/api/memory/records/${encodeURIComponent(recordId)}`, {
+      method: 'DELETE'
+    }),
+  feedbackMemoryRecord: (recordId, signal) =>
+    request(`/api/memory/records/${encodeURIComponent(recordId)}/feedback`, {
+      method: 'POST', body: JSON.stringify({ signal })
+    }),
 
   listScheduleTasks: () => request('/api/schedules'),
   createScheduleTask: (data) => request('/api/schedules', { method: 'POST', body: JSON.stringify(data) }),
@@ -177,10 +209,37 @@ export const API = {
   }),
   deleteScheduleTask: (name) => request(`/api/schedules/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   runScheduleTaskNow: (name) => request(`/api/schedules/${encodeURIComponent(name)}/run`, { method: 'POST' }),
+  getScheduleHistory: (limit = 50) => request(`/api/schedule/history?limit=${limit}`),
 
   getBackgroundTasks: () => request('/api/debug/tasks'),
   getBackgroundTask: (id) => request(`/api/debug/tasks/${encodeURIComponent(id)}`),
   cancelBackgroundTask: (id) => request(`/api/debug/tasks/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
+
+  // Long-running tasks (Codex-Cloud-style heartbeat)
+  listLongRunningTasks: (params = {}) => {
+    const q = new URLSearchParams();
+    if (params.kind) q.set('kind', params.kind);
+    if (params.status) q.set('status', params.status);
+    if (params.thread_id) q.set('thread_id', params.thread_id);
+    const qs = q.toString();
+    return request(`/api/tasks${qs ? '?' + qs : ''}`);
+  },
+  getLongRunningTask: (id) => request(`/api/tasks/${encodeURIComponent(id)}`),
+  cancelLongRunningTask: (id) => request(`/api/tasks/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
+  pauseLongRunningTask: (id) => request(`/api/tasks/${encodeURIComponent(id)}/pause`, { method: 'POST' }),
+  resumeLongRunningTask: (id) => request(`/api/tasks/${encodeURIComponent(id)}/resume`, { method: 'POST' }),
+  // SSE: returns an EventSource the caller is responsible for closing.
+  streamLongRunningTaskEvents: (id = null) => {
+    // EventSource cannot send custom Authorization headers natively, so we
+    // append the API key as a query string fallback (the gateway accepts
+    // ?api_key=… in addition to the Authorization header).
+    const apiKey = getApiKey();
+    const path = id
+      ? `/api/tasks/${encodeURIComponent(id)}/events`
+      : '/api/tasks/events';
+    const sep = path.includes('?') ? '&' : '?';
+    return new EventSource(`${BASE}${path}${sep}api_key=${encodeURIComponent(apiKey)}`);
+  },
 
   listUvEnvs: () => request('/api/uv/envs'),
   getUvEnv: (name) => request(`/api/uv/envs/${encodeURIComponent(name)}`),
@@ -307,6 +366,10 @@ export const API = {
   exportConversation: (threadId, fmt = 'markdown') =>
     request(`/api/conversations/${threadId}/export?fmt=${fmt}`),
 
+  forkConversation: (threadId, forkAtIndex = null) => request(`/api/conversations/${encodeURIComponent(threadId)}/fork`, {
+    method: 'POST', body: JSON.stringify({ fork_at_index: forkAtIndex }),
+  }),
+
   getAppMatrixTopology: () => request('/api/app-matrix/topology'),
   registerAppMatrixNode: (data) => request('/api/app-matrix/register-node', {
     method: 'POST', body: JSON.stringify(data),
@@ -314,4 +377,30 @@ export const API = {
   addAppMatrixBinding: (data) => request('/api/app-matrix/add-binding', {
     method: 'POST', body: JSON.stringify(data),
   }),
+
+  listPlugins: () => request('/api/plugins'),
+  getPlugin: (pluginId) => request(`/api/plugins/${encodeURIComponent(pluginId)}`),
+  discoverPlugins: (payload = {}) => request('/api/plugins/discover', {
+    method: 'POST', body: JSON.stringify(payload),
+  }),
+  enablePlugin: (pluginId) => request(`/api/plugins/${encodeURIComponent(pluginId)}/enable`, { method: 'POST', body: '{}' }),
+  disablePlugin: (pluginId) => request(`/api/plugins/${encodeURIComponent(pluginId)}/disable`, { method: 'POST', body: '{}' }),
+  unloadPlugin: (pluginId) => request(`/api/plugins/${encodeURIComponent(pluginId)}/unload`, { method: 'POST', body: '{}' }),
+
+  listChannels: () => request('/api/channels'),
+  wechatClawStatus: () => request('/api/channels/wechat_claw/status'),
+  wechatClawLogin: () => request('/api/channels/wechat_claw/login', { method: 'POST', body: '{}' }),
+  wechatClawLoginPoll: (qrcode) => request(`/api/channels/wechat_claw/login/poll?qrcode=${encodeURIComponent(qrcode)}`),
+  wechatClawLogout: () => request('/api/channels/wechat_claw/logout', { method: 'POST', body: '{}' }),
+  wechatClawStartPolling: () => request('/api/channels/wechat_claw/start_polling', { method: 'POST', body: '{}' }),
+
+  getDoctorReport: () => request('/api/doctor'),
+  bootstrapTeamWorkspace: () => request('/api/doctor/bootstrap', { method: 'POST', body: '{}' }),
+  distillMemory: (force = false) => request(`/api/memory/distill?force=${force ? 'true' : 'false'}`, { method: 'POST', body: '{}' }),
+  listChannelPairings: () => request('/api/channels/pairing/pending'),
+  approveChannelPairing: (channel, code) => request('/api/channels/pairing/approve', {
+    method: 'POST', body: JSON.stringify({ channel, code }),
+  }),
+  getOpenclawReport: () => request('/api/openclaw/report'),
+  importOpenclawChannels: () => request('/api/openclaw/import-channels', { method: 'POST', body: '{}' }),
 };

@@ -1,4 +1,4 @@
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { API } from '/static/api/index.js';
 import { toast } from '/static/stores/global.js';
 import { t } from '/static/i18n.js';
@@ -20,6 +20,14 @@ export default {
     const expandedJournal = ref(null);
     const expandedGarden = ref(null);
 
+    // Record Management State
+    const records = ref([]);
+    const recordsLoading = ref(false);
+    const filterStatus = ref('active'); // 'active' | 'forgotten'
+    const filterModality = ref('fact'); // 'fact' | 'reflection' | 'insight'
+    const editingRecordId = ref(null);
+    const editingContent = ref('');
+
     async function loadData() {
       loading.value = true;
       try {
@@ -28,6 +36,62 @@ export default {
         toast('Failed to load memory data: ' + e.message, 'error');
       }
       loading.value = false;
+    }
+
+    async function loadRecords() {
+      recordsLoading.value = true;
+      try {
+        const res = await API.listMemoryRecords(filterModality.value, filterStatus.value);
+        records.value = res.records || [];
+      } catch (e) {
+        toast('Failed to load memory records: ' + e.message, 'error');
+      } finally {
+        recordsLoading.value = false;
+      }
+    }
+
+    function startEdit(record) {
+      editingRecordId.value = record.id;
+      editingContent.value = record.content;
+    }
+
+    function cancelEdit() {
+      editingRecordId.value = null;
+      editingContent.value = '';
+    }
+
+    async function saveEdit(recordId) {
+      if (!editingContent.value.trim()) return;
+      try {
+        await API.updateMemoryRecord(recordId, editingContent.value);
+        toast('Memory updated successfully', 'success');
+        editingRecordId.value = null;
+        editingContent.value = '';
+        await Promise.all([loadRecords(), loadData()]);
+      } catch (e) {
+        toast('Failed to update memory: ' + e.message, 'error');
+      }
+    }
+
+    async function deleteRecord(recordId) {
+      if (!confirm('Are you sure you want to permanently delete this memory record?')) return;
+      try {
+        await API.deleteMemoryRecord(recordId);
+        toast('Memory deleted successfully', 'success');
+        await Promise.all([loadRecords(), loadData()]);
+      } catch (e) {
+        toast('Failed to delete memory: ' + e.message, 'error');
+      }
+    }
+
+    async function feedbackRecord(recordId, signal) {
+      try {
+        await API.feedbackMemoryRecord(recordId, signal);
+        toast('Feedback applied successfully', 'success');
+        await Promise.all([loadRecords(), loadData()]);
+      } catch (e) {
+        toast('Failed to apply feedback: ' + e.message, 'error');
+      }
     }
 
     const memoryCategories = computed(() => {
@@ -67,12 +131,27 @@ export default {
       return (bytes / 1024).toFixed(1) + ' KB';
     }
 
+    watch(activeTab, (newTab) => {
+      if (newTab === 'records') {
+        loadRecords();
+      }
+    });
+
+    watch([filterStatus, filterModality], () => {
+      if (activeTab.value === 'records') {
+        loadRecords();
+      }
+    });
+
     onMounted(loadData);
 
     return {
       loading, activeTab, data, expandedJournal, expandedGarden,
       memoryCategories, pipelineStages,
       toggleJournal, toggleGarden, formatSize, loadData, t,
+      records, recordsLoading, filterStatus, filterModality,
+      editingRecordId, editingContent,
+      loadRecords, startEdit, cancelEdit, saveEdit, deleteRecord, feedbackRecord,
     };
   },
   template: `
@@ -110,8 +189,25 @@ export default {
       <div class="mem-stat-chip" v-if="data.stats.vector_count"><span class="mem-stat-n">{{ data.stats.vector_count }}</span> {{ t('memory.vectors') }}</div>
     </div>
 
+    <div v-if="data.components && data.components.length" class="mem-components">
+      <h3 class="mem-comp-title">{{ t('memory.componentsTitle') || 'Memory Components' }}</h3>
+      <div class="mem-comp-grid">
+        <div v-for="comp in data.components" :key="comp.name" class="mem-comp-card" :class="'mem-comp--' + comp.status">
+          <div class="mem-comp-header">
+            <span class="mem-comp-name">{{ comp.name_zh || comp.name }}</span>
+            <span class="mem-comp-status" :class="'status-' + comp.status">{{ comp.status === 'active' ? (t('memory.compActive') || 'Active') : (t('memory.compIdle') || 'Idle') }}</span>
+          </div>
+          <div class="mem-comp-meta">
+            <span v-if="comp.entries != null">{{ comp.entries }} {{ t('memory.compEntries') || 'entries' }}</span>
+            <span v-if="comp.size_kb != null">{{ comp.size_kb }} KB</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="mem-tabs">
       <button :class="['mem-tab', activeTab==='overview' && 'active']" @click="activeTab='overview'">{{ t('memory.tabOverview') }}</button>
+      <button :class="['mem-tab', activeTab==='records' && 'active']" @click="activeTab='records'">{{ t('memory.tabManage') }}</button>
       <button :class="['mem-tab', activeTab==='journals' && 'active']" @click="activeTab='journals'">{{ t('memory.tabJournals') }} ({{ data.journals.length }})</button>
       <button :class="['mem-tab', activeTab==='garden' && 'active']" @click="activeTab='garden'">{{ t('memory.tabGarden') }} ({{ data.garden.length }})</button>
     </div>
@@ -133,6 +229,69 @@ export default {
         <pre>{{ data.long_term.content }}</pre>
       </div>
       <div v-else class="mem-empty">{{ t('memory.noLongTerm') }}</div>
+    </div>
+
+    <div v-if="activeTab==='records'" class="mem-section">
+      <div style="display:flex;gap:12px;margin-bottom:16px;align-items:center;flex-wrap:wrap;">
+        <select v-model="filterModality" class="mx-input" style="width:140px;height:36px;padding:4px 8px;">
+          <option value="fact">Fact</option>
+          <option value="reflection">Reflection</option>
+          <option value="insight">Insight</option>
+        </select>
+        <select v-model="filterStatus" class="mx-input" style="width:140px;height:36px;padding:4px 8px;">
+          <option value="active">{{ t('memory.statusActive') }}</option>
+          <option value="forgotten">{{ t('memory.statusForgotten') }}</option>
+        </select>
+        <button class="mx-btn mx-btn--ghost mx-btn--sm" @click="loadRecords">{{ t('memory.refresh') }}</button>
+      </div>
+
+      <div v-if="recordsLoading" class="mem-loading">{{ t('memory.loading') }}</div>
+      <div v-else-if="!records.length" class="mem-empty">{{ t('memory.noRecords') }}</div>
+      <div v-else class="mx-table-wrap">
+        <table class="mx-table">
+          <thead>
+            <tr>
+              <th style="width:50%;">{{ t('memory.colContent') }}</th>
+              <th>{{ t('memory.colImportance') }}</th>
+              <th>{{ t('memory.colRecallCount') }}</th>
+              <th>{{ t('memory.colActions') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="record in records" :key="record.id">
+              <td>
+                <div v-if="editingRecordId === record.id">
+                  <textarea v-model="editingContent" class="mx-input" style="width:100%;min-height:60px;font-family:inherit;padding:8px;"></textarea>
+                  <div style="display:flex;gap:8px;margin-top:8px;">
+                    <button class="mx-btn mx-btn--sm mx-btn-primary" @click="saveEdit(record.id)">{{ t('memory.btnSave') }}</button>
+                    <button class="mx-btn mx-btn--sm mx-btn--ghost" @click="cancelEdit">{{ t('memory.btnCancel') }}</button>
+                  </div>
+                </div>
+                <div v-else style="white-space:pre-wrap;word-break:break-word;">
+                  {{ record.content }}
+                </div>
+              </td>
+              <td>{{ (record.importance || 0).toFixed(2) }}</td>
+              <td>{{ record.recall_count || 0 }}</td>
+              <td>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                  <button v-if="editingRecordId !== record.id" class="mx-btn mx-btn--sm mx-btn--ghost" @click="startEdit(record)">{{ t('memory.btnEdit') }}</button>
+                  <button v-if="editingRecordId !== record.id" class="mx-btn mx-btn--sm mx-btn-icon--danger" @click="deleteRecord(record.id)">{{ t('memory.btnDelete') }}</button>
+                  
+                  <template v-if="editingRecordId !== record.id && record.status === 'active'">
+                    <button class="mx-btn mx-btn--sm mx-btn--ghost" @click="feedbackRecord(record.id, 'positive')" title="Increase importance">👍</button>
+                    <button class="mx-btn mx-btn--sm mx-btn--ghost" @click="feedbackRecord(record.id, 'negative')" title="Decrease importance">👎</button>
+                    <button class="mx-btn mx-btn--sm mx-btn--ghost" @click="feedbackRecord(record.id, 'disproved')" title="Mark as disproved/forgotten">🚫</button>
+                  </template>
+                  <template v-if="editingRecordId !== record.id && record.status === 'forgotten'">
+                    <button class="mx-btn mx-btn--sm mx-btn-primary" @click="feedbackRecord(record.id, 'reconsolidated')">{{ t('memory.feedbackReconsolidated') }}</button>
+                  </template>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <div v-if="activeTab==='journals'" class="mem-section">

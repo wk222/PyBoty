@@ -19,7 +19,7 @@
 4. CanvasProfile.to_llm_overrides()   → 注入 LLM 客户端参数
 5. CanvasProfile.to_control_overrides() → merge 进 AgentControlPolicy
 6. Session Spine 监听 CANVAS_CHANGED 事件 → focused 模式触发上下文立即压缩
-7. chat_stream 按 canvas.digest_interval 触发 MemoryDistillManager
+7. chat_stream 按 canvas.digest_interval 触发 MemoryPipeline 蒸馏
 """
 
 from __future__ import annotations

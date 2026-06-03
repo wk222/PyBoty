@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import logging
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
+
+_MAX_SEEN_TOOL_CALL_KEYS = 5000
 
 try:
     from langchain.agents.middleware import AgentMiddleware
@@ -25,7 +28,7 @@ except ImportError:
     BaseTool = object  # type: ignore[assignment,misc]
     StructuredTool = None  # type: ignore[assignment,misc]
 
-from core.systems.runtime.context_hygiene_runtime import ContextHygieneRuntime, count_message_tokens
+from core.systems.context.context_hygiene_runtime import ContextHygieneRuntime, count_message_tokens
 
 from .agent_prompt_middleware import append_to_system_message
 
@@ -51,6 +54,7 @@ class SummarizationConfig:
     offload_dir: str | None = None
     thread_id: str = "default"
     microcompact_age: int = 6
+    enable_garden_suggestions: bool = False
 
 
 def _count_message_tokens(messages: list[Any]) -> int:
@@ -75,7 +79,7 @@ class SummarizationMiddleware(AgentMiddleware if _HAS_LC else object):  # type: 
         self._compaction_callback = compaction_callback
         self._session_extractor = session_memory_extractor
         self._runtime_view_provider = runtime_view_provider
-        self._seen_tool_call_keys: set[str] = set()
+        self._seen_tool_call_keys: OrderedDict[str, None] = OrderedDict()
         self._runtime = ContextHygieneRuntime(config=self._config, hooks_runtime=hooks_runtime)
         self.tools: list[Any] = [self._build_compact_tool()]
 
@@ -220,7 +224,9 @@ class SummarizationMiddleware(AgentMiddleware if _HAS_LC else object):  # type: 
                     key = f"sig:{signature}#{occurrence}"
                 if key in self._seen_tool_call_keys:
                     continue
-                self._seen_tool_call_keys.add(key)
+                self._seen_tool_call_keys[key] = None
+                if len(self._seen_tool_call_keys) > _MAX_SEEN_TOOL_CALL_KEYS:
+                    self._seen_tool_call_keys.popitem(last=False)
                 delta += 1
         return delta
 
@@ -256,7 +262,7 @@ class SummarizationMiddleware(AgentMiddleware if _HAS_LC else object):  # type: 
         if not runtime_view:
             return None
         try:
-            from core.systems.runtime.session.session_runtime_view import render_runtime_view_context
+            from core.systems.session.session_runtime_view import render_runtime_view_context
 
             text = render_runtime_view_context(runtime_view)
             return text.strip() or None

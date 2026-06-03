@@ -23,7 +23,7 @@ from core.systems.runtime.retry_policy import RetryConfig, RetryPolicy
 from core.systems.governance.agent_control import ToolControlDecision, ToolRiskLevel
 from core.systems.governance.tool_control_runtime import ToolControlRuntime
 
-from .tool_arg_repair import repair_tool_args
+from core.systems.middleware.tool_arg_repair import repair_tool_args
 from .tool_delegation_runtime import DelegatedToolApprovalRuntime
 from .tool_dynamic_inventory import DynamicToolInventory
 from .tool_result_normalize import canonicalize_dynamic_tool_content_string
@@ -366,9 +366,9 @@ class ToolCallRuntime:
                     result.status = "error"
                     if content_json is not None:
                         self._emit_dynamic_tool_semantic_failure(tool_name, content_json)
-                print(f"[DynamicToolMiddleware] 工具失败: {tool_name} ({exec_time:.2f}s)")
+                logger.info("Tool failed: %s (%.2fs)", tool_name, exec_time)
             else:
-                print(f"[DynamicToolMiddleware] 工具成功: {tool_name} ({exec_time:.2f}s)")
+                logger.info("Tool succeeded: %s (%.2fs)", tool_name, exec_time)
 
             self._inventory.note_tool_mutation(tool_name=tool_name, result=result)
             self._control_runtime.log_tool_result(
@@ -587,7 +587,7 @@ class ToolCallRuntime:
                 control_tags=("execution-error",),
             ),
         )
-        print(f"[DynamicToolMiddleware] 工具 {tool_name} 执行出错: {error}")
+        logger.warning("Tool %s execution error: %s", tool_name, error)
 
         self._emit_tool_event(
             event_type="tool_result",

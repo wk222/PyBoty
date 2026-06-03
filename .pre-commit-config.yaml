@@ -10,11 +10,10 @@ repos:
     rev: v5.0.0
     hooks:
       - id: end-of-file-fixer
-        files: ^(agent\.py|api_server\.py|interactive_cli\.py|onboard\.py|service_mode\.py|core/.*\.py|web/.*\.py|tests/.*\.py|\.pre-commit-config\.yaml|\.github/workflows/ci\.yml|pyproject\.toml)$
+        files: ^(agent\.py|api_server\.py|interactive_cli\.py|onboard\.py|service_mode\.py|core/.*\.py|web/.*\.py|tests/.*\.py|\.pre-commit-config\.yaml|\.github/workflows/test\.yml|pyproject\.toml)$
       - id: trailing-whitespace
-        files: ^(agent\.py|api_server\.py|interactive_cli\.py|onboard\.py|service_mode\.py|core/.*\.py|web/.*\.py|tests/.*\.py|\.pre-commit-config\.yaml|\.github/workflows/ci\.yml|pyproject\.toml)$
+        files: ^(agent\.py|api_server\.py|interactive_cli\.py|onboard\.py|service_mode\.py|core/.*\.py|web/.*\.py|tests/.*\.py|\.pre-commit-config\.yaml|\.github/workflows/test\.yml|pyproject\.toml)$
       - id: check-merge-conflict
-        files: ^(agent\.py|api_server\.py|interactive_cli\.py|onboard\.py|service_mode\.py|core/.*\.py|web/.*\.py|tests/.*\.py|\.pre-commit-config\.yaml|\.github/workflows/ci\.yml|pyproject\.toml)$
+        files: ^(agent\.py|api_server\.py|interactive_cli\.py|onboard\.py|service_mode\.py|core/.*\.py|web/.*\.py|tests/.*\.py|\.pre-commit-config\.yaml|\.github/workflows/test\.yml|pyproject\.toml)$
       - id: check-yaml
-        files: ^(\.pre-commit-config\.yaml|\.github/workflows/ci\.yml)$
-
+        files: ^(\.pre-commit-config\.yaml|\.github/workflows/test\.yml)$

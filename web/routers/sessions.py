@@ -304,7 +304,7 @@ async def get_session_budget(
     model_name: str = Query(default=""),
     services: WebServices = SERVICES_DEPENDENCY,
 ) -> dict[str, Any]:
-    from core.systems.runtime.context_budget import ContextBudgetManager
+    from core.systems.context.context_budget import ContextBudgetManager
 
     session = _session_or_404(services, session_key)
     budget_mgr = ContextBudgetManager(model_name=model_name)
@@ -318,7 +318,7 @@ async def get_session_status(
     model_name: str = Query(default=""),
     services: WebServices = SERVICES_DEPENDENCY,
 ) -> dict[str, Any]:
-    from core.systems.runtime.context_budget import ContextBudgetManager
+    from core.systems.context.context_budget import ContextBudgetManager
 
     services.sync_session_spine()
     session = _session_or_404(services, session_key)

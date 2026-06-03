@@ -1,0 +1,94 @@
+PyBot 论文配图 — AI 生图提示词
+====================================
+以下提示词用于 AI 图像生成模型（如 Midjourney、DALL-E、Stable Diffusion），
+生成后放入 paper/ 目录，在 .tex 中用 \includegraphics 引用。
+建议尺寸：宽 1600–2400px，高 900–1400px，白底或浅灰底，学术风格。
+
+
+========== 图 1：四层依赖架构总览 ==========
+
+A clean, minimalist technical architecture diagram on a white background, academic paper style.
+Four horizontal layers stacked vertically from bottom to top, connected by upward arrows:
+- Bottom layer (dark blue): "Layer 0 — Runtime Foundation" containing icons for Config, Session Spine, Event Bus, Context Engine.
+- Second layer (teal): "Layer 1 — Core Systems" containing icons for Governance, Memory, MemoryDistill, Capability Bus, Middleware.
+- Third layer (green): "Layer 2 — Asset Domains" containing icons for Tools, Skills, Agents, Workflows.
+- Top layer (purple): "Layer 3 — Product Modes" containing icons for Apps, ModeProfile, ExecutionCanvas, Root Identities.
+Each layer is a rounded rectangle with subtle gradient. Upward arrows between layers indicate dependency direction.
+A red "X" on any downward arrow to indicate forbidden reverse dependencies.
+Modern flat design, no 3D effects, clean sans-serif typography, professional color palette suitable for an academic publication.
+
+
+========== 图 2：三模态根身份 ==========
+
+A conceptual diagram showing three operating modes of an AI agent system, academic illustration style, white background.
+Center: a hexagonal core labeled "PyBot Runtime" with a brain/gear icon.
+Three branches radiating outward to three distinct mode cards:
+- Left card (blue tone): "Assistant Mode" — icon of a chat bubble, subtitle "Conversational Helper", keywords: reactive, on-demand tool creation.
+- Top card (orange tone): "App Matrix Mode" — icon of interconnected nodes/graph, subtitle "Cross-App Orchestration Hub", keywords: pipeline scheduling, data bindings, topology.
+- Right card (green tone): "Admin Mode" — icon of a terminal/crown, subtitle "Autonomous Admin", keywords: goal decomposition, durable tasks, self-improvement.
+Below the three cards: a shared horizontal bar labeled "Shared: Governance · Capability Bus · Memory · Middleware".
+Clean vector style, flat icons, subtle shadows, professional academic look.
+
+
+========== 图 3：MemoryDistill 三阶段流水线 ==========
+
+A horizontal pipeline/flowchart diagram on a light gray background, academic paper figure style.
+Three stages flowing left to right, connected by large arrows:
+- Stage 1 "Journal" (warm yellow): Icon of a diary/notebook. Input: "Raw Conversation Messages" flowing in from the left. Output: "Daily Diary Entry (YYYY-MM-DD.md)". Small labels: "LLM Summariser", "7 Category Tags", "Content Hash Dedup".
+- Stage 2 "Distill" (deep blue): Icon of a funnel/filter. Input: "N Recent Diaries + Current MEMORY.md". Output: "Canonical Long-Term Facts (≤60 entries)". Small labels: "LLM Merge & Dedup", "Importance Scoring ★★★/★★/★", "Conflict Resolution".
+- Stage 3 "Archive" (gray): Icon of a filing cabinet. Input: "Processed Diaries". Output: "memory/archive/". Small label: "Prevents Re-processing".
+At the bottom: a feedback loop arrow from the output of Stage 2 back to "System Prompt (Session Spine)" labeled "Context Injection".
+A small legend in the corner showing three ExecutionCanvas profiles: "focused: every 30 msgs", "balanced: every 20 msgs", "deep: every turn".
+Modern infographic style, clean lines, no clutter.
+
+
+========== 图 4：五层能力层级与能力总线 ==========
+
+A vertical stack diagram showing five capability layers connected by a central bus, academic style, white background.
+Five layers from bottom to top, each as a rounded card:
+- Layer 1 (bottom, red): "Tools" — icon of wrench, examples: CSV cleaner, API caller.
+- Layer 2 (orange): "Skills" — icon of book, examples: Data analysis, Report generation.
+- Layer 3 (yellow): "Agents" — icon of robot, examples: Research agent, Code reviewer.
+- Layer 4 (green): "Workflows" — icon of flowchart/DAG, examples: Daily report pipeline, ETL flow.
+- Layer 5 (top, blue): "Apps" — icon of window/app, examples: Dashboard app, Chat bot.
+Running vertically through all five layers: a glowing central spine labeled "Capability Bus" with bidirectional arrows connecting to each layer.
+Small upward spiral arrow on the right side labeled "Progressive Self-Improvement: capabilities created at any layer are discoverable by all layers above".
+On the left side: a shield icon with "Governance Middleware" connected to each layer by dotted lines, labeled "Approval · Risk · Sandbox".
+Professional vector illustration, subtle depth, clean academic aesthetic.
+
+
+========== 图 5：双轴会话配置（ModeProfile × ExecutionCanvas） ==========
+
+A 2D matrix/grid diagram on white background, academic style.
+X-axis (horizontal): "ModeProfile (Role Identity)" with three columns: "Assistant", "App Matrix", "Admin".
+Y-axis (vertical): "ExecutionCanvas (Resource Strategy)" with three rows: "Focused", "Balanced", "Deep".
+This creates a 3×3 grid. Each cell contains a brief description:
+- (Assistant, Focused): "Quick Q&A, minimal tokens"
+- (Assistant, Balanced): "Standard conversation"
+- (Assistant, Deep): "Complex reasoning, full recall"
+- (App Matrix, Focused): "Lightweight orchestration check"
+- (App Matrix, Balanced): "Standard pipeline execution"
+- (App Matrix, Deep): "Full topology analysis & planning"
+- (Admin, Focused): "Simple task monitoring"
+- (Admin, Balanced): "Standard goal decomposition"
+- (Admin, Deep): "Comprehensive autonomous operation"
+Color gradient: cooler/lighter for Focused cells, warmer/darker for Deep cells.
+A label on the X-axis: "What the agent does" and on the Y-axis: "How much it spends".
+Below the grid: a small legend showing key parameters affected: "Temperature, Max Tokens, Tool Budget, Distill Frequency".
+Clean, minimal, professional academic figure style.
+
+
+========== 图 6：治理中间件栈 ==========
+
+A layered middleware stack diagram, academic paper style, light background.
+Vertical flow from top to bottom showing a tool invocation passing through governance layers:
+- Top: "Agent Tool Call Request" (incoming arrow).
+- Layer 1: "Path Traversal & Isolation Guard" — icon of a shield, brief: "Blocks directory escapes".
+- Layer 2: "Regex Argument Validation" — icon of a regex pattern, brief: "Enforces argument patterns".
+- Layer 3: "Budget & Quota Check" — icon of a meter/gauge, brief: "Token & invocation limits".
+- Layer 4: "Risk Classification" — icon of a traffic light (LOW/MED/HIGH/CRITICAL colors).
+- Layer 5: "Approval Queue" — icon of a checkmark in circle, brief: "Human-in-the-loop for HIGH+".
+- Layer 6: "Plan-Hash-Revalidate" — icon of a lock/hash, brief: "Crypto hash verification".
+- Bottom: "Sandboxed Execution" (three options: In-Process, uv venv, Docker as small icons).
+On the right side: a "Policy Rejection" feedback arrow going back up to the agent with label "Structured error → Self-critique → Strategy pivot".
+Clean vector illustration, each layer clearly separated, color-coded by severity.

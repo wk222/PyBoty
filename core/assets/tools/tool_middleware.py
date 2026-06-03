@@ -41,7 +41,7 @@ from core.systems.governance.permission_policy import (
     RuleVerdict,
 )
 from core.systems.runtime.hooks_runtime import HookPhase
-from core.systems.runtime.projected_runtime_view import build_projected_runtime_view, extract_projected_runtime_view
+from core.systems.context.projected_runtime_view import build_projected_runtime_view, extract_projected_runtime_view
 from core.systems.runtime.trusted_settings import TrustedSettingsBundle
 from core.systems.integration.plugin_manifest import PluginRegistry
 

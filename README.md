@@ -15,7 +15,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/Tests-1474_passed-brightgreen?style=for-the-badge" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-2071_passed-brightgreen?style=for-the-badge" alt="Tests">
   <img src="https://img.shields.io/badge/License-Apache%202.0-orange?style=for-the-badge" alt="License">
   <img src="https://img.shields.io/badge/LLM_Providers-10+-blueviolet?style=for-the-badge" alt="LLM">
   <img src="https://img.shields.io/badge/Channels-7-blue?style=for-the-badge" alt="Channels">
@@ -83,15 +83,16 @@ PyBot is built on a **four-layer dependency tree** with a strict rule: higher la
 | **App Matrix** | Cross-app orchestration hub | Maintains an App Orchestration Registry with topology graph, data bindings, and pipeline schedules |
 | **Admin** | Long-running autonomous agent | Decomposes goals into durable multi-step tasks with checkpointing, re-planning, and failure recovery |
 
-**Five-Layer Memory System** — not just chat history:
+**Unified Memory Engine** — SQLite-backed single-table architecture with cognitive extensions:
 
-| Layer | What it does | Persistence |
+| Component | What it does | Persistence |
 |---|---|---|
-| **MemoryDistill** | 3-stage pipeline: Journal → Distill → Archive. Categorized events with importance scoring | MEMORY.md (permanent) |
-| **Semantic Memory** | Vector-based retrieval with composite scoring (recency + relevance + importance) | Per-workspace |
-| **Markdown Garden** | Structured knowledge notes, user- or agent-authored | Per-workspace |
+| **MemoryEngine** | Unified ingest/recall for facts, episodes, reflections, insights, journal, session notes | SQLite + optional embeddings |
+| **MemoryPipeline** | 3-stage async distillation: Journal → Distill → Archive (LLM-driven) | Via MemoryEngine store |
+| **Graph-Lite** | In-database association graph with 1-hop expansion on recall | `memory_links` table |
+| **Counterfactual Correction** | Supersedes contradictory facts with `contradicted_by` / `supersedes` edges | Truth maintenance on ingest |
+| **Markdown Garden** | Structured knowledge notes, user- or agent-authored | Per-workspace files |
 | **Admin Memory** | Compressed step memory for durable admin tasks | Per-task |
-| **MemoryFacade** | Unified read-side that injects memory based on ExecutionCanvas strategy | Read-only aggregator |
 
 **ExecutionCanvas** — per-conversation resource tuning (all parameters support user override):
 
@@ -165,6 +166,53 @@ Visual DAG editor with extended node types:
 
 Supports JSON/YAML import/export, execution history, and version control.
 
+### Browser Automation
+
+Integrated Playwright-based browser tool with PyBot-specific enhancements:
+
+- **Canvas-aware capability gating** — `focused` mode is read-only, `balanced` allows interaction, `deep` unlocks full JS evaluation
+- **Domain security** — configurable allowlist/blocklist + automatic blocking of internal IPs
+- **Token-efficient snapshots** — DOM snapshotting with element ref numbers, size limits adjusted by canvas mode
+- **Event tracing** — every browser action is recorded in the event bus for full auditability
+
+### Vision Analysis
+
+Multi-provider VLM tool for image understanding:
+
+- **Source flexibility** — accepts local files, URLs, and `screenshot` (captures current browser page)
+- **Auto provider routing** — tries LLM factory → OpenAI → Anthropic, with graceful fallback
+- **Canvas-aware detail** — `focused` mode produces brief 2-3 sentence answers; `deep` mode provides thorough analysis
+
+### Web Search
+
+Multi-engine search tool with automatic engine selection:
+
+| Engine | API Key Required | Coverage |
+|---|---|---|
+| DuckDuckGo | No | General web |
+| Bing | `BING_SEARCH_KEY` | Microsoft index |
+| SerpAPI | `SERPAPI_KEY` | Google results |
+
+Auto mode tries SerpAPI → Bing → DuckDuckGo, falling back until one succeeds. Results are cached for 5 minutes.
+
+### Conversation Fork
+
+Fork any conversation at any message to explore alternative directions:
+
+- Click the fork icon on any message to branch from that point
+- All messages up to the fork point are copied to a new session
+- Canvas and session settings are preserved in the fork
+- Useful for "what if" exploration without losing original context
+
+### Real-time Tool Progress
+
+Long-running tools (browser, search, vision) now stream progress updates:
+
+- Tool call start/completion events are captured from the EventBus
+- Elapsed time is tracked per tool invocation
+- Deduplicated step events prevent UI clutter
+- Frontend shows animated progress indicators for active tools
+
 ### Full Observability
 
 - **Global Event Tracing** — unified timeline of all system events across sessions
@@ -190,6 +238,11 @@ Supports JSON/YAML import/export, execution history, and version control.
 | Multi-tenant isolation | - | - | - | - | **Built-in** |
 | Agent-to-Agent protocol | - | - | - | - | **A2A spec** |
 | Cross-app data bus | - | - | - | - | **Pub/Sub channels** |
+| Browser automation | - | - | WebDriver | - | **Playwright + governance** |
+| Vision / VLM analysis | - | - | - | - | **Multi-provider** |
+| Web search integration | - | - | Google only | - | **3 engines + fallback** |
+| Conversation forking | - | - | - | - | **Branch at any msg** |
+| Streaming tool progress | Callbacks | - | - | - | **EventBus + SSE** |
 | Self-hosted observability | LangSmith (SaaS) | - | - | - | **Built-in tracing** |
 
 ---
@@ -199,6 +252,9 @@ Supports JSON/YAML import/export, execution history, and version control.
 ```bash
 # Install
 pip install -e .[dev]
+
+# Configure API access (production: set a strong key; local: run.bat sets dev-key)
+# export PYBOT_API_KEYS="your-secret:admin,chat"
 
 # Configure
 pybot-onboard
@@ -213,7 +269,10 @@ pybot-cli     # → Terminal REPL
 ```bash
 pip install -e .[all-llm]   # OpenAI / Anthropic / Google / Ollama / Groq / Mistral / ...
 pip install -e .[rag]       # Vector retrieval with ChromaDB
+pip install -e ".[dev,all-llm,rag]"   # full dev + providers + RAG
 ```
+
+**Plain `pip` installs (no editable metadata):** use `requirements.txt` (core), `requirements-dev.txt`, `requirements-all-llm.txt`, `requirements-rag.txt`, or `requirements-full.txt` — kept in sync with `pyproject.toml` optional groups.
 
 ---
 
@@ -273,13 +332,16 @@ Request → Risk Assessment → [LOW]      Direct execution
 | Frontend | FastAPI + Vue 3 (CDN), Memory/Tracing/Workflow visual pages |
 | Workflow | PyFlow v3 (DAG + data sources + monitors + import/export) |
 | RAG | ChromaDB (embedded) + hybrid search (vector + keyword) |
+| Browser | Playwright (Chromium, background thread, idle timeout) |
+| Vision | Multi-provider VLM (OpenAI, Anthropic, factory-routed) |
+| Web Search | DuckDuckGo + Bing + SerpAPI with auto fallback |
 | Document Parsing | TXT, MD, PY, JSON, CSV, HTML, PDF, DOCX, XLSX |
 | Storage | SQLite (swappable to PostgreSQL) |
 | Multi-tenant | Isolated workspaces with per-tenant config |
 | Sandbox | `uv` venvs + Docker |
 | MCP | JSON-RPC 2.0 (stdio) |
 | A2A Protocol | Cross-instance task exchange and capability discovery |
-| Observability | Built-in event tracing + cost tracking dashboard |
+| Observability | Built-in event tracing + cost tracking + streaming tool progress |
 
 ---
 
@@ -296,7 +358,7 @@ PyBot's architecture is documented in a formal academic paper:
 ```bash
 ruff check core web tests
 ruff format core web tests
-pytest    # 1,474 tests
+pytest    # 2,071 tests
 ```
 
 ## License

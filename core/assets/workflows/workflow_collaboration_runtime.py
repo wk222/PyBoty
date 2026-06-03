@@ -6,7 +6,7 @@ import concurrent.futures
 from collections.abc import Callable
 from typing import Any
 
-from core.modes.agents.delegation_payload import normalize_delegation_payload
+from core.assets.agents.delegation_payload import normalize_delegation_payload
 
 from .workflow_models import FlowNode, NodeType, WorkflowDef
 from .workflow_pause_state import apply_waiting_approvals, normalize_pending_approvals
