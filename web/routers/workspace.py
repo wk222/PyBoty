@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -18,55 +17,22 @@ from core.assets.skills.openclaw_compat import (
 from core.assets.skills.skill_diagnostics import build_skill_diagnostics
 from core.assets.workflows.scheduling import ScheduledTask
 from core.systems.runtime import get_config, get_openclaw_compat_config, save_config
-from core.systems.runtime.workspace_registry import WorkspaceRegistry
 from core.assets.tools.tool_templates import get_templates_by_category, list_templates
 from web.dependencies import get_services
 from web.state import WebServices
 
 router = APIRouter(tags=["workspace"])
 
-ALLOWED_WORKSPACE_FILES = {
-    "SOUL.md",
-    "AGENT.md",
-    "IDENTITY.md",
-    "USER.md",
-    "TEAM.md",
-    "RULES.md",
-    "MEMORY.md",
-    "SCHEDULE.md",
-}
+ALLOWED_WORKSPACE_FILES = {"SOUL.md", "IDENTITY.md", "MEMORY.md", "SCHEDULE.md"}
 
 
 class WorkspaceFileUpdate(BaseModel):
     content: str
 
 
-class WorkspaceCreateRequest(BaseModel):
-    name: str
-    path: str | None = None
-
-
-def _workspace_registry(services: WebServices) -> WorkspaceRegistry:
-    return WorkspaceRegistry.for_paths(services.paths.runtime_root_dir, services.paths.workspace_dir)
-
-
-def _resolve_workspace_id(services: WebServices, workspace_id: str | None) -> str:
-    registry = _workspace_registry(services)
-    entry = registry.get(workspace_id) or registry.default()
-    return entry.id
-
-
 class MemoryEntry(BaseModel):
     section: str
     content: str
-
-
-class MemoryRecordUpdate(BaseModel):
-    content: str
-
-
-class MemoryFeedbackRequest(BaseModel):
-    signal: str
 
 
 class SkillToggleRequest(BaseModel):
@@ -144,181 +110,41 @@ class SkillFileUpdateRequest(BaseModel):
     content: str
 
 
-@router.get("/api/workspaces")
-async def list_workspaces(services: WebServices = Depends(get_services)) -> dict[str, object]:
-    registry = _workspace_registry(services)
-    default = registry.default()
-    return {
-        "workspaces": registry.list(),
-        "default_id": default.id,
-    }
-
-
-@router.post("/api/workspaces")
-async def create_workspace(
-    req: WorkspaceCreateRequest,
-    services: WebServices = Depends(get_services),
-) -> dict[str, object]:
-    registry = _workspace_registry(services)
-    entry = registry.create(req.name, path=req.path)
-    return {"success": True, "workspace": entry.to_dict()}
-
-
-@router.delete("/api/workspaces/{workspace_id}")
-async def delete_workspace(
-    workspace_id: str,
-    services: WebServices = Depends(get_services),
-) -> dict[str, object]:
-    registry = _workspace_registry(services)
-    if not registry.delete(workspace_id):
-        raise HTTPException(status_code=400, detail="Cannot delete default or unknown workspace")
-    return {"success": True, "workspace_id": workspace_id}
-
-
 @router.get("/api/workspace/files")
-async def list_workspace_files(
-    workspace_id: str | None = None,
-    services: WebServices = Depends(get_services),
-) -> dict[str, object]:
-    registry = _workspace_registry(services)
-    resolved_id = _resolve_workspace_id(services, workspace_id)
-    mgr = registry.manager(resolved_id)
-    files_dict = mgr.list_files()
-    return {
-        "workspace_id": resolved_id,
-        "files": list(files_dict.keys()),
-        "file_details": files_dict,
-    }
+async def list_workspace_files(services: WebServices = Depends(get_services)) -> dict[str, object]:
+    return {"files": services.workspace_mgr.list_files()}
 
 
 @router.get("/api/workspace/{filename}")
 async def get_workspace_file(
     filename: str,
-    workspace_id: str | None = None,
     services: WebServices = Depends(get_services),
 ) -> dict[str, str]:
     if filename not in ALLOWED_WORKSPACE_FILES:
         raise HTTPException(status_code=403, detail="Access denied")
-    registry = _workspace_registry(services)
-    resolved_id = _resolve_workspace_id(services, workspace_id)
-    mgr = registry.manager(resolved_id)
-    filepath = Path(mgr.workspace_dir) / filename
+    filepath = services.paths.workspace_dir / filename
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="File not found")
-    return {"filename": filename, "content": mgr.load_file(filename), "workspace_id": resolved_id}
+    return {"filename": filename, "content": services.workspace_mgr.load_file(filename)}
 
 
 @router.put("/api/workspace/{filename}")
 async def update_workspace_file(
     filename: str,
     req: WorkspaceFileUpdate,
-    workspace_id: str | None = None,
     services: WebServices = Depends(get_services),
 ) -> dict[str, object]:
     if filename not in ALLOWED_WORKSPACE_FILES:
         raise HTTPException(status_code=403, detail="Access denied")
-    registry = _workspace_registry(services)
-    resolved_id = _resolve_workspace_id(services, workspace_id)
-    mgr = registry.manager(resolved_id)
-    ok = mgr.save_file(filename, req.content)
+    ok = services.workspace_mgr.save_file(filename, req.content)
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to save file")
-    return {"success": True, "filename": filename, "workspace_id": resolved_id}
+    return {"success": True, "filename": filename}
 
 
 @router.get("/api/memory")
 async def get_memory(services: WebServices = Depends(get_services)) -> dict[str, str]:
-    return {"content": services.memory_engine.export_memory_md()}
-
-
-@router.post("/api/memory/distill")
-async def trigger_memory_distill(
-    services: WebServices = Depends(get_services),
-    force: bool = False,
-) -> dict[str, object]:
-    """Trigger memory journal/distill pipeline (CowAgent Deep Dream / OpenClaw dreaming analog)."""
-    engine = services.memory_engine
-    engine.distill(force=force)
-    stats = engine.stats() if hasattr(engine, "stats") else {}
-    return {
-        "success": True,
-        "message": "Memory distill scheduled",
-        "force": force,
-        "stats": stats,
-    }
-
-
-@router.get("/api/memory/records")
-async def list_memory_records(
-    services: WebServices = Depends(get_services),
-    modality: str = "fact",
-    status: str = "active",
-    limit: int = 200,
-) -> dict[str, Any]:
-    """List memory records directly from the unified SQL store."""
-    records = services.memory_engine.store.list(
-        modality=modality,
-        status=status,
-        limit=limit,
-    )
-    return {
-        "success": True,
-        "records": [
-            {
-                "id": r.id,
-                "scope": r.scope,
-                "modality": r.modality,
-                "content": r.content,
-                "importance": r.importance,
-                "importance_delta": r.importance_delta,
-                "recall_count": r.recall_count,
-                "status": r.status,
-                "first_seen_ts": r.first_seen_ts,
-                "last_recall_ts": r.last_recall_ts,
-            }
-            for r in records
-        ]
-    }
-
-
-@router.put("/api/memory/records/{record_id}")
-async def update_memory_record(
-    record_id: str,
-    req: MemoryRecordUpdate,
-    services: WebServices = Depends(get_services),
-) -> dict[str, object]:
-    """Update the content of a specific memory record."""
-    ok = services.memory_engine.update_content(record_id, req.content)
-    if not ok:
-        raise HTTPException(status_code=400, detail="Failed to update memory record or content was empty/redacted")
-    return {"success": True, "record_id": record_id}
-
-
-@router.delete("/api/memory/records/{record_id}")
-async def delete_memory_record(
-    record_id: str,
-    services: WebServices = Depends(get_services),
-) -> dict[str, object]:
-    """Delete a specific memory record."""
-    ok = services.memory_engine.delete_record(record_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="Memory record not found")
-    return {"success": True, "record_id": record_id}
-
-
-@router.post("/api/memory/records/{record_id}/feedback")
-async def feedback_memory_record(
-    record_id: str,
-    req: MemoryFeedbackRequest,
-    services: WebServices = Depends(get_services),
-) -> dict[str, object]:
-    """Apply feedback (positive/negative/disproved/reconsolidated) to a memory record."""
-    ok = services.memory_engine.feedback(record_id, req.signal)
-    if not ok:
-        raise HTTPException(status_code=400, detail="Failed to apply feedback or invalid signal")
-    # Sync memory md to reflect any changes in MEMORY.md if status or importance changed
-    services.memory_engine.sync_memory_md()
-    return {"success": True, "record_id": record_id}
+    return {"content": services.memory_mgr.load()}
 
 
 @router.get("/api/memory/overview")
@@ -343,7 +169,7 @@ async def get_memory_overview(services: WebServices = Depends(get_services)) -> 
         },
     }
 
-    workspace_dir = Path(services.paths.workspace_dir)
+    workspace_dir = Path(getattr(services, "workspace_dir", "."))
 
     memory_path = workspace_dir / "MEMORY.md"
     if memory_path.exists():
@@ -401,62 +227,10 @@ async def get_memory_overview(services: WebServices = Depends(get_services)) -> 
     result["stats"]["garden_count"] = len(result["garden"])
     result["stats"]["memory_lines"] = result["long_term"]["line_count"]
 
-    mem_stats = services.memory_engine.stats()
-    result["stats"]["vector_count"] = mem_stats.get("with_embedding", 0)
-    result["stats"]["vector_backed"] = mem_stats.get("with_embedding", 0) > 0
-
-    components: list[dict] = []
-    memory_file_size = memory_path.stat().st_size if memory_path.exists() else 0
-    components.append({
-        "name": "MemoryDistill",
-        "name_zh": "记忆蒸馏",
-        "type": "long_term",
-        "entries": result["long_term"]["line_count"],
-        "size_kb": round(memory_file_size / 1024, 1),
-        "status": "active" if result["long_term"]["last_distill"] else "idle",
-    })
-
-    total_journal_size = sum(j.get("size", 0) for j in result["journals"])
-    components.append({
-        "name": "DailyJournal",
-        "name_zh": "每日日记",
-        "type": "journal",
-        "entries": result["stats"]["journal_count"],
-        "size_kb": round(total_journal_size / 1024, 1),
-        "status": "active" if result["stats"]["journal_count"] > 0 else "idle",
-    })
-
-    total_archive_size = sum(a.get("size", 0) for a in result["archives"])
-    components.append({
-        "name": "Archive",
-        "name_zh": "归档",
-        "type": "archive",
-        "entries": result["stats"]["archive_count"],
-        "size_kb": round(total_archive_size / 1024, 1),
-        "status": "active" if result["stats"]["archive_count"] > 0 else "idle",
-    })
-
-    total_garden_size = sum(g.get("size", 0) for g in result["garden"])
-    components.append({
-        "name": "KnowledgeGarden",
-        "name_zh": "知识园林",
-        "type": "garden",
-        "entries": result["stats"]["garden_count"],
-        "size_kb": round(total_garden_size / 1024, 1),
-        "status": "active" if result["stats"]["garden_count"] > 0 else "idle",
-    })
-
-    vc = int(result["stats"].get("vector_count", 0))
-    components.append({
-        "name": "MemoryEngine",
-        "name_zh": "统一记忆引擎",
-        "type": "unified",
-        "entries": int(mem_stats.get("active", 0)),
-        "size_kb": round(vc * 1.5, 1) if vc else None,
-        "status": "active",
-    })
-
-    result["components"] = components
+    from core.systems.memory.semantic_memory import SemanticMemoryManager
+    if isinstance(services.memory_mgr, SemanticMemoryManager):
+        mem_stats = services.memory_mgr.get_memory_stats()
+        result["stats"]["vector_count"] = mem_stats.get("vector_count", 0)
 
     return result
 
@@ -466,7 +240,7 @@ async def add_memory(
     entry: MemoryEntry,
     services: WebServices = Depends(get_services),
 ) -> dict[str, bool]:
-    services.memory_engine.ingest("fact", entry.content, metadata={"section": entry.section})
+    services.memory_mgr.append_memory(entry.section, entry.content)
     return {"success": True}
 
 
@@ -1043,7 +817,7 @@ def get_app_matrix_topology(
     try:
         registry = getattr(services, "app_orchestration_registry", None)
         if registry is None:
-            from core.systems.apps.app_orchestration import AppOrchestrationRegistry
+            from core.modes.apps.app_orchestration import AppOrchestrationRegistry
             registry = AppOrchestrationRegistry(base_dir=services.paths.workspace_root)
 
         nodes = registry.list_nodes()
@@ -1080,7 +854,7 @@ def register_app_matrix_node(
 ):
     """Register a node in the App Matrix topology."""
     try:
-        from core.systems.apps.app_orchestration import AppOrchestrationRegistry, NodeType
+        from core.modes.apps.app_orchestration import AppOrchestrationRegistry, NodeType
 
         registry = getattr(services, "app_orchestration_registry", None)
         if registry is None:
@@ -1105,7 +879,7 @@ def add_app_matrix_binding(
 ):
     """Add a data binding between two nodes."""
     try:
-        from core.systems.apps.app_orchestration import AppOrchestrationRegistry
+        from core.modes.apps.app_orchestration import AppOrchestrationRegistry
 
         registry = getattr(services, "app_orchestration_registry", None)
         if registry is None:

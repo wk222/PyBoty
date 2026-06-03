@@ -14,6 +14,7 @@ from typing import Any
 
 _EXPORTS: dict[str, tuple[str, str]] = {
     "attach_mode_surface_methods": (".api_surface", "attach_mode_surface_methods"),
+    "build_mode_subclasses": (".factories", "build_mode_subclasses"),
     "connect_app_matrix_apps": (".app_matrix_ops", "connect_app_matrix_apps"),
     "create_mode_agent": (".factories", "create_mode_agent"),
     "ensure_admin_runtime": (".lifecycle", "ensure_admin_runtime"),

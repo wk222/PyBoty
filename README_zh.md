@@ -15,7 +15,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/测试-2071_通过-brightgreen?style=for-the-badge" alt="Tests">
+  <img src="https://img.shields.io/badge/测试-1474_通过-brightgreen?style=for-the-badge" alt="Tests">
   <img src="https://img.shields.io/badge/License-Apache%202.0-orange?style=for-the-badge" alt="License">
   <img src="https://img.shields.io/badge/LLM_供应商-10+-blueviolet?style=for-the-badge" alt="LLM">
   <img src="https://img.shields.io/badge/接入渠道-7-blue?style=for-the-badge" alt="Channels">
@@ -82,16 +82,15 @@ PyBot 建立在**四层依赖树**之上，遵循严格规则：高层可以导�
 | **应用矩阵模式** | 跨应用编排中枢 | 维护应用编排注册表，支持拓扑图、数据绑定和流水线调度 |
 | **管理员模式** | 长期自主智能体 | 将目标分解为持久化多步任务，支持检查点、重规划和故障恢复 |
 
-**统一记忆引擎（MemoryEngine）** — SQLite 单表架构 + 认知扩展：
+**五层记忆系统** — 不只是聊天历史：
 
-| 组件 | 功能 | 持久化 |
+| 层次 | 功能 | 持久化 |
 |---|---|---|
-| **MemoryEngine** | 统一 ingest/recall（fact/episode/reflection/insight/journal/session_note） | SQLite + 可选向量 |
-| **MemoryPipeline** | 三阶段异步蒸馏：Journal → Distill → Archive | 经 MemoryEngine 存储 |
-| **Graph-Lite** | 库内关联图谱，召回时 1-hop 联想扩展 | `memory_links` 表 |
-| **反事实修正** | 冲突事实软归档并建立 supersedes 边 | ingest 时真相维护 |
+| **MemoryDistill** | 三阶段流水线：日记 → 蒸馏 → 归档。分类事件+重要性评分 | MEMORY.md（永久） |
+| **语义记忆** | 向量化检索，复合评分（时效性+相关性+重要性） | 工作区级 |
 | **知识园林** | 结构化知识笔记，用户或 Agent 撰写 | 工作区级 |
 | **管理员记忆** | 持久化任务步骤压缩 | 任务级 |
+| **MemoryFacade** | 统一读取门面，按执行画布策略注入记忆 | 只读聚合器 |
 
 **执行画布** — 按会话调节资源（所有参数支持用户自定义覆盖）：
 
@@ -165,53 +164,6 @@ PyBot 建立在**四层依赖树**之上，遵循严格规则：高层可以导�
 
 支持 JSON/YAML 导入导出、执行历史和版本控制。
 
-### 浏览器自动化
-
-集成 Playwright 的浏览器工具，带 PyBot 专属增强：
-
-- **画布感知能力门控** — `focused` 模式只读浏览，`balanced` 允许交互，`deep` 解锁完整 JS 执行
-- **域名安全策略** — 可配置白名单/黑名单 + 自动拦截内网 IP
-- **Token 高效快照** — DOM 快照带元素引用编号，大小随画布模式调整
-- **事件追踪** — 每个浏览器操作都记录到事件总线，完全可审计
-
-### 视觉理解
-
-多供应商 VLM 图像分析工具：
-
-- **来源灵活** — 支持本地文件、URL、`screenshot`（截取当前浏览器页面）
-- **自动供应商路由** — 依次尝试 LLM 工厂 → OpenAI → Anthropic，优雅降级
-- **画布感知详细度** — `focused` 模式简短 2-3 句回答；`deep` 模式全面分析
-
-### 网页搜索
-
-多引擎搜索工具，自动选择可用引擎：
-
-| 引擎 | 需要 API Key | 覆盖范围 |
-|---|---|---|
-| DuckDuckGo | 否 | 通用网页 |
-| Bing | `BING_SEARCH_KEY` | 微软索引 |
-| SerpAPI | `SERPAPI_KEY` | Google 结果 |
-
-Auto 模式按 SerpAPI → Bing → DuckDuckGo 顺序尝试。结果缓存 5 分钟。
-
-### 对话分叉
-
-从任意消息处分叉对话，探索不同方向：
-
-- 悬停消息时点击分叉图标，从该处创建分支
-- 分叉点之前的所有消息复制到新会话
-- 画布和会话设置在分叉中保留
-- 适合"如果我改这样呢"的探索，不影响原始上下文
-
-### 实时工具进度
-
-长时间运行的工具（浏览器、搜索、视觉）现在会流式推送进度：
-
-- 工具调用开始/完成事件从 EventBus 捕获
-- 每个工具调用的耗时被追踪
-- 去重的步骤事件避免 UI 杂乱
-- 前端显示活跃工具的动画进度指示器
-
 ### 全链路观测
 
 - **全局事件追踪** — 跨会话的统一事件时间线
@@ -237,11 +189,6 @@ Auto 模式按 SerpAPI → Bing → DuckDuckGo 顺序尝试。结果缓存 5 分
 | 多租户隔离 | - | - | - | - | **内置** |
 | A2A 协议 | - | - | - | - | **A2A 规范** |
 | 跨应用数据总线 | - | - | - | - | **发布/订阅通道** |
-| 浏览器自动化 | - | - | WebDriver | - | **Playwright + 治理** |
-| 视觉/VLM 分析 | - | - | - | - | **多供应商** |
-| 网页搜索集成 | - | - | 仅 Google | - | **3 引擎 + 降级** |
-| 对话分叉 | - | - | - | - | **任意消息处分叉** |
-| 流式工具进度 | 回调 | - | - | - | **EventBus + SSE** |
 | 自托管观测 | LangSmith (SaaS) | - | - | - | **内置追踪** |
 
 ---
@@ -325,16 +272,13 @@ pip install -e .[rag]       # ChromaDB 向量检索
 | 前端 | FastAPI + Vue 3 (CDN)，记忆/追踪/工作流可视化页面 |
 | 工作流 | PyFlow v3（DAG + 数据源 + 监控器 + 导入导出） |
 | RAG | ChromaDB（内嵌） + 混合检索（向量+关键词） |
-| 浏览器 | Playwright（Chromium，后台线程，空闲超时释放） |
-| 视觉 | 多供应商 VLM（OpenAI、Anthropic、工厂路由） |
-| 网页搜索 | DuckDuckGo + Bing + SerpAPI 自动降级 |
 | 文档解析 | TXT、MD、PY、JSON、CSV、HTML、PDF、DOCX、XLSX |
 | 存储 | SQLite（可切 PostgreSQL） |
 | 多租户 | 独立工作空间 + 租户级配置 |
 | 沙箱 | `uv` venvs + Docker |
 | MCP | JSON-RPC 2.0 (stdio) |
 | A2A 协议 | 跨实例任务交换与能力发现 |
-| 观测 | 内置事件追踪 + 成本追踪 + 流式工具进度 |
+| 观测 | 内置事件追踪 + 成本追踪看板 |
 
 ---
 
@@ -351,10 +295,8 @@ PyBot 的架构以学术论文形式记录：
 ```bash
 ruff check core web tests
 ruff format core web tests
-pytest    # 2,071 个测试
+pytest    # 1,474 个测试
 ```
-
-依赖清单与 `pyproject.toml` 对齐：`requirements.txt`（核心）、`requirements-dev.txt`、`requirements-all-llm.txt`、`requirements-rag.txt`、`requirements-full.txt`。
 
 ## 许可证
 

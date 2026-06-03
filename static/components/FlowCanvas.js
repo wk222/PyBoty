@@ -1,5 +1,5 @@
-import { h, defineComponent, markRaw, computed } from 'vue';
-import { VueFlow, Handle, Position, applyNodeChanges, applyEdgeChanges } from '@vue-flow/core';
+import { h, defineComponent, markRaw } from 'vue';
+import { VueFlow, Handle, Position } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
 import { MiniMap } from '@vue-flow/minimap';
@@ -33,7 +33,6 @@ const PyBotNode = defineComponent({
       const c = nodeColor(d.nodeType || 'exec');
       const isStart = d.nodeType === 'start';
       const isEnd = d.nodeType === 'end';
-      const isTerminal = isStart || isEnd;
       const icon = NODE_ICONS[d.nodeType] || '\u25C6';
       const status = d.status;
       const statusStyle = STATUS_STYLES[status];
@@ -83,9 +82,6 @@ const PyBotNode = defineComponent({
       return h('div', {
         class: [
           'pf-node',
-          isTerminal ? 'pf-node--terminal' : '',
-          isStart ? 'pf-node--start' : '',
-          isEnd ? 'pf-node--end' : '',
           props.selected ? 'pf-node--selected' : '',
           status === 'failed' ? 'pf-node--error' : '',
           status === 'running' ? 'pf-node--running' : '',
@@ -107,31 +103,15 @@ export default {
     flowId: { type: String, default: 'builder-flow' },
     nodes: { type: Array, default: () => [] },
     edges: { type: Array, default: () => [] },
-    showEmptyHint: { type: Boolean, default: false },
   },
-  emits: [
-    'update:nodes', 'update:edges',
-    'node-click', 'pane-click', 'pane-dblclick', 'connect', 'drop-node',
-    'fit-view', 'auto-layout', 'zoom-in', 'zoom-out',
-  ],
+  emits: ['node-click', 'pane-click', 'connect', 'drop-node'],
   components: { VueFlow, Background, Controls, MiniMap },
   setup(props, { emit }) {
-    const nodeCount = computed(() => props.nodes.length);
-
-    function onNodesChange(changes) {
-      emit('update:nodes', applyNodeChanges(changes, props.nodes));
-    }
-    function onEdgesChange(changes) {
-      emit('update:edges', applyEdgeChanges(changes, props.edges));
-    }
     function onNodeClick(event) {
       emit('node-click', event.node);
     }
-    function onPaneClick(event) {
-      emit('pane-click', event);
-    }
-    function onPaneDblClick(event) {
-      emit('pane-dblclick', event);
+    function onPaneClick() {
+      emit('pane-click');
     }
     function onConnect(params) {
       emit('connect', params);
@@ -153,34 +133,10 @@ export default {
         });
       } catch { /* ignore */ }
     }
-    return {
-      onNodesChange, onEdgesChange, onNodeClick, onPaneClick, onPaneDblClick,
-      onConnect, onDragOver, onDrop, nodeTypes, minimapNodeColor, nodeCount,
-    };
+    return { onNodeClick, onPaneClick, onConnect, onDragOver, onDrop, nodeTypes, minimapNodeColor };
   },
   template: `
     <div class="wb-canvas-container" @dragover="onDragOver" @drop="onDrop">
-      <div class="wb-canvas-toolbar">
-        <button type="button" class="wb-canvas-tool" title="适应画布" @click="$emit('fit-view')">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
-          适应
-        </button>
-        <button type="button" class="wb-canvas-tool" title="自动布局" @click="$emit('auto-layout')">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-          布局
-        </button>
-        <span class="wb-canvas-tool-sep"></span>
-        <button type="button" class="wb-canvas-tool" title="缩小" @click="$emit('zoom-out')">−</button>
-        <button type="button" class="wb-canvas-tool" title="放大" @click="$emit('zoom-in')">+</button>
-      </div>
-
-      <div v-if="showEmptyHint" class="wb-canvas-empty">
-        <div class="wb-canvas-empty-card">
-          <div class="wb-canvas-empty-title">从左侧拖入节点，或双击画布快速添加</div>
-          <div class="wb-canvas-empty-hint">滚轮缩放 · 拖拽平移 · 从节点锚点拖线连接</div>
-        </div>
-      </div>
-
       <VueFlow
         :id="flowId"
         :nodes="nodes"
@@ -190,26 +146,14 @@ export default {
         :snap-to-grid="true"
         :snap-grid="[20, 20]"
         :min-zoom="0.15"
-        :max-zoom="2.5"
+        :max-zoom="3"
         :fit-view-on-init="true"
         :delete-key-code="'Delete'"
-        :pan-on-scroll="true"
-        :zoom-on-scroll="true"
-        :zoom-on-pinch="true"
-        :pan-on-drag="true"
-        :selection-on-drag="false"
-        :elevate-nodes-on-select="true"
-        :nodes-draggable="true"
-        :nodes-connectable="true"
-        :elements-selectable="true"
-        @nodes-change="onNodesChange"
-        @edges-change="onEdgesChange"
         @node-click="onNodeClick"
         @pane-click="onPaneClick"
-        @pane-double-click="onPaneDblClick"
         @connect="onConnect"
       >
-        <Background variant="dots" :gap="24" :size="1.2" />
+        <Background variant="dots" :gap="20" :size="1.5" />
         <Controls position="bottom-right" />
         <MiniMap position="bottom-left" :pannable="true" :zoomable="true" :node-color="minimapNodeColor" />
       </VueFlow>

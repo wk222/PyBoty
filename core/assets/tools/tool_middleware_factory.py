@@ -17,7 +17,7 @@ from .tool_call_runtime import ToolCallRuntime
 from .tool_creator import get_dynamic_tools
 from .tool_delegation_runtime import DelegatedToolApprovalRuntime
 from .tool_dynamic_inventory import DynamicToolInventory
-from core.systems.middleware.tool_middleware_observability import ToolMiddlewareObservability
+from .tool_middleware_observability import ToolMiddlewareObservability
 from .tool_model_runtime import ToolModelHookRuntime
 from .tool_storage import ToolStorage
 

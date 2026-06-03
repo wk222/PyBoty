@@ -8,17 +8,15 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from core.assets.agents import (
+from core.modes.agents import (
     AgentCapabilityProfile,
     AgentMiddlewareProfile,
     AgentStorage,
+    AgentToolSyncError,
     build_agent_tool_inventory,
+    build_subagent_governance_snapshot,
     list_capability_presets,
     list_middleware_presets,
-)
-from core.systems.agents import (
-    AgentToolSyncError,
-    build_subagent_governance_snapshot,
     list_sandbox_adapters,
     sync_agent_tool,
 )
@@ -28,7 +26,7 @@ from core.modes.pack import get_global_registry
 from core.modes.system_model import build_system_model
 from core.systems.governance import AgentControlPolicy
 from core.systems.integration import discover_plugins, get_plugin_registry, reset_plugin_registry
-from core.systems.memory import MemoryEngine
+from core.systems.memory import SemanticMemoryManager
 from core.systems.runtime import (
     get_config,
     get_gateway_config,
@@ -915,7 +913,7 @@ async def update_governance_policy(
 async def get_cost_summary(services: WebServices = SERVICES_DEPENDENCY) -> dict[str, object]:
     """Get LLM cost and usage summary for the debug panel."""
     try:
-        from core.systems.observability.cost_tracker import CostTracker
+        from core.systems.runtime.cost_tracker import CostTracker
 
         persist_path = str(services.paths.workspace_dir / "cost_tracker.json")
         tracker = CostTracker(persist_path=persist_path)
@@ -1005,7 +1003,16 @@ async def get_mcp_status(services: WebServices = SERVICES_DEPENDENCY) -> dict[st
 async def get_memory_status(services: WebServices = SERVICES_DEPENDENCY) -> dict[str, object]:
     """Get memory system status for debug panel."""
     try:
-        return {"memory": services.memory_engine.stats()}
+        mem = services.memory_mgr
+        if isinstance(mem, SemanticMemoryManager):
+            return {"memory": mem.get_memory_stats()}
+        return {
+            "memory": {
+                "file_based": True,
+                "vector_backed": False,
+                "file_lines": len(mem.load().split("\n")),
+            }
+        }
     except Exception as exc:
         return {"memory": {}, "error": str(exc)}
 
@@ -1033,7 +1040,7 @@ async def get_rag_status(services: WebServices = SERVICES_DEPENDENCY) -> dict[st
 async def get_provider_status() -> dict[str, object]:
     """Get LLM provider availability status."""
     try:
-        from core.systems.llm import list_all_providers
+        from core.systems.runtime.model_resolver import list_all_providers
 
         return {"providers": list_all_providers()}
     except Exception as exc:
@@ -1106,7 +1113,7 @@ async def test_llm_connection(request: Request) -> dict[str, object]:
             if not api_base:
                 api_base = cfg.get("api_base", "")
 
-        from core.systems.llm import resolve_model
+        from core.systems.runtime.model_resolver import resolve_model
 
         resolved = resolve_model(
             {"model": model, "provider": provider},
@@ -1134,7 +1141,7 @@ _model_router_instance = None
 def _get_model_router():
     global _model_router_instance
     if _model_router_instance is None:
-        from core.systems.llm import create_model_router
+        from core.systems.runtime.model_router import create_model_router
         cfg = get_config()
         router_cfg = cfg.get("model_router", {})
         llm_cfg = cfg.get("llm_config", {})
@@ -1165,7 +1172,7 @@ async def update_model_router(request: Request) -> dict[str, object]:
         current.setdefault("model_router", {}).update(body)
         save_config(current)
 
-        from core.systems.llm import create_model_router
+        from core.systems.runtime.model_router import create_model_router
         llm_cfg = current.get("llm_config", {})
         _model_router_instance = create_model_router(
             current.get("model_router", {}),

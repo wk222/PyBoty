@@ -4,11 +4,11 @@ import logging
 from typing import Any
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 
-from core.assets.agents import AgentStorage
+from core.modes.agents import AgentStorage
 from core.assets.tools import ToolStorage
 from core.systems.runtime import (
     DEFAULT_API_PORT,
@@ -20,8 +20,6 @@ from core.systems.runtime import (
     invoke_sub_agent,
     resolve_port,
 )
-from web.auth_config import debug_errors_enabled, load_api_keys_from_env
-from web.gateway_guard import GatewayGuardMiddleware
 
 ensure_utf8_stdio()
 logger = logging.getLogger(__name__)
@@ -63,21 +61,6 @@ def create_app(
     app.state.agent_storage = agent_storage
     app.state.llm_config = resolved_llm_config
     app.state.paths = resolved_paths
-
-    api_keys = load_api_keys_from_env()
-    app.add_middleware(
-        GatewayGuardMiddleware,
-        api_keys=api_keys,
-        exclude_paths={"/health", "/", "/favicon.ico", "/metrics"},
-    )
-
-    @app.exception_handler(Exception)
-    async def _global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-        if isinstance(exc, HTTPException):
-            raise exc
-        logger.exception("Unhandled API server error on %s %s", request.method, request.url.path)
-        detail = str(exc) if debug_errors_enabled() else "Internal server error"
-        return JSONResponse(status_code=500, content={"error": "internal_server_error", "detail": detail})
 
     @app.get("/")
     async def api_root() -> dict[str, object]:

@@ -43,14 +43,6 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "build_subagent_langchain_middleware": (".agent_middleware_factory", "build_subagent_langchain_middleware"),
     # agent_prompt_middleware
     "PromptSectionMiddleware": (".agent_prompt_middleware", "PromptSectionMiddleware"),
-    # tool_middleware_observability — observability/loop-detection helper for tool middleware
-    "ToolMiddlewareObservability": (".tool_middleware_observability", "ToolMiddlewareObservability"),
-    # tool_arg_repair — type coercion + code content repair helpers (used by tool_arg_repair_middleware)
-    "repair_tool_args": (".tool_arg_repair", "repair_tool_args"),
-    # tool_arg_repair_middleware — auto-repairs tool arguments before execution
-    "ToolArgRepairMiddleware": (".tool_arg_repair_middleware", "ToolArgRepairMiddleware"),
-    # tool_eviction_middleware — evicts large tool outputs to files
-    "LCToolEvictionMiddleware": (".tool_eviction_middleware", "LCToolEvictionMiddleware"),
 }
 
 __all__ = sorted(_EXPORTS)

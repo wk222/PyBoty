@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .tool_call_runtime import ToolCallRuntime
-
-logger = logging.getLogger(__name__)
 
 _TOOL_MUTATION_NAMES = {"create_custom_tool", "create_agent", "remove_custom_tool"}
 
@@ -24,28 +21,28 @@ class ToolModelHookRuntime:
         try:
             mutation_notice = self._inventory.pop_mutation_notice()
             if mutation_notice:
-                logger.info("Dynamic tool '%s' created", mutation_notice)
+                print(f"[DynamicToolMiddleware] 工具 '{mutation_notice}' 已创建")
 
             dynamic_tools = self._inventory.list_dynamic_tools()
             self._inventory.refresh(dynamic_tools)
 
             if dynamic_tools:
-                logger.debug("Loaded %d dynamic tools", len(dynamic_tools))
+                print(f"[DynamicToolMiddleware] 加载了 {len(dynamic_tools)} 个动态工具")
         except Exception as exc:
-            logger.warning("Failed to load dynamic tools: %s", exc)
+            print(f"[DynamicToolMiddleware] 加载工具时出错: {exc}")
             self._inventory.fallback_to_base_tools()
 
     def inject_tools(self, request: Any) -> Any:
         request, added_count = self._inventory.inject_tools(request)
         if added_count:
-            logger.debug("Injected %d dynamic tools into request", added_count)
+            print(f"[DynamicToolMiddleware] 注入了 {added_count} 个工具")
         return request
 
     def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
         try:
             request = self.inject_tools(request)
         except Exception as exc:
-            logger.warning("Failed to inject dynamic tools: %s", exc)
+            print(f"[DynamicToolMiddleware] 注入工具时出错: {exc}")
         return handler(request)
 
     async def wrap_model_call_async(
@@ -56,7 +53,7 @@ class ToolModelHookRuntime:
         try:
             request = self.inject_tools(request)
         except Exception as exc:
-            logger.warning("Failed to inject dynamic tools: %s", exc)
+            print(f"[DynamicToolMiddleware] 注入工具时出错: {exc}")
         return await handler(request)
 
     def after_model(self, state: Any) -> dict[str, Any] | None:
@@ -76,5 +73,7 @@ class ToolModelHookRuntime:
 
         for tool_call in tool_calls:
             tool_name = ToolCallRuntime.tool_name(tool_call)
-            logger.debug("Detected tool call: %s", tool_name)
+            print(f"[DynamicToolMiddleware] 检测到 {tool_name} 调用")
+            if tool_name in _TOOL_MUTATION_NAMES:
+                pass # Already printed above, keeping this for logic if needed
         return None

@@ -1,14 +1,10 @@
 """LangChain middleware for memory lifecycle management.
 
 Provides two memory lifecycle hooks:
-  - **Auto-recall (before_agent_start)**: *Disabled by default* because
-    ``UnifiedMemory.get_context_prompt`` is invoked from
-    ``PromptSectionMiddleware`` and already injects long-term memory into
-    the system prompt. Re-enable per-session if you want a second,
-    query-aware pass on top of the unified injection.
+  - **Auto-recall (before_agent_start)**: Inject relevant memories into the
+    system prompt before the model sees the user's message.
   - **Auto-capture (agent_end)**: Extract key facts from the conversation
-    after the model responds and persist them to long-term memory. This is
-    the primary responsibility of this middleware now.
+    after the model responds and persist them to long-term memory.
 
 Uses ``wrap_model_call`` to intercept the model pipeline.
 """
@@ -36,7 +32,7 @@ logger = logging.getLogger(__name__)
 class LCMemoryMiddleware(AgentMiddleware if _HAS_LC else object):  # type: ignore[misc]
     """Auto-recall before model call + auto-capture after response."""
 
-    def __init__(self, memory_manager: Any, *, auto_recall: bool = False, auto_capture: bool = True) -> None:
+    def __init__(self, memory_manager: Any, *, auto_recall: bool = True, auto_capture: bool = True) -> None:
         self._memory = memory_manager
         self._auto_recall = auto_recall
         self._auto_capture = auto_capture
@@ -102,14 +98,28 @@ class LCMemoryMiddleware(AgentMiddleware if _HAS_LC else object):  # type: ignor
         if not messages or len(messages) < 2:
             return
 
-        if not hasattr(self._memory, "auto_capture"):
-            return
+        if hasattr(self._memory, "auto_capture"):
+            try:
+                conversation = self._build_conversation(messages[-4:])
+                if len(conversation) >= 2:
+                    self._memory.auto_capture(conversation)
+            except Exception as exc:
+                logger.debug("Auto-capture failed: %s", exc)
+        else:
+            self._legacy_extract(messages)
+
+    def _legacy_extract(self, messages: list[Any]) -> None:
+        """Fallback extraction for non-semantic memory managers."""
         try:
-            conversation = self._build_conversation(messages[-4:])
+            from core.systems.memory.memory_manager import extract_key_facts
+
+            conversation = self._build_conversation(messages[-2:])
             if len(conversation) >= 2:
-                self._memory.auto_capture(conversation)
+                facts = extract_key_facts(conversation)
+                for fact in facts:
+                    self._memory.append_memory(fact["section"], fact["content"])
         except Exception as exc:
-            logger.debug("Auto-capture failed: %s", exc)
+            logger.debug("Legacy memory extraction failed: %s", exc)
 
     @staticmethod
     def _build_conversation(messages: list[Any]) -> list[dict[str, str]]:

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from core.modes.app_matrix_pack import AppMatrixPack
 from core.modes.assistant_pack import AssistantPack
-from core.modes.admin.pack import AdminPack
+from core.modes.admin_pack import AdminPack
 from core.modes.pack import get_global_registry
 
 _BOOTSTRAPPED = False

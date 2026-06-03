@@ -32,12 +32,6 @@ class ChannelListItem(BaseModel):
     name: str
     kind: str
     enabled: bool
-    dm_policy: str = "open"
-
-
-class PairingApproveRequest(BaseModel):
-    channel: str
-    code: str
 
 
 # ── 渠道列表 ──────────────────────────────────────────────────────────────
@@ -54,8 +48,7 @@ def list_channels(services: WebServices = SERVICES_DEPENDENCY):
         if ch:
             kind = getattr(ch.config, "kind", name) if hasattr(ch, "config") else name
             enabled = getattr(ch.config, "enabled", True) if hasattr(ch, "config") else True
-            dm_policy = getattr(ch.config, "dm_policy", "open") if hasattr(ch, "config") else "open"
-            result.append(ChannelListItem(name=name, kind=kind, enabled=enabled, dm_policy=dm_policy))
+            result.append(ChannelListItem(name=name, kind=kind, enabled=enabled))
     return result
 
 
@@ -158,41 +151,11 @@ def wechat_claw_start_polling(services: WebServices = SERVICES_DEPENDENCY):
     return {"success": True, "polling": True}
 
 
-@router.get("/pairing/pending")
-def list_channel_pairings(services: WebServices = SERVICES_DEPENDENCY):
-    """List pending IM pairing codes (OpenClaw dmPolicy=pairing)."""
-    mgr = _get_channel_manager(services)
-    if mgr is None:
-        return {"pending": []}
-    runtime = getattr(mgr, "_runtime", None)
-    if runtime is None or not hasattr(runtime, "list_pairings"):
-        return {"pending": []}
-    return {"pending": runtime.list_pairings()}
-
-
-@router.post("/pairing/approve")
-def approve_channel_pairing(
-    req: PairingApproveRequest,
-    services: WebServices = SERVICES_DEPENDENCY,
-):
-    mgr = _get_channel_manager(services)
-    if mgr is None:
-        raise HTTPException(404, "channel manager not available")
-    runtime = getattr(mgr, "_runtime", None)
-    if runtime is None or not hasattr(runtime, "approve_pairing"):
-        raise HTTPException(503, "pairing runtime unavailable")
-    user_id = runtime.approve_pairing(req.channel, req.code)
-    if not user_id:
-        raise HTTPException(400, "Invalid pairing code")
-    return {"success": True, "channel": req.channel, "user_id": user_id}
-
-
 # ── 内部工具 ──────────────────────────────────────────────────────────────
 
 def _get_channel_manager(services: WebServices) -> Any:
-    try:
-        system_agent = services.system_agent()
-    except Exception:
+    system_agent = getattr(services, "system_agent", None)
+    if system_agent is None:
         return None
     return getattr(system_agent, "channel_manager", None)
 

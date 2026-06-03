@@ -1,4 +1,4 @@
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, computed, onMounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useVueFlow } from '@vue-flow/core';
 import { API } from '/static/api/index.js';
@@ -104,7 +104,8 @@ export default {
   setup() {
     const route = useRoute();
     const router = useRouter();
-    const { screenToFlowPosition, project, fitView, zoomIn, zoomOut } = useVueFlow({ id: FLOW_ID });
+    const { screenToFlowPosition, project, addNodes, addEdges, removeNodes, removeEdges,
+            getNodes, getEdges, setNodes, setEdges, fitView } = useVueFlow({ id: FLOW_ID });
 
     const workflowName = ref('');
     const isNew = ref(true);
@@ -113,26 +114,8 @@ export default {
     const showYaml = ref(false);
     const yamlPreview = ref('');
 
-    const flowNodes = ref([]);
-    const flowEdges = ref([]);
-
-    const showQuickAdd = ref(false);
-    const quickAddPos = ref({ x: 0, y: 0 });
-    const QUICK_NODES = [
-      { type: 'llm', label: 'LLM' },
-      { type: 'agent', label: 'Agent' },
-      { type: 'code', label: 'Code' },
-      { type: 'condition', label: 'Condition' },
-      { type: 'http_request', label: 'HTTP' },
-      { type: 'tool', label: 'Tool' },
-    ];
-
-    const showEmptyHint = computed(() => {
-      const actionNodes = flowNodes.value.filter(
-        (n) => !['start', 'end'].includes(n.data?.nodeType)
-      );
-      return actionNodes.length === 0;
-    });
+    const initialNodes = ref([]);
+    const initialEdges = ref([]);
 
     onMounted(async () => {
       const name = route.params.name;
@@ -143,12 +126,16 @@ export default {
       } else {
         isNew.value = true;
         workflowName.value = '';
-        const startNode = buildFlowNode('start', 'start', 'Start', 400, 80);
-        const endNode = buildFlowNode('end', 'end', 'End', 400, 320);
+        const startNode = buildFlowNode('start', 'start', 'Start', 400, 60);
+        const endNode = buildFlowNode('end', 'end', 'End', 400, 300);
         const defaultEdge = buildFlowEdge('start', 'end');
-        flowNodes.value = [startNode, endNode];
-        flowEdges.value = [defaultEdge];
-        nextTick(() => fitView({ padding: 0.35, duration: 300 }));
+        initialNodes.value = [startNode, endNode];
+        initialEdges.value = [defaultEdge];
+        nextTick(() => {
+          setNodes([startNode, endNode]);
+          setEdges([defaultEdge]);
+          nextTick(() => fitView({ padding: 0.3 }));
+        });
       }
     });
 
@@ -176,7 +163,7 @@ export default {
       if (!Array.isArray(rawNodes)) rawNodes = Object.values(rawNodes);
       const rawEdges = def.edges || [];
 
-      const builtNodes = rawNodes.map(n => {
+      const flowNodes = rawNodes.map(n => {
         const id = n.id || nextNodeId(n.type || 'exec');
         const config = { ...n };
         delete config.id;
@@ -190,13 +177,13 @@ export default {
         );
       });
 
-      const builtEdges = [];
+      const flowEdges = [];
       for (const e of rawEdges) {
         if (typeof e === 'string') {
           const m = e.match(/^\s*(\S+)\s*->\s*(\S+)(?:\s*\|\s*(.+))?\s*$/);
-          if (m) builtEdges.push(buildFlowEdge(m[1], m[2], m[3] || ''));
+          if (m) flowEdges.push(buildFlowEdge(m[1], m[2], m[3] || ''));
         } else if (e && typeof e === 'object') {
-          builtEdges.push(buildFlowEdge(
+          flowEdges.push(buildFlowEdge(
             e.from || e.source || '',
             e.to || e.target || '',
             e.label || e.condition || '',
@@ -207,17 +194,21 @@ export default {
       let finalNodes, finalEdges;
       const hasPositions = rawNodes.some(n => n.position && n.position.x !== undefined);
       if (hasPositions) {
-        finalNodes = builtNodes;
-        finalEdges = builtEdges;
+        finalNodes = flowNodes;
+        finalEdges = flowEdges;
       } else {
-        const laid = autoLayout(builtNodes, builtEdges);
+        const laid = autoLayout(flowNodes, flowEdges);
         finalNodes = laid.nodes;
         finalEdges = laid.edges;
       }
 
-      flowNodes.value = finalNodes;
-      flowEdges.value = finalEdges;
-      nextTick(() => fitView({ padding: 0.25, duration: 300 }));
+      initialNodes.value = finalNodes;
+      initialEdges.value = finalEdges;
+      nextTick(() => {
+        setNodes(finalNodes);
+        setEdges(finalEdges);
+        nextTick(() => fitView({ padding: 0.2 }));
+      });
 
       const maxId = rawNodes.reduce((mx, n) => {
         const m2 = (n.id || '').match(/_(\d+)$/);
@@ -226,98 +217,61 @@ export default {
       nodeCounter = Math.max(nodeCounter, maxId);
     }
 
-    function insertNode(type, label, pos) {
-      const id = nextNodeId(type);
-      const node = buildFlowNode(id, type, label, pos.x, pos.y);
-      flowNodes.value = [...flowNodes.value, node];
-      selectedNode.value = node;
-      return node;
-    }
-
     function onDropNode(event) {
       const toFlowPos = screenToFlowPosition || project;
       const pos = toFlowPos
         ? toFlowPos({ x: event.clientX, y: event.clientY })
         : { x: event.clientX - 300, y: event.clientY - 100 };
-      insertNode(event.type, event.label, pos);
+      const id = nextNodeId(event.type);
+      const node = buildFlowNode(id, event.type, event.label, pos.x, pos.y);
+      addNodes([node]);
     }
 
     function onAddNodeFromPalette(data) {
+      const nodes = getNodes.value;
       let cx = 400, cy = 200;
-      if (flowNodes.value.length > 0) {
-        const maxY = Math.max(...flowNodes.value.map(n => n.position.y));
+      if (nodes.length > 0) {
+        const maxY = Math.max(...nodes.map(n => n.position.y));
         cy = maxY + GAP_Y + NODE_H;
       }
-      insertNode(data.type, data.label, { x: cx, y: cy });
+      const id = nextNodeId(data.type);
+      const node = buildFlowNode(id, data.type, data.label, cx, cy);
+      addNodes([node]);
     }
 
     function onNodeClick(node) {
       selectedNode.value = node;
-      showQuickAdd.value = false;
     }
 
     function onPaneClick() {
       selectedNode.value = null;
-      showQuickAdd.value = false;
-    }
-
-    function onPaneDblClick(event) {
-      const toFlowPos = screenToFlowPosition || project;
-      const pos = toFlowPos
-        ? toFlowPos({ x: event.clientX, y: event.clientY })
-        : { x: 400, y: 200 };
-      quickAddPos.value = pos;
-      showQuickAdd.value = true;
-    }
-
-    function onQuickAdd(item) {
-      insertNode(item.type, item.label, quickAddPos.value);
-      showQuickAdd.value = false;
     }
 
     function onConnect(params) {
       const edge = buildFlowEdge(params.source, params.target);
-      flowEdges.value = [...flowEdges.value, edge];
+      addEdges([edge]);
     }
 
     function onUpdateNode({ id, label, config }) {
-      flowNodes.value = flowNodes.value.map((node) => {
-        if (node.id !== id) return node;
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            label: label || node.data.label,
-            config: config || node.data.config,
-          },
-        };
-      });
-      if (selectedNode.value?.id === id) {
-        selectedNode.value = flowNodes.value.find((n) => n.id === id) || null;
-      }
+      const nodes = getNodes.value;
+      const idx = nodes.findIndex(n => n.id === id);
+      if (idx === -1) return;
+      const node = nodes[idx];
+      node.data = {
+        ...node.data,
+        label: label || node.data.label,
+        config: config || node.data.config,
+      };
     }
 
     function onDeleteNode(id) {
-      flowNodes.value = flowNodes.value.filter((n) => n.id !== id);
-      flowEdges.value = flowEdges.value.filter((e) => e.source !== id && e.target !== id);
+      removeNodes([id]);
       if (selectedNode.value?.id === id) selectedNode.value = null;
     }
 
-    function runAutoLayout() {
-      const laid = autoLayout(flowNodes.value, flowEdges.value);
-      flowNodes.value = laid.nodes;
-      flowEdges.value = laid.edges;
-      nextTick(() => fitView({ padding: 0.25, duration: 300 }));
-      toast('已自动布局', 'success');
-    }
-
-    function fitCanvas() {
-      fitView({ padding: 0.25, duration: 300 });
-    }
-
     function exportToYaml() {
-      const nodes = flowNodes.value;
-      const edges = flowEdges.value;
+      const nodes = getNodes.value;
+      const edges = getEdges.value;
       const defNodes = nodes.map(n => {
         const base = {
           id: n.id,
@@ -383,174 +337,16 @@ export default {
     const versionMeta = ref({});
     const loadingVersions = ref(false);
 
-    const showSandbox = ref(false);
-    const sandboxVars = ref('{\n  "query": "hello"\n}');
-    const activeRunId = ref('');
-    const selectedRun = ref(null);
-    let pollInterval = null;
-
-    onUnmounted(() => {
-      if (pollInterval) {
-        clearInterval(pollInterval);
-        pollInterval = null;
-      }
-    });
-
-    function applyTraceToCanvas(runRecord) {
-      if (!runRecord) return;
-      const execs = runRecord.node_executions || [];
-      const execMap = {};
-      execs.forEach(rec => {
-        execMap[rec.node_id] = rec;
-      });
-
-      const updated = flowNodes.value.map(n => {
-        const rec = execMap[n.id];
-        if (rec) {
-          return {
-            ...n,
-            data: {
-              ...n.data,
-              status: rec.status,
-              elapsed: rec.elapsed_time ? `${rec.elapsed_time.toFixed(2)}s` : null,
-              trace: rec,
-            }
-          };
-        } else {
-          return {
-            ...n,
-            data: {
-              ...n.data,
-              status: null,
-              elapsed: null,
-              trace: null,
-            }
-          };
-        }
-      });
-      flowNodes.value = updated;
-
-      if (selectedNode.value) {
-        const updatedSelected = updated.find(n => n.id === selectedNode.value.id);
-        if (updatedSelected) {
-          selectedNode.value = updatedSelected;
-        }
-      }
-    }
-
-    function clearCanvasTrace() {
-      activeRunId.value = '';
-      selectedRun.value = null;
-      const updated = flowNodes.value.map(n => ({
-        ...n,
-        data: {
-          ...n.data,
-          status: null,
-          elapsed: null,
-          trace: null,
-        }
-      }));
-      flowNodes.value = updated;
-      if (selectedNode.value) {
-        const updatedSelected = updated.find(n => n.id === selectedNode.value.id);
-        if (updatedSelected) {
-          selectedNode.value = updatedSelected;
-        }
-      }
-    }
-
-    async function selectRun(run) {
-      if (!run || !run.run_id) return;
-      activeRunId.value = run.run_id;
-      try {
-        const fullRun = await API.getWorkflowRun(run.run_id);
-        selectedRun.value = fullRun;
-        applyTraceToCanvas(fullRun);
-      } catch (e) {
-        toast('Failed to load run trace: ' + e.message, 'error');
-      }
-    }
-
-    function runWorkflow() {
+    async function runWorkflow() {
       const name = workflowName.value.trim();
       if (!name) { toast('Save the workflow first', 'warning'); return; }
-      const startNode = flowNodes.value.find(n => n.data?.nodeType === 'start');
-      if (startNode && startNode.data?.config?.input_schema) {
-        try {
-          const schema = typeof startNode.data.config.input_schema === 'string'
-            ? JSON.parse(startNode.data.config.input_schema)
-            : startNode.data.config.input_schema;
-          const defaultVars = {};
-          if (schema && typeof schema === 'object') {
-            Object.keys(schema).forEach(k => {
-              defaultVars[k] = schema[k].default || "";
-            });
-          }
-          sandboxVars.value = JSON.stringify(defaultVars, null, 2);
-        } catch { /* ignore */ }
-      }
-      showSandbox.value = true;
-    }
-
-    async function startTestRun() {
-      const name = workflowName.value.trim();
-      if (!name) { toast('Workflow must have a name', 'warning'); return; }
-      
-      let vars = {};
-      try {
-        vars = JSON.parse(sandboxVars.value);
-      } catch (e) {
-        toast('Variables must be valid JSON', 'warning');
-        return;
-      }
-
-      showSandbox.value = false;
       running.value = true;
-      clearCanvasTrace();
-
       try {
-        const res = await API.triggerWorkflow(name, vars);
-        if (res.success) {
-          toast('Workflow triggered!', 'success');
-          const runId = res.result?.run_id || res.run_id;
-          if (runId) {
-            activeRunId.value = runId;
-            showHistory.value = true;
-            await loadHistory();
-            startPollingRun(runId);
-          } else {
-            toast('Workflow finished!', 'success');
-            await loadHistory();
-          }
-        } else {
-          toast('Run failed: ' + res.error, 'error');
-        }
-      } catch (e) {
-        toast('Trigger failed: ' + e.message, 'error');
-      } finally {
-        running.value = false;
-      }
-    }
-
-    function startPollingRun(runId) {
-      if (pollInterval) clearInterval(pollInterval);
-      pollInterval = setInterval(async () => {
-        try {
-          const runRecord = await API.getWorkflowRun(runId);
-          selectedRun.value = runRecord;
-          applyTraceToCanvas(runRecord);
-          
-          if (['completed', 'failed', 'error', 'cancelled'].includes(runRecord.status)) {
-            clearInterval(pollInterval);
-            pollInterval = null;
-            toast(`Workflow execution finished with status: ${runRecord.status}`, runRecord.status === 'completed' ? 'success' : 'error');
-            await loadHistory();
-          }
-        } catch (e) {
-          clearInterval(pollInterval);
-          pollInterval = null;
-        }
-      }, 1500);
+        await API.triggerWorkflow(name, {});
+        toast('Workflow triggered!', 'success');
+        await loadHistory();
+      } catch (e) { toast('Trigger failed: ' + e.message, 'error'); }
+      finally { running.value = false; }
     }
 
     async function loadHistory() {
@@ -672,8 +468,8 @@ export default {
               e.label || '',
             ));
             const layout = autoLayout(rawNodes, rawEdges);
-            flowNodes.value = layout.nodes;
-            flowEdges.value = layout.edges;
+            initialNodes.value = layout.nodes;
+            initialEdges.value = layout.edges;
             if (def.name) workflowName.value = def.name;
             toast('Workflow imported (' + rawNodes.length + ' nodes)', 'success');
           }
@@ -686,17 +482,15 @@ export default {
 
     return {
       workflowName, isNew, selectedNode, saving, showYaml, yamlPreview,
-      flowNodes, flowEdges, showEmptyHint, showQuickAdd, quickAddPos, QUICK_NODES, showHistory, runHistory, running,
+      initialNodes, initialEdges, showHistory, runHistory, running,
       showVersions, versionList, versionMeta, loadingVersions,
-      showSandbox, sandboxVars, activeRunId, selectedRun, selectRun, startTestRun, clearCanvasTrace,
-      onDropNode, onAddNodeFromPalette, onNodeClick, onPaneClick, onPaneDblClick, onQuickAdd, onConnect,
-      runAutoLayout, fitCanvas, zoomIn, zoomOut,
+      onDropNode, onAddNodeFromPalette, onNodeClick, onPaneClick, onConnect,
       onUpdateNode, onDeleteNode,
       toggleYaml, refreshYaml, saveWorkflow, runWorkflow, goBack,
       toggleHistory, toggleVersions, publishWorkflow, rollbackToVersion,
       exportJSON, importJSON,
       formatDuration, formatTime, statusColor,
-      FLOW_ID, NODE_COLORS,
+      FLOW_ID,
     };
   },
   template: `
@@ -753,34 +547,13 @@ export default {
         <div class="wb-center">
           <FlowCanvas
             :flow-id="FLOW_ID"
-            v-model:nodes="flowNodes"
-            v-model:edges="flowEdges"
-            :show-empty-hint="showEmptyHint"
+            :nodes="initialNodes"
+            :edges="initialEdges"
             @node-click="onNodeClick"
             @pane-click="onPaneClick"
-            @pane-dblclick="onPaneDblClick"
             @connect="onConnect"
-            @fit-view="fitCanvas"
-            @auto-layout="runAutoLayout"
-            @zoom-in="zoomIn"
-            @zoom-out="zoomOut"
             @drop-node="onDropNode"
           />
-          <div v-if="showQuickAdd" class="wb-quick-add" @click.stop>
-            <div class="wb-quick-add-title">快速添加节点</div>
-            <div class="wb-quick-add-grid">
-              <button
-                v-for="item in QUICK_NODES"
-                :key="item.type"
-                type="button"
-                class="wb-quick-add-item"
-                @click="onQuickAdd(item)"
-              >
-                <span class="wb-quick-add-dot" :style="{ background: NODE_COLORS[item.type] || '#64748b' }"></span>
-                {{ item.label }}
-              </button>
-            </div>
-          </div>
           <div v-if="showYaml" class="wb-yaml-panel">
             <div class="wb-yaml-header">
               <span>YAML Preview</span>
@@ -792,12 +565,11 @@ export default {
         <div v-if="showHistory" class="wb-history-panel">
           <div class="wb-history-header">
             <span>Execution History</span>
-            <button class="mx-btn mx-btn--ghost mx-btn--xs" style="font-size:10px;padding:2px 6px;margin-left:auto;margin-right:8px;" v-if="activeRunId" @click.stop="clearCanvasTrace">Clear Trace</button>
             <button class="wb-config-close" @click="showHistory = false">&times;</button>
           </div>
           <div class="wb-history-list">
             <div v-if="runHistory.length === 0" class="wb-palette-empty">No execution history</div>
-            <div v-for="run in runHistory" :key="run.run_id" class="wb-history-item" :class="{ 'wb-history-item--active': activeRunId === run.run_id }" style="cursor:pointer;" @click="selectRun(run)">
+            <div v-for="run in runHistory" :key="run.run_id" class="wb-history-item">
               <div class="wb-history-item-status">
                 <span class="wb-history-dot" :style="{ background: statusColor(run.status) }"></span>
                 <span class="wb-history-item-id">{{ run.run_id }}</span>
@@ -842,27 +614,6 @@ export default {
           @delete-node="onDeleteNode"
           @close="selectedNode = null"
         />
-      </div>
-
-      <!-- Interactive Sandbox Modal -->
-      <div v-if="showSandbox" class="wb-sandbox-modal-overlay" @click="showSandbox = false">
-        <div class="wb-sandbox-modal" @click.stop>
-          <div class="wb-sandbox-header">
-            <span class="wb-sandbox-title">Workflow Test Run Sandbox</span>
-            <button class="wb-sandbox-close" @click="showSandbox = false">&times;</button>
-          </div>
-          <div class="wb-sandbox-body">
-            <div class="wb-sandbox-field">
-              <label class="wb-sandbox-label">Input Variables (JSON)</label>
-              <div class="wb-sandbox-desc">Specify starting parameters for this workflow execution.</div>
-              <textarea v-model="sandboxVars" class="wb-sandbox-textarea" rows="8" spellcheck="false"></textarea>
-            </div>
-          </div>
-          <div class="wb-sandbox-footer">
-            <button class="mx-btn mx-btn--ghost mx-btn--sm" @click="showSandbox = false">Cancel</button>
-            <button class="mx-btn mx-btn--primary mx-btn--sm" @click="startTestRun">Run Execution</button>
-          </div>
-        </div>
       </div>
     </div>
   `

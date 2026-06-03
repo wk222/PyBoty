@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
 
-from core.systems.integration.channels.channel_runtime import ChannelWebhookRequest
+from core.systems.integration.channel_runtime import ChannelWebhookRequest
 from web.dependencies import get_services
 from web.state import WebServices
 

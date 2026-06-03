@@ -30,10 +30,6 @@ export default {
       }
     }
 
-    function handleCustomToggle() {
-      toggle();
-    }
-
     async function execute() {
       const cmd = inputVal.value.trim();
       if (!cmd) return;
@@ -99,11 +95,9 @@ export default {
 
     onMounted(() => {
       document.addEventListener('keydown', handleKeydown);
-      window.addEventListener('pybot:toggle-cli', handleCustomToggle);
     });
     onUnmounted(() => {
       document.removeEventListener('keydown', handleKeydown);
-      window.removeEventListener('pybot:toggle-cli', handleCustomToggle);
     });
 
     return { visible, inputVal, history, executing, inputRef, scrollRef, toggle, handleInputKey };

@@ -1,6 +1,0 @@
-# Dev / CI — sync with pyproject.toml [project.optional-dependencies.dev]
--r requirements.txt
-pre-commit>=3.7
-pytest>=8.2
-pytest-timeout>=2.3
-ruff>=0.9

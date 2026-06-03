@@ -2,15 +2,37 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Callable, TYPE_CHECKING
-
-logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
     from core.systems.runtime.project_paths import ProjectPaths
     from core.systems.runtime.pybot_bootstrap import PyBotRuntime, ToolAssembly
+
+
+def build_mode_subclasses(pybot_cls: type[Any]) -> tuple[type[Any], type[Any], type[Any]]:
+    """Create the public root-mode subclasses from the base PyBot runtime."""
+
+    class AdminPyBot(pybot_cls):
+        """Separate root runtime for long-running admin orchestration."""
+
+        def __init__(self, *args, **kwargs):
+            kwargs.setdefault("root_mode", "admin")
+            kwargs.setdefault("attach_admin_runtime", True)
+            super().__init__(*args, **kwargs)
+
+    class UltimatePyBot(AdminPyBot):
+        """User-facing alias for the ultimate-agent mode."""
+
+    class AppMatrixPyBot(pybot_cls):
+        """Root runtime for APP-level orchestration and central scheduling."""
+
+        def __init__(self, *args, **kwargs):
+            kwargs.setdefault("root_mode", "app_matrix")
+            kwargs.setdefault("attach_admin_runtime", True)
+            super().__init__(*args, **kwargs)
+
+    return AdminPyBot, UltimatePyBot, AppMatrixPyBot
 
 
 def create_mode_agent(
@@ -52,17 +74,18 @@ def assemble_primary_tools(
         get_template_prompt_section,
     )
     from core.assets.skills.skill_marketplace import get_marketplace_tools
-    from core.systems.agents.agent_creator import get_agent_creator_tools
-    from core.systems.apps import app_runtime, app_orchestration
+    from core.modes.agents.agent_creator import get_agent_creator_tools
+    from core.modes.apps import app_runtime, app_orchestration
     from core.assets.workflows import workflow_runtime
     from core.systems.eval.eval_framework import get_eval_tools
-    from core.systems.capability.capability_bus import get_capability_bus_tools
-    from core.systems.capability.capability_registry import get_capability_registry_tools
+    from core.systems.bus.capability_bus import get_capability_bus_tools
+    from core.systems.bus.capability_registry import get_capability_registry_tools
+    from core.systems.memory.memory_tools import get_memory_tools
     from core.assets.tools.permission_tools import get_permission_tools
     from core.systems.execution import get_execution_loop_tools
     from core.assets.tools.bash_tool import BashTool
     from core.assets.tools.web_fetch_tool import WebFetchTool
-    from core.systems.context.prompts import (
+    from core.systems.runtime.prompts import (
         build_static_system_prompt,
     )
 
@@ -139,10 +162,9 @@ def assemble_primary_tools(
         creator_tools.extend(runtime.knowledge_tools)
         tool_groups.append(("知识检索", len(runtime.knowledge_tools)))
 
-    if runtime.memory is not None and hasattr(runtime.memory, "as_tools"):
-        mem_tools = runtime.memory.as_tools(include_garden=False)
-        creator_tools.extend(mem_tools)
-        tool_groups.append(("记忆工具", len(mem_tools)))
+    mem_tools = get_memory_tools(runtime.memory)
+    creator_tools.extend(mem_tools)
+    tool_groups.append(("记忆工具", len(mem_tools)))
 
     permission_tools = get_permission_tools(runtime.middleware)
     creator_tools.extend(permission_tools)
@@ -169,36 +191,6 @@ def assemble_primary_tools(
     web_fetch_tool = WebFetchTool()
     creator_tools.append(web_fetch_tool)
     tool_groups.append(("网页抓取工具", 1))
-
-    from core.assets.tools.web_search_tool import WebSearchTool
-    web_search_tool = WebSearchTool()
-    creator_tools.append(web_search_tool)
-    tool_groups.append(("网页搜索工具", 1))
-
-    canvas_mode = getattr(runtime, "canvas_mode", "balanced") or "balanced"
-
-    try:
-        from core.assets.tools.vision_tool import VisionTool
-        vision_tool = VisionTool(
-            llm_factory=llm_factory,
-            canvas_mode=canvas_mode,
-        )
-        creator_tools.append(vision_tool)
-        tool_groups.append(("视觉理解工具", 1))
-    except Exception as e:
-        logger.debug("Vision tool init skipped: %s", e)
-
-    try:
-        from core.assets.tools.browser.browser_tool import BrowserTool
-        from core.assets.tools.browser.browser_service import HAS_PLAYWRIGHT
-        if HAS_PLAYWRIGHT:
-            browser_tool = BrowserTool(canvas_mode=canvas_mode)
-            creator_tools.append(browser_tool)
-            tool_groups.append(("浏览器工具", 1))
-        else:
-            logger.info("Playwright not installed, browser tool skipped")
-    except Exception as e:
-        logger.debug("Browser tool init skipped: %s", e)
 
     runtime.capability_registry.refresh_local_index(tools=creator_tools)
 
@@ -244,7 +236,7 @@ def build_subagent_langchain_middleware(
     from core.systems.middleware.insight_vault_middleware import InsightVaultMiddleware
     from core.systems.middleware.reasoning_frame_middleware import ReasoningFrameMiddleware
     from core.systems.middleware.agent_prompt_middleware import PromptSectionMiddleware
-    from core.systems.middleware.tool_arg_repair_middleware import ToolArgRepairMiddleware
+    from core.assets.tools import ToolArgRepairMiddleware
     from core.systems.runtime.patch_tool_calls import PatchToolCallsMiddleware
 
     stack: list[Any] = []

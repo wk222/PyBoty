@@ -13,46 +13,9 @@ from web.app import create_app
 logger = logging.getLogger(__name__)
 
 
-@pytest.fixture
-def tmp_path(request):
-    """Windows-safe tmp_path without pytest's ``…/current`` symlink."""
-    import platform
-    import shutil
-    import tempfile
-
-    if platform.system() == "Windows":
-        path = Path(tempfile.mkdtemp(prefix="pytest_tmp_"))
-        yield path
-        shutil.rmtree(path, ignore_errors=True)
-        return
-
-    factory = request.getfixturevalue("tmp_path_factory")
-    path = factory.mktemp("tmp")
-    yield path
-
-
 @pytest.fixture(scope="session")
-def isolated_runtime_home(request) -> Path:
-    """Session-scoped runtime home that gracefully degrades on Windows.
-
-    ``tmp_path_factory.mktemp`` invokes ``Path.symlink_to`` to create the
-    ``…current`` convenience link.  Recent Windows builds raise a
-    permission prompt for that operation when developer-mode is off, which
-    can hang the whole test run.  We catch it once per session and fall
-    back to a plain ``mkdtemp`` directory; tests get a real isolated dir
-    either way.
-    """
-    import platform
-    if platform.system() == "Windows":
-        import tempfile
-        return Path(tempfile.mkdtemp(prefix="pybot_runtime_home_"))
-    try:
-        tmp_path_factory = request.getfixturevalue("tmp_path_factory")
-        return tmp_path_factory.mktemp("pybot_runtime_home")
-    except (OSError, NotImplementedError, KeyError, ValueError):
-        import tempfile
-
-        return Path(tempfile.mkdtemp(prefix="pybot_runtime_home_"))
+def isolated_runtime_home(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return tmp_path_factory.mktemp("pybot_runtime_home")
 
 
 @pytest.fixture(autouse=True)
@@ -68,17 +31,11 @@ def _reset_plugin_registry_fixture():
 
 
 @pytest.fixture
-def temp_paths(request) -> ProjectPaths:
-    import platform
-    if platform.system() == "Windows":
-        import tempfile
-        p = Path(tempfile.mkdtemp(prefix="pybot_tmp_path_"))
-    else:
-        p = request.getfixturevalue("tmp_path")
+def temp_paths(tmp_path: Path) -> ProjectPaths:
     return ProjectPaths.from_root(
-        root_dir=p,
-        workspace_dir=p / "workspace",
-        runtime_root_dir=p,
+        root_dir=tmp_path,
+        workspace_dir=tmp_path / "workspace",
+        runtime_root_dir=tmp_path,
     )
 
 
@@ -99,42 +56,24 @@ def client(app):
 
 
 @pytest.fixture
-def agent_workspace(request) -> Path:
+def agent_workspace(tmp_path: Path) -> Path:
     """Provide an isolated agent workspace directory."""
-    import platform
-    if platform.system() == "Windows":
-        import tempfile
-        p = Path(tempfile.mkdtemp(prefix="pybot_agent_ws_"))
-    else:
-        p = request.getfixturevalue("tmp_path")
-    ws = p / "agents"
-    ws.mkdir(parents=True, exist_ok=True)
+    ws = tmp_path / "agents"
+    ws.mkdir()
     return ws
 
 
 @pytest.fixture
-def tool_workspace(request) -> Path:
+def tool_workspace(tmp_path: Path) -> Path:
     """Provide an isolated tool workspace directory."""
-    import platform
-    if platform.system() == "Windows":
-        import tempfile
-        p = Path(tempfile.mkdtemp(prefix="pybot_tool_ws_"))
-    else:
-        p = request.getfixturevalue("tmp_path")
-    ws = p / "tools"
-    ws.mkdir(parents=True, exist_ok=True)
+    ws = tmp_path / "tools"
+    ws.mkdir()
     return ws
 
 
 @pytest.fixture
-def workflow_workspace(request) -> Path:
+def workflow_workspace(tmp_path: Path) -> Path:
     """Provide an isolated workflow workspace directory."""
-    import platform
-    if platform.system() == "Windows":
-        import tempfile
-        p = Path(tempfile.mkdtemp(prefix="pybot_workflow_ws_"))
-    else:
-        p = request.getfixturevalue("tmp_path")
-    ws = p / "workflows"
-    ws.mkdir(parents=True, exist_ok=True)
+    ws = tmp_path / "workflows"
+    ws.mkdir()
     return ws

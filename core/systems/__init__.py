@@ -10,7 +10,7 @@ from core.systems.governance import (
     ToolRiskLevel,
 )
 from core.systems.integration import BaseChannel, ChannelManager, MCPHub
-from core.systems.memory import MemoryEngine, MemoryRecord, build_memory_engine
+from core.systems.memory import MEMORY_COLLECTION, MemoryCategory, MemoryEntry, MemoryManager, SemanticMemoryManager
 from core.systems.runtime import (
     ProjectPaths,
     UvEnvManager,
@@ -33,13 +33,15 @@ __all__ = [
     "BaseChannel",
     "ChannelManager",
     "InterruptKind",
-    "MemoryEngine",
-    "MemoryRecord",
+    "MEMORY_COLLECTION",
+    "MemoryCategory",
+    "MemoryEntry",
+    "MemoryManager",
     "MCPHub",
     "ProjectPaths",
+    "SemanticMemoryManager",
     "UvEnvManager",
     "WorkspaceManager",
-    "build_memory_engine",
     "get_agent_control_config",
     "get_config",
     "get_llm_config",

@@ -1,4 +1,4 @@
-﻿"""Sub-application APIs, shared DB access, app file serving, and Hub sync."""
+"""Sub-application APIs, shared DB access, app file serving, and Hub sync."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from core.assets.apps.packager import AppPackager
+from core.modes.apps.app_packager import AppPackager
 from core.assets.tools import normalize_for_app_tool_proxy
 from core.systems.runtime import safe_resolve
 from web.dependencies import get_services

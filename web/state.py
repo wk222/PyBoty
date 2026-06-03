@@ -12,19 +12,21 @@ from pathlib import Path
 from typing import Any
 
 from agent import create_admin_agent, create_app_matrix_agent, create_tool_creator_agent
-from core.systems.apps.app_manager import AppManager
-from core.systems.apps.app_orchestration import AppOrchestrationRegistry
-from core.systems.apps.app_matrix_runtime import AppMatrixRuntime
+from core.modes.apps.app_manager import AppManager
+from core.modes.apps.app_orchestration import AppOrchestrationRegistry
+from core.modes.apps.app_matrix_runtime import AppMatrixRuntime
 from core.assets.skills import SkillMarketplace, SkillRegistry
 from core.assets.workflows.scheduling import TaskQueue, TaskScheduler
 from core.modes import resolve_mode_profile
-from core.systems.capability import CapabilityBus, CapabilityRegistry
+from core.systems.bus import CapabilityBus, CapabilityRegistry
 from core.systems.governance import ApprovalOrchestrator, ApprovalQueue
 from core.systems.integration import GatewayRuntime
 from core.modes.canvas import get_canvas_profile
-from core.systems.memory import MemoryEngine, build_memory_engine
+from core.systems.memory import MemoryManager
+from core.systems.memory.memory_distill import MemoryDistillManager
 from core.systems.runtime import (
     ProjectPaths,
+    SessionRuntime,
     UvEnvManager,
     WorkspaceManager,
     get_agent_control_config,
@@ -33,8 +35,7 @@ from core.systems.runtime import (
     reload_config,
 )
 from core.systems.runtime.event_bus import event_bus
-from core.systems.session import SessionRuntime
-from core.systems.agents.subagent_registry import SubagentRegistry, get_global_subagent_registry
+from core.modes.agents.subagent_registry import SubagentRegistry, get_global_subagent_registry
 
 logger = logging.getLogger(__name__)
 
@@ -281,24 +282,6 @@ class AgentPool:
             self._agents.pop(self._agent_key(thread_id, root_mode=root_mode), None)
 
 
-def _resolve_embeddings_for_memory(llm_config: dict[str, Any]) -> Any | None:
-    """Return a LangChain-style embeddings object if RAG is configured."""
-    try:
-        from core.systems.runtime import get_rag_config
-
-        rag_cfg = get_rag_config(config=llm_config)
-        if not rag_cfg.get("enabled"):
-            return None
-        from core.systems.knowledge.embedding_resolver import resolve_embeddings
-
-        embedding_spec = rag_cfg.get("embedding_model")
-        api_key = llm_config.get("api_key") or None
-        return resolve_embeddings(embedding_spec, api_key=api_key)
-    except Exception as exc:
-        logger.warning("Embeddings init skipped: %s", exc)
-        return None
-
-
 @dataclass
 class WebServices:
     """Application-scoped services shared by routers and startup hooks."""
@@ -312,7 +295,7 @@ class WebServices:
     session_runtime: SessionRuntime
     agents: AgentPool
     workspace_mgr: WorkspaceManager
-    memory_engine: MemoryEngine
+    memory_mgr: MemoryManager
     capability_bus: CapabilityBus
     capability_registry: CapabilityRegistry
     skill_marketplace: SkillMarketplace
@@ -323,7 +306,8 @@ class WebServices:
     app_manager: AppManager
     gateway_runtime: GatewayRuntime
     subagent_registry: SubagentRegistry
-    _shutting_down: bool = False
+    memory_distill: MemoryDistillManager | None = None
+    memory_facade: Any | None = None   # MemoryFacade — canvas-aware unified memory reader
 
     @staticmethod
     def _build_skill_registry(resolved_paths: ProjectPaths) -> SkillRegistry:
@@ -379,10 +363,7 @@ class WebServices:
                 canvas_resolver=None,  # wired up below after conversations store is created
             ),
             workspace_mgr=WorkspaceManager(str(resolved_paths.workspace_dir)),
-            memory_engine=build_memory_engine(
-                resolved_paths.workspace_dir,
-                embeddings=_resolve_embeddings_for_memory(config),
-            ),
+            memory_mgr=MemoryManager(str(resolved_paths.workspace_dir)),
             capability_bus=CapabilityBus(str(resolved_paths.workspace_dir)),
             capability_registry=None,  # type: ignore[arg-type]
             skill_marketplace=SkillMarketplace(str(resolved_paths.workspace_dir)),
@@ -403,31 +384,57 @@ class WebServices:
             skill_registry=services.skill_registry,
             app_manager=services.app_manager,
         )
-        # MemoryEngine pipelines (journal + distill) need an LLM caller — wire it
-        # in here so the engine constructed above can run async distillation.
-        def _make_digest_caller(temperature: float):
-            from core.systems.runtime import create_llm_client
-            from langchain_core.messages import SystemMessage, HumanMessage as LCHuman
+        # Deep Digest: 记忆蒸馏流水线
+        # journal 和 distill 使用不同温度：journal 归纳对话（略高），distill 精炼记忆（低温保稳定）
+        try:
+            def _make_digest_caller(temperature: float):
+                """Build a LangChain-backed LLM caller for Deep Digest at a fixed temperature."""
+                from core.systems.runtime import create_llm_client
+                from langchain_core.messages import SystemMessage, HumanMessage as LCHuman
 
-            def _call(system: str, user: str) -> str:
-                try:
-                    cfg = services.agents._fresh_llm_config()
-                    client = create_llm_client(
-                        model=cfg.get("model", "gpt-4o-mini"),
-                        temperature=temperature,
-                        api_key=cfg.get("api_key"),
-                        base_url=cfg.get("api_base"),
-                    )
-                    resp = client.invoke([SystemMessage(content=system), LCHuman(content=user)])
-                    return str(getattr(resp, "content", resp) or "")
-                except Exception as e:
-                    logger.warning("[MemoryEngine] llm_caller(temp=%.1f) error: %s", temperature, e)
-                    return ""
-            return _call
+                def _call(system: str, user: str) -> str:
+                    try:
+                        cfg = services.agents._fresh_llm_config()
+                        client = create_llm_client(
+                            model=cfg.get("model", "gpt-4o-mini"),
+                            temperature=temperature,
+                            api_key=cfg.get("api_key"),
+                            base_url=cfg.get("api_base"),
+                        )
+                        resp = client.invoke([SystemMessage(content=system), LCHuman(content=user)])
+                        return str(getattr(resp, "content", resp) or "")
+                    except Exception as e:
+                        logger.warning("[MemoryDistill] llm_caller(temp=%.1f) error: %s", temperature, e)
+                        return ""
+                return _call
 
-        services.memory_engine._pipeline._journal_caller = _make_digest_caller(0.5)
-        services.memory_engine._pipeline._distill_caller = _make_digest_caller(0.2)
-        services.memory_engine._pipeline._reflect_caller = _make_digest_caller(0.2)
+            services.memory_distill = MemoryDistillManager(
+                workspace_dir=resolved_paths.workspace_dir,
+                journal_llm_caller=_make_digest_caller(0.5),   # journal: 归纳摘要，略高温
+                distill_llm_caller=_make_digest_caller(0.2),   # distill: 精炼记忆，低温稳定
+            )
+        except Exception as _dd_exc:
+            logger.warning("MemoryDistillManager init failed: %s", _dd_exc)
+            services.memory_distill = MemoryDistillManager(
+                workspace_dir=resolved_paths.workspace_dir,
+                llm_caller=None,
+            )
+        # MemoryFacade: canvas-aware unified memory reader
+        try:
+            from core.systems.memory.facade import MemoryFacade
+            from core.systems.memory.semantic_memory import SemanticMemoryManager
+            from core.systems.memory.markdown_garden import MarkdownGardenManager
+
+            sem_mem = SemanticMemoryManager(str(resolved_paths.workspace_dir))
+            garden = MarkdownGardenManager(str(resolved_paths.workspace_dir))
+            services.memory_facade = MemoryFacade(
+                memory_manager=services.memory_mgr,
+                semantic_memory=sem_mem,
+                garden=garden,
+            )
+        except Exception as _mf_exc:
+            logger.warning("MemoryFacade init failed: %s", _mf_exc)
+            services.memory_facade = None
 
         services.session_runtime.sync_conversations(services.conversations)
         services.session_runtime.sync_gateway_runtime(services.gateway_runtime)
@@ -448,16 +455,10 @@ class WebServices:
 
     def app_matrix_runtime(self) -> AppMatrixRuntime:
         registry = AppOrchestrationRegistry(storage_path=self.paths.workspace_data_dir / "app_orchestration.json")
-        pyflow = None
-        try:
-            pyflow = self.system_agent().pyflow_engine
-        except Exception:
-            logger.debug("PyFlowEngine not available for AppMatrixRuntime", exc_info=True)
         return AppMatrixRuntime(
             app_manager=self.app_manager,
             orchestration_registry=registry,
             capability_registry=self.capability_registry,
-            pyflow_engine=pyflow,
         )
 
     def sync_session_spine(self) -> None:
@@ -521,16 +522,8 @@ class WebServices:
         )
 
         def schedule_callback(prompt: str, task_id: str) -> None:
-            if self._shutting_down:
-                return
-            try:
-                agent = self.agents.get_or_create(task_id)
-                agent.chat(prompt)
-            except RuntimeError as exc:
-                if "shutdown" in str(exc).lower():
-                    logger.debug("Ignored scheduled chat during shutdown: %s", exc)
-                    return
-                raise
+            agent = self.agents.get_or_create(task_id)
+            agent.chat(prompt)
 
         self.task_scheduler.set_agent_callback(schedule_callback)
         self.capability_registry.refresh_local_index(save=True)
@@ -538,14 +531,6 @@ class WebServices:
         self.task_scheduler.start()
 
     def shutdown(self) -> None:
-        self._shutting_down = True
-        self.task_scheduler.set_agent_callback(None)
         self.task_scheduler.stop()
         self.task_queue.shutdown(wait=False)
-        try:
-            from core.systems.runtime.event_bus import event_bus
-
-            event_bus.close()
-        except Exception:
-            pass
 

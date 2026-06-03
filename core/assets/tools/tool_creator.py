@@ -8,7 +8,7 @@ from typing import Any
 from langchain.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.assets.agents.storage import AgentStorage
+from core.modes.agents.agent_storage import AgentStorage
 from core.systems.runtime.project_paths import ProjectPaths
 
 from .tool_creation_support import (

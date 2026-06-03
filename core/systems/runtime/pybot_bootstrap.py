@@ -1,4 +1,4 @@
-﻿"""Bootstrap helpers for assembling the root PyBot runtime."""
+"""Bootstrap helpers for assembling the root PyBot runtime."""
 
 from __future__ import annotations
 
@@ -21,11 +21,11 @@ if TYPE_CHECKING:
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-from core.systems.capability import CapabilityBus, CapabilityRegistry
+from core.systems.bus import CapabilityBus, CapabilityRegistry
 from core.systems.context import ContextWindowManager, WorkspaceViewService
 from core.systems.governance import AgentControlPolicy, ApprovalQueue
 from core.systems.integration import ChannelManager, MCPHub
-from core.systems.memory import MemoryEngine, build_memory_engine
+from core.systems.memory import MemoryManager
 from core.systems.middleware.middleware_stack import MiddlewareStack
 from core.systems.runtime.backend_protocol import LocalSandboxBackend
 from core.systems.runtime.config_impl import (
@@ -35,13 +35,10 @@ from core.systems.runtime.config_impl import (
     get_rag_config,
     get_trusted_settings,
 )
-from core.systems.llm import (
-    ModelProviderError,
-    create_failover_model,
-    resolve_model,
-)
 from core.systems.runtime.daemon import BackgroundDaemon
+from core.systems.runtime.model_failover import create_failover_model
 from core.systems.runtime.hooks_runtime import HookPhase, create_default_hooks_runtime
+from core.systems.runtime.model_resolver import ModelProviderError, resolve_model
 from core.systems.runtime.project_paths import ProjectPaths
 from core.systems.runtime.runtime_capability_bundle import build_capability_runtime_bundle
 from core.systems.runtime.task_runtime import TaskRuntimeService
@@ -71,7 +68,7 @@ class PyBotRuntime:
     backend: LocalSandboxBackend
     workspace: WorkspaceManager
     workspace_view: WorkspaceViewService
-    memory: MemoryEngine
+    memory: MemoryManager
     skill_registry: Any  # SkillRegistry
     scheduler: Any  # TaskScheduler
     app_manager: Any  # AppManager
@@ -167,16 +164,17 @@ def build_runtime(
 ) -> PyBotRuntime:
     """Construct the shared runtime used by the root agent."""
     from core.assets.tools.tool_storage import ToolStorage
-    from core.assets.agents.storage import AgentStorage
-    from core.systems.apps.app_manager import AppManager
+    from core.modes.agents.agent_storage import AgentStorage
+    from core.modes.apps.app_manager import AppManager
     from core.assets.skills.skill_marketplace import SkillMarketplace
     from core.assets.skills.skill_registry import SkillRegistry
     from core.assets.workflows.scheduling import TaskScheduler
     from core.assets.workflows.pyflow_engine import PyFlowEngine
     from core.assets.tools.tool_chain import ToolChainExecutor
+    from core.systems.memory import SemanticMemoryManager
     from core.assets.tools import DynamicToolMiddleware
     from core.systems.runtime.daemon import SessionReaper
-    from core.systems.apps.app_manager_registry import set_shared_app_manager
+    from core.modes.apps.app_manager_registry import set_shared_app_manager
     from core.assets.workflows import workflow_orchestration
     from core.systems.governance.permission_policy import PermissionControlPlane
 
@@ -217,7 +215,7 @@ def build_runtime(
     )
 
     scheduler = workflow_orchestration.scheduler_class(str(paths.workspace_dir))
-    from core.systems.apps import app_runtime
+    from core.modes.apps import app_runtime
     app_manager = app_runtime.manager_class(str(paths.apps_dir), project_paths=paths)
     set_shared_app_manager(app_manager)
 
@@ -249,11 +247,11 @@ def build_runtime(
     )
     
     subagent_registry = capability_bundle.subagent_registry
-    from core.systems.agents.swarm_scheduler import SwarmScheduler
+    from core.systems.execution.swarm_scheduler import SwarmScheduler
     swarm_scheduler = SwarmScheduler(registry=subagent_registry)
 
     knowledge_tools_list: list[Any] = []
-    vector_store_for_memory: Any | None = None
+    memory: MemoryManager | SemanticMemoryManager = MemoryManager(str(paths.workspace_dir))
     try:
         rag_cfg = get_rag_config(config=effective_config)
         if rag_cfg.get("enabled"):
@@ -265,16 +263,18 @@ def build_runtime(
             persist_dir = rag_cfg.get("persist_dir") or str(paths.workspace_dir / "vector_store")
             embedding_spec = rag_cfg.get("embedding_model")
             emb_fn = resolve_embeddings(embedding_spec, api_key=api_key)
-            vector_store_for_memory = create_vector_store(
+            vs = create_vector_store(
                 backend=rag_cfg.get("backend", "chroma"),
                 persist_dir=persist_dir,
                 embedding_function=emb_fn,
             )
-            pipeline = DocumentPipeline(
-                vector_store_for_memory,
-                chunk_config=ChunkConfig(chunk_size=1000, chunk_overlap=200),
+            memory = SemanticMemoryManager(
+                workspace_dir=str(paths.workspace_dir),
+                vector_store=vs,
+                search_strategy=rag_cfg.get("search_strategy", "vector"),
             )
-            knowledge_tools_list = get_knowledge_tools(vector_store_for_memory, pipeline)
+            pipeline = DocumentPipeline(vs, chunk_config=ChunkConfig(chunk_size=1000, chunk_overlap=200))
+            knowledge_tools_list = get_knowledge_tools(vs, pipeline)
     except Exception as exc:
         import logging
         logging.getLogger(__name__).warning("RAG initialization skipped: %s", exc)
@@ -287,14 +287,9 @@ def build_runtime(
         provider=provider,
         fallback_configs=fallback_configs,
     )
-
-    embeddings = getattr(vector_store_for_memory, "_embedding_function", None)
-    memory_engine = build_memory_engine(
-        paths.workspace_dir,
-        embeddings=embeddings,
-        llm=llm,
-    )
-
+    if isinstance(memory, SemanticMemoryManager):
+        memory._llm = llm
+        
     conn = sqlite3.connect(str(paths.checkpoints_db), check_same_thread=False)
     checkpointer = SqliteSaver(conn)
     
@@ -329,7 +324,7 @@ def build_runtime(
     )
     daemon.add_job("session_reaper", 60.0, reaper.run_reap_cycle)
 
-    from core.modes.admin.watcher import AdminWatcherDaemon
+    from core.systems.runtime.admin_watcher import AdminWatcherDaemon
     AdminWatcherDaemon(llm=llm, daemon=daemon, workspace_dir=paths.workspace_dir, interval_sec=120.0)
     daemon.start()
 
@@ -344,7 +339,7 @@ def build_runtime(
         workspace_view=workspace_view,
         task_runtime=task_runtime,
         trusted_settings=trusted_settings,
-        memory=memory_engine,
+        memory=memory,
         skill_registry=skill_registry,
         scheduler=scheduler,
         app_manager=app_manager,
@@ -401,8 +396,8 @@ def create_root_agent(
 ) -> Any:
     """Build the root LangChain agent instance."""
     from core.systems.middleware.summarization_middleware import SummarizationConfig
-    from core.systems.session.session_notes import SessionMemoryConfig, SessionMemoryScheduler
-    from core.systems.session.session_runtime_view import merge_session_runtime_view
+    from core.systems.memory.session_memory_extractor import SessionMemoryConfig, SessionMemoryScheduler
+    from core.systems.runtime.session.session_runtime_view import merge_session_runtime_view
     from core.systems.middleware.agent_middleware_factory import build_root_langchain_middleware
     from langchain.agents import create_agent
     
@@ -418,8 +413,6 @@ def create_root_agent(
         config=SessionMemoryConfig(storage_dir=_offload_dir, thread_id=_tid),
         workspace_view=runtime.workspace_view,
     )
-    if runtime.memory is not None and hasattr(runtime.memory, "attach_session_scheduler"):
-        runtime.memory.attach_session_scheduler(session_scheduler)
 
     live_runtime_overlay: dict[str, Any] = {}
 
@@ -440,7 +433,7 @@ def create_root_agent(
         }
 
     def _build_live_view() -> dict[str, Any] | None:
-        from core.systems.context.projected_runtime_view import ProjectedRuntimeView
+        from core.systems.runtime.projected_runtime_view import ProjectedRuntimeView
         if not hasattr(runtime, "session_memory_extractor") or runtime.session_memory_extractor is None:
             setattr(runtime, "session_memory_extractor", session_scheduler)
 
@@ -518,7 +511,7 @@ def invoke_sub_agent(
     swarm_scheduler: Any | None = None,
 ) -> dict[str, Any]:
     """Invoke a named sub-agent and return its structured response payload."""
-    from core.systems.agents.agent_services import invoke_persisted_agent
+    from core.modes.agents.agent_services import invoke_persisted_agent
     resolved_thread_id = thread_id or f"workflow_{agent_name}_{int(time_module.time())}"
     
     invoke_kwargs = {

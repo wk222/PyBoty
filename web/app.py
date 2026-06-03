@@ -18,9 +18,8 @@ from fastapi.staticfiles import StaticFiles
 from core.systems.runtime.entrypoints import DEFAULT_WEB_PORT, ensure_utf8_stdio, resolve_port
 from core.systems.runtime import ProjectPaths, get_pybot_version
 from core.systems.runtime.event_bus import Event, EventType, event_bus
-from web.auth_config import debug_errors_enabled, load_api_keys_from_env
 from web.gateway_guard import GatewayGuardMiddleware
-from web.routers import admin, apps, channels, chat, doctor, extensions, gateway, sessions, tasks, workflows, workspace
+from web.routers import admin, apps, channels, chat, gateway, sessions, workflows, workspace
 from web.state import WebServices
 
 load_dotenv()
@@ -79,13 +78,23 @@ def create_app(
         allow_headers=["*"],
     )
 
-    # Load API keys from environment (see web/auth_config.py)
-    api_keys = load_api_keys_from_env()
+    # Load API keys from environment or config
+    # Format: PYBOT_API_KEYS="key1:admin,chat;key2:chat"
+    api_keys_config = os.environ.get("PYBOT_API_KEYS", "")
+    api_keys = {}
+    if api_keys_config:
+        for pair in api_keys_config.split(";"):
+            if ":" in pair:
+                k, scopes = pair.split(":", 1)
+                api_keys[k.strip()] = [s.strip() for s in scopes.split(",")]
+    else:
+        # Default dev key if none provided (for backward compatibility)
+        api_keys["dev-key"] = ["*"]
 
     app.add_middleware(
         GatewayGuardMiddleware,
         api_keys=api_keys,
-        exclude_paths={"/health", "/", "/workspace", "/metrics", "/openapi.json", "/docs"},
+        exclude_paths={"/health", "/", "/metrics", "/openapi.json", "/docs"},
         app_manager=services.app_manager,
     )
 
@@ -93,13 +102,10 @@ def create_app(
     app.include_router(sessions.router)
     app.include_router(gateway.router)
     app.include_router(channels.router)
-    app.include_router(doctor.router)
     app.include_router(admin.router)
     app.include_router(workspace.router)
     app.include_router(apps.router)
     app.include_router(workflows.router)
-    app.include_router(tasks.router)
-    app.include_router(extensions.router)
 
     @app.exception_handler(Exception)
     async def _global_exception_handler(request: Request, exc: Exception):
@@ -110,21 +116,13 @@ def create_app(
             Event(
                 type=EventType.ERROR,
                 source=f"API:{request.method}:{request.url.path}",
-                payload={
-                    "error": str(exc),
-                    **(
-                        {"traceback": traceback.format_exc()}
-                        if debug_errors_enabled()
-                        else {}
-                    ),
-                },
+                payload={"error": str(exc), "traceback": traceback.format_exc()},
             )
         )
 
-        client_detail = str(exc) if debug_errors_enabled() else "An internal error occurred"
         return JSONResponse(
             status_code=500,
-            content={"error": "internal_server_error", "detail": client_detail},
+            content={"error": "internal_server_error", "detail": str(exc)},
         )
 
     @app.get("/")
@@ -133,13 +131,6 @@ def create_app(
         if index_path.exists():
             return FileResponse(index_path)
         return {"message": "static/index.html not found"}
-
-    @app.get("/workspace")
-    async def serve_workspace_ide():
-        ide_path = Path(static_dir / "ide.html")
-        if ide_path.exists():
-            return FileResponse(ide_path)
-        return {"message": "static/ide.html not found"}
 
     @app.get("/health")
     async def health_check():

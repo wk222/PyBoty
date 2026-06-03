@@ -111,19 +111,12 @@ export default {
   emits: ['update-node', 'delete-node', 'close'],
   setup(props, { emit }) {
     const localConfig = ref({});
-    const activeTab = ref('config');
 
     watch(() => props.node, (n) => {
       if (n && n.data) {
         localConfig.value = { ...n.data.config || {} };
-        if (n.data.trace) {
-          activeTab.value = 'trace';
-        } else {
-          activeTab.value = 'config';
-        }
       } else {
         localConfig.value = {};
-        activeTab.value = 'config';
       }
     }, { immediate: true, deep: true });
 
@@ -164,25 +157,7 @@ export default {
       return t && !['start', 'end'].includes(t);
     });
 
-    function statusBg(s) {
-      const map = { completed: 'rgba(16,185,129,0.15)', failed: 'rgba(239,68,68,0.15)', error: 'rgba(239,68,68,0.15)', running: 'rgba(99,102,241,0.15)', waiting: 'rgba(245,158,11,0.15)' };
-      return map[s] || 'rgba(107,114,128,0.15)';
-    }
-
-    function statusColor(s) {
-      const map = { completed: '#10b981', failed: '#ef4444', error: '#ef4444', running: '#6366f1', waiting: '#f59e0b' };
-      return map[s] || '#6b7280';
-    }
-
-    function formatJson(val) {
-      if (!val) return '{}';
-      if (typeof val === 'string') {
-        try { return JSON.stringify(JSON.parse(val), null, 2); } catch { return val; }
-      }
-      return JSON.stringify(val, null, 2);
-    }
-
-    return { localConfig, fields, updateField, updateLabel, deleteNode, close, isActionNode, activeTab, statusBg, statusColor, formatJson };
+    return { localConfig, fields, updateField, updateLabel, deleteNode, close, isActionNode };
   },
   template: `
     <div class="wb-config-panel" v-if="node">
@@ -190,14 +165,7 @@ export default {
         <span class="wb-config-title">Node Config</span>
         <button class="wb-config-close" @click="close">&times;</button>
       </div>
-
-      <!-- Tab Bar -->
-      <div class="wb-config-tabs" v-if="node.data?.trace">
-        <button class="wb-config-tab" :class="{ 'wb-config-tab--active': activeTab === 'config' }" @click="activeTab = 'config'">Configuration</button>
-        <button class="wb-config-tab" :class="{ 'wb-config-tab--active': activeTab === 'trace' }" @click="activeTab = 'trace'">Execution Trace</button>
-      </div>
-
-      <div class="wb-config-body" v-if="activeTab === 'config'">
+      <div class="wb-config-body">
         <div class="wb-config-field">
           <label class="wb-config-label">ID</label>
           <input class="mx-input mx-input--sm" :value="node.id" disabled />
@@ -293,37 +261,7 @@ export default {
           </div>
         </template>
       </div>
-
-      <div class="wb-config-body wb-trace-body" v-else-if="activeTab === 'trace' && node.data?.trace">
-        <div class="wb-config-field">
-          <label class="wb-config-label">Execution Status</label>
-          <div class="wb-trace-status-badge" :style="{ background: statusBg(node.data.trace.status), color: statusColor(node.data.trace.status) }">
-            {{ node.data.trace.status.toUpperCase() }}
-          </div>
-        </div>
-        <div class="wb-config-field" v-if="node.data.trace.elapsed_time !== undefined">
-          <label class="wb-config-label">Duration</label>
-          <span class="wb-trace-value" style="font-size:13px;font-weight:600;color:var(--text);">{{ node.data.trace.elapsed_time }}s</span>
-        </div>
-        <div class="wb-config-field" v-if="node.data.trace.error">
-          <label class="wb-config-label" style="color:var(--error)">Error Message</label>
-          <div class="wb-trace-error-box">{{ node.data.trace.error }}</div>
-        </div>
-        <div class="wb-config-field" v-if="node.data.trace.inputs && Object.keys(node.data.trace.inputs).length > 0">
-          <label class="wb-config-label">Inputs</label>
-          <pre class="wb-trace-json-box">{{ formatJson(node.data.trace.inputs) }}</pre>
-        </div>
-        <div class="wb-config-field" v-if="node.data.trace.outputs">
-          <label class="wb-config-label">Outputs</label>
-          <pre class="wb-trace-json-box">{{ formatJson(node.data.trace.outputs) }}</pre>
-        </div>
-        <div class="wb-config-field" v-if="node.data.trace.process_data && Object.keys(node.data.trace.process_data).length > 0">
-          <label class="wb-config-label">Process Data / Logs</label>
-          <pre class="wb-trace-json-box">{{ formatJson(node.data.trace.process_data) }}</pre>
-        </div>
-      </div>
-
-      <div class="wb-config-footer" v-if="activeTab === 'config'">
+      <div class="wb-config-footer">
         <button class="mx-btn mx-btn--sm" style="color:var(--error)" @click="deleteNode">Delete Node</button>
       </div>
     </div>

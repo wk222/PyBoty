@@ -20,7 +20,6 @@ import WorkflowList from '/static/views/WorkflowList.js';
 import WorkflowBuilder from '/static/views/WorkflowBuilder.js';
 import AppList from '/static/views/AppList.js';
 import ScheduleList from '/static/views/ScheduleList.js';
-import TaskPanel from '/static/views/TaskPanel.js';
 import HubView from '/static/views/HubView.js';
 import GovernanceDashboard from '/static/views/GovernanceDashboard.js';
 import MemoryView from '/static/views/MemoryView.js';
@@ -28,9 +27,7 @@ import TracingView from '/static/views/TracingView.js';
 import AppMatrixView from '/static/views/AppMatrixView.js';
 import DebugPanel from '/static/views/DebugPanel.js';
 import Settings from '/static/views/Settings.js';
-import IntegrationsView from '/static/views/IntegrationsView.js';
-import TeamConsoleView from '/static/views/TeamConsoleView.js';
-import CliView from '/static/views/CliView.js';
+
 const routes = [
   { path: '/', redirect: '/chat' },
   { path: '/dashboard', component: Dashboard },
@@ -46,16 +43,12 @@ const routes = [
   { path: '/apps', component: AppList },
   { path: '/hub', component: HubView },
   { path: '/schedules', component: ScheduleList },
-  { path: '/tasks', component: TaskPanel },
   { path: '/governance', component: GovernanceDashboard, alias: ['/approvals', '/governance/policy'] },
   { path: '/memory', component: MemoryView },
   { path: '/tracing', component: TracingView },
   { path: '/app-matrix', component: AppMatrixView },
   { path: '/debug', component: DebugPanel },
   { path: '/settings', component: Settings },
-  { path: '/integrations', component: IntegrationsView },
-  { path: '/team', component: TeamConsoleView },
-  { path: '/cli', component: CliView },
 ];
 
 const router = createRouter({

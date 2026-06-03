@@ -103,10 +103,6 @@ class GatewayGuardMiddleware(BaseHTTPMiddleware):
 
         auth_header = request.headers.get("Authorization", "")
         api_key = auth_header[7:] if auth_header.startswith("Bearer ") else ""
-        # SSE clients (EventSource) cannot send custom headers, so we accept
-        # ?api_key=... as an authenticated fallback for GET-only event streams.
-        if not api_key and request.method == "GET" and "/events" in path:
-            api_key = request.query_params.get("api_key", "")
         allowed_scopes = self.api_keys.get(api_key) if api_key else None
 
         # 1.5 App-specific key check

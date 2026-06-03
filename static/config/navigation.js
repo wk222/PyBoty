@@ -21,29 +21,18 @@ const ICONS = {
   memory: '<path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/><line x1="9" y1="21" x2="15" y2="21"/>',
   tracing: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
   appMatrix: '<rect x="2" y="2" width="9" height="9" rx="2"/><rect x="13" y="2" width="9" height="9" rx="2"/><rect x="2" y="13" width="9" height="9" rx="2"/><rect x="13" y="13" width="9" height="9" rx="2"/><line x1="11" y1="6.5" x2="13" y2="6.5"/><line x1="11" y1="17.5" x2="13" y2="17.5"/><line x1="6.5" y1="11" x2="6.5" y2="13"/><line x1="17.5" y1="11" x2="17.5" y2="13"/>',
-  ide: '<rect x="2" y="3" width="20" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="9" y1="9" x2="22" y2="9"/>',
-  integrations:
-    '<path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>',
-  team:
-    '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
 };
 
 export const PRIMARY_SURFACES = Object.freeze([
   { key: 'chat', to: '/chat', icon: ICONS.chat },
-  { key: 'ide', href: '/workspace', icon: ICONS.ide },
   { key: 'memory', to: '/memory', icon: ICONS.memory },
   { key: 'appMatrix', to: '/app-matrix', icon: ICONS.appMatrix },
   { key: 'governance', to: '/governance', icon: ICONS.governance },
   { key: 'ecosystem', to: '/ecosystem', icon: ICONS.ecosystem },
 ]);
 
-const TASKS_ICON = '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>';
-
 export const UTILITY_SURFACES = Object.freeze([
-  { key: 'team', to: '/team', icon: ICONS.team },
-  { key: 'tasks', to: '/tasks', icon: TASKS_ICON },
   { key: 'tracing', to: '/tracing', icon: ICONS.tracing },
-  { key: 'integrations', to: '/integrations', icon: ICONS.integrations },
   { key: 'settings', to: '/settings', icon: ICONS.settings },
 ]);
 

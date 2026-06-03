@@ -5,29 +5,29 @@
 当前 plan.md 把 6 个 Trunk 画成并列的，但实际依赖关系是一棵树：
 
 flowchart TD
-    subgraph L0 ["Layer 0: 基础层 (Runtime Foundation)"]
+    subgraph L0 ["Layer 0: Root (Runtime Foundation)"]
         runtime["runtime/\nconfig, paths, errors, events, bootstrap"]
         session["runtime/session/\nSession Spine"]
         context["context/\nWorkspace View + Context Engine"]
     end
 
-    subgraph L1 ["Layer 1: 核心系统层 (Core Systems)"]
-        governance["governance/\napprovals, guardrails, AgentControlPolicy, sandbox"]
-        memory["memory/ + knowledge/\nGarden, Vector, Semantic, MemoryDistill"]
+    subgraph L1 ["Layer 1: First Branches (Core Systems)"]
+        governance["governance/\napprovals, guardrails, policies, policy pipeline"]
+        memory["memory/ + knowledge/\nGarden, Vector, Semantic"]
         bus["bus/\nCapabilityBus + Registry"]
         middleware["middleware/\nmiddleware chain, reasoning"]
     end
 
-    subgraph L2 ["Layer 2: 领域对象层 (Asset Domains)"]
+    subgraph L2 ["Layer 2: Second Branches (Asset Domains)"]
         tools["assets/tools/\ntool runtime, creation, templates"]
         skills["assets/skills/\nskill registry, marketplace"]
         agents["assets/agents/\nsubagent registry, delegation"]
         workflows["assets/workflows/\nDAG engine, scheduling"]
     end
 
-    subgraph L3 ["Layer 3: 身份层 (Product Modes)"]
+    subgraph L3 ["Layer 3: Crown (Product Modes)"]
         apps["assets/apps/\nApp Matrix, Brain, Orchestration"]
-        modes["modes/\nassistant, app_matrix, admin + ExecutionCanvas"]
+        modes["modes/\nassistant, app_matrix, admin packs"]
     end
 
     runtime --> session
